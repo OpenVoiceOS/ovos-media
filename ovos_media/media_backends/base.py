@@ -33,6 +33,7 @@ class BaseMediaService:
         self._loaded = MonotonicEvent()
         if autoload:
             self.load_services()
+        self.bus.on("ovos.common_play.media.state", self.handle_media_state_change)
 
     def available_backends(self):
         """Return available media backends.
@@ -57,6 +58,16 @@ class BaseMediaService:
 
         Sets up the global service, default and registers the event handlers
         for the subsystem.
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def handle_media_state_change(self, message: Message):
+        """
+        if self.current and state == MediaState.LOADED_MEDIA:
+            self.current.play()
+            self.bus.emit(Message("ovos.common_play.track.state",
+                                  {"state": TrackState.PLAYING_AUDIO}))
         """
         raise NotImplementedError
 
@@ -102,6 +113,7 @@ class BaseMediaService:
         if not self._is_message_for_service(message):
             return
         if self.current:
+            LOG.debug(f'stopping playing service: {self.current}')
             if self.current.stop():
                 self.current.ocp_stop()  # emit ocp state events
                 if message:
@@ -124,14 +136,12 @@ class BaseMediaService:
         if not self._is_message_for_service(message):
             return
         if time.monotonic() - self.play_start_time > 1:
-            LOG.debug('stopping all playing services')
             with self.service_lock:
                 try:
                     self._perform_stop(message)
                 except Exception as e:
                     LOG.exception(e)
                     LOG.error("failed to stop!")
-        LOG.info('END Stop')
 
     def lower_volume(self, message: Message = None):
         """
@@ -166,8 +176,6 @@ class BaseMediaService:
                 preferred_service: indicates the service the user prefer to play
                                   the tracks.
         """
-        self._perform_stop()
-
         uri_type = uri.split(':')[0]
 
         # check if user requested a particular service
@@ -178,23 +186,21 @@ class BaseMediaService:
         elif self.current and uri_type in self.current.supported_uris():
             selected_service = self.current
 
-        else:  # Check if any other service can play the media
-            LOG.debug("Searching the services")
+        else:  # Check if any media service can play the media
             for s in self.services:
                 if uri_type in s.supported_uris():
-                    LOG.debug(f"Service {s} supports URI {uri_type}")
+                    LOG.debug(f"Service {s.__class__.__name__} supports URI {uri_type}")
                     selected_service = s
                     break
             else:
                 LOG.info('No service found for uri_type: ' + uri_type)
                 return
 
-        LOG.debug(f"Using ({selected_service})")
-        selected_service.load_track(uri)
-        selected_service.play()
-        selected_service.ocp_start()
+        LOG.debug(f"Using {selected_service.__class__.__name__}")
         self.current = selected_service
         self.play_start_time = time.monotonic()
+        # once loaded self.handle_media_state_change is called
+        selected_service.load_track(uri)
 
     def _is_message_for_service(self, message: Message):
         if not message or not self.validate_source:

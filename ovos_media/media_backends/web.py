@@ -1,5 +1,6 @@
 from ovos_bus_client.message import Message
 from ovos_utils.log import LOG
+from ovos_utils.ocp import MediaState, TrackState
 
 from ovos_plugin_manager.ocp import find_ocp_web_plugins
 from ovos_plugin_manager.templates.media import RemoteWebPlayerBackend
@@ -74,6 +75,13 @@ class WebService(BaseMediaService):
             # played.
             LOG.debug('End of playlist!')
             self.bus.emit(Message('ovos.web.queue_end'))
+
+    def handle_media_state_change(self, message: Message):
+        state = message.data["state"]
+        if self.current and state == MediaState.LOADED_MEDIA:
+            self.current.play()
+            self.bus.emit(Message("ovos.common_play.track.state",
+                                  {"state": TrackState.PLAYING_WEBVIEW}))
 
     def remove_listeners(self):
         self.bus.remove('ovos.web.service.play', self.handle_play)
