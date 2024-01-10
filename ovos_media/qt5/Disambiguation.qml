@@ -82,7 +82,6 @@ Item {
 
             delegate: Controls.ItemDelegate {
                 id: delegateItemCardTwo
-                width: parent.width
                 height: Kirigami.Units.gridUnit * 5
 
                 background: Rectangle {
