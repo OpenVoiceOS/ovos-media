@@ -228,10 +228,10 @@ class NowPlaying(MediaEntry):
             state = MediaState(state)
         if not isinstance(state, MediaState):
             raise ValueError(f"Expected int or TrackState, but got: {state}")
-        # Don't do anything. Let OCP manage this object's state
-        # if state == MediaState.END_OF_MEDIA:
-        #     # playback ended, allow next track to change metadata again
-        #     self.reset()
+
+        if state == MediaState.END_OF_MEDIA:
+            # playback ended, allow next track to change metadata again
+            self.reset()
 
     def handle_sync_seekbar(self, message):
         """
@@ -548,7 +548,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         """
         # stop any external media players
         if self.mpris and not self.mpris.stop_event.is_set():
-            LOG.info("Requested playback with mpris not stopped")
             self.mpris.stop()
 
         # validate new stream
@@ -560,15 +559,10 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.track_history.setdefault(self.now_playing.uri, 0)
         self.track_history[self.now_playing.uri] += 1
 
-        LOG.debug(f"Requesting playback: {repr(self.playback_type)}")
-
         if self.playback_type == PlaybackType.AUDIO:
-            LOG.debug("Handling playback via audio_service")
             LOG.debug("Requesting playback: PlaybackType.AUDIO")
             # TODO - get preferred service and pass to self.play
             self.audio_service.play(self.now_playing.uri)
-            self.bus.emit(Message("ovos.common_play.track.state",
-                                  {"state": TrackState.PLAYING_AUDIO}))
             self.set_player_state(PlayerState.PLAYING)
 
         elif self.playback_type == PlaybackType.SKILL:
@@ -621,7 +615,8 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         shuffle settings.
         """
         if self.playback_type == PlaybackType.UNDEFINED:
-            LOG.error("self.active_backend is undefined")
+            LOG.error("self.playback_type is undefined, can not play next")
+            return
         elif self.playback_type in [PlaybackType.MPRIS]:
             if self.mpris:
                 self.mpris.play_next()
@@ -744,44 +739,42 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         LOG.debug("Stopping playback")
         if self.playback_type in [PlaybackType.AUDIO,
                                   PlaybackType.UNDEFINED]:
-            self.stop_audio_service()
-            self.set_player_state(PlayerState.STOPPED)
+            self.audio_service.stop()
         if self.playback_type in [PlaybackType.SKILL,
                                   PlaybackType.UNDEFINED]:
-            self.stop_audio_skill()
+            self.stop_skill()
         if self.playback_type in [PlaybackType.VIDEO,
                                   PlaybackType.UNDEFINED]:
-            self.stop_gui_player()
-            self.set_player_state(PlayerState.STOPPED)
-        # if self.active_backend in [PlaybackType.MPRIS] and self.mpris:
-        #    self.mpris.stop()
+            self.video_service.stop()
+        if self.playback_type in [PlaybackType.WEBVIEW,
+                                  PlaybackType.UNDEFINED]:
+            self.web_service.stop()
+        if self.mpris and self.playback_type in [PlaybackType.MPRIS]:
+            self.mpris.stop()
+        self.set_player_state(PlayerState.STOPPED)
 
-    def stop_gui_player(self):
-        """
-        Emit a Message notifying the gui player to stop
-        """
+    def handle_MPRIS_takeover(self):
+        """ Called when a MPRIS external player becomes active"""
+        self.audio_service.stop()
         self.video_service.stop()
+        self.web_service.stop()
+        self.stop_skill()
 
-    def stop_audio_skill(self):
+    def stop_skill(self):
         """
         Emit a Message notifying self.active_skill to stop
         """
         self.bus.emit(Message(f'ovos.common_play.{self.active_skill}.stop'))
 
-    def stop_audio_service(self):
-        """
-        Call self.audio_service.stop()
-        """
-        self.audio_service.stop()
-
     def reset(self):
         """
         Reset this instance to clear any media or settings
         """
-        self.stop()
+        self.now_playing.reset()
         self.playlist.clear()
         self.media.clear()
-        self.set_media_state(MediaState.NO_MEDIA)
+        if self.playback_type != PlaybackType.MPRIS:
+            self.set_media_state(MediaState.NO_MEDIA)
         self.shuffle = False
         self.loop_state = LoopState.NONE
         self.state: PlayerState = PlayerState.STOPPED
@@ -833,8 +826,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         Handles 'ovos.common_play.media.state' messages with media state updates
         @param message: Message providing new "state" data
         """
-        LOG.debug(f"backend={repr(self.playback_type)}|"
-                  f"msg_type={message.msg_type}")
         state = message.data.get("state")
         if state is None:
             raise ValueError(f"Got state update message with no state: "
@@ -859,7 +850,9 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
     def handle_playback_ended(self, message):
         if len(self.playlist) and self.ocp_config.get("autoplay", True) and \
-                self.playback_type != PlaybackType.MPRIS:
+                self.playback_type not in [PlaybackType.MPRIS, PlaybackType.UNDEFINED]:
+            # PlaybackType.UNDEFINED -> no media loaded, eg stop called explicitly
+            # PlaybackType.MPRIS -> can't load media in MPRIS players
             LOG.debug(f"Playing next track")
             self.play_next()
             return
@@ -886,6 +879,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.pause()
 
     def handle_stop_request(self, message):
+        self.stop()
         self.reset()
 
     def handle_resume_request(self, message):
@@ -947,7 +941,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
     def handle_playlist_clear_request(self, message):
         self.playlist.clear()
-        self.set_media_state(MediaState.NO_MEDIA)
 
     # audio ducking - NB: we distinguish ducking vs corking  (lower volume vs pause)
     def handle_cork_request(self, message):

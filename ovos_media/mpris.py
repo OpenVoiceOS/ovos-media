@@ -8,7 +8,7 @@ from dbus_next.message import Message as DbusMessage, MessageType as DbusMessage
 from dbus_next.service import ServiceInterface, method, dbus_property, PropertyAccess
 from ovos_bus_client.message import Message
 from ovos_utils.log import LOG
-from ovos_utils.ocp import TrackState, PlaybackType, PlayerState, LoopState
+from ovos_utils.ocp import TrackState, PlaybackType, PlayerState, LoopState, MediaState
 
 
 class MprisPlayerCtl(Thread):
@@ -83,14 +83,23 @@ class MprisPlayerCtl(Thread):
             state = data.get("state") or "Playing"
             if state == "Paused":
                 self._ocp_player.set_player_state(PlayerState.PAUSED)
+                self._ocp_player.set_media_state(MediaState.BUFFERED_MEDIA)
             elif state == "Playing":
                 self._ocp_player.set_player_state(PlayerState.PLAYING)
+                self._ocp_player.set_media_state(MediaState.BUFFERED_MEDIA)
             else:
                 self._ocp_player.set_player_state(PlayerState.STOPPED)
-            self._ocp_player.loop_state = data.get("loop_state") or \
-                                          self._ocp_player.loop_state
-            self._ocp_player.shuffle = data.get("shuffle") or \
-                                       self._ocp_player.shuffle
+                self._ocp_player.set_media_state(MediaState.END_OF_MEDIA)
+
+            state = data.get("loop_state") or 0
+            if state == 1:
+                self._ocp_player.loop_state = LoopState.REPEAT
+            elif state == 2:
+                self._ocp_player.loop_state = LoopState.REPEAT_TRACK
+            else:
+                self._ocp_player.loop_state = LoopState.NONE
+
+            self._ocp_player.shuffle = data.get("shuffle") or self._ocp_player.shuffle
             self._ocp_player.playback_type = PlaybackType.MPRIS
 
             # update ocp metadata
@@ -125,6 +134,7 @@ class MprisPlayerCtl(Thread):
             if state == "Paused":
                 self._ocp_player.set_player_state(PlayerState.PAUSED)
             elif state == "Playing":
+                self._ocp_player.handle_MPRIS_takeover()
                 self._ocp_player.playback_type = PlaybackType.MPRIS
                 self._ocp_player.set_player_state(PlayerState.PLAYING)
             else:
@@ -300,6 +310,8 @@ class MprisPlayerCtl(Thread):
                             {"state": variant.value,
                              "external_player": player_name})
                 elif changed == "Metadata":
+                    ocp_data = self._meta2dict(name, variant.value)
+                    LOG.info(f"MPRIS info: {ocp_data}")
                     await self.update_player_meta(player_name, variant.value)
                 elif changed == "Shuffle":
                     self.player_meta[player_name]["shuffle"] = variant.value
@@ -318,7 +330,7 @@ class MprisPlayerCtl(Thread):
 
         properties.on_properties_changed(on_properties_changed)
 
-    async def update_player_meta(self, name, meta):
+    def _meta2dict(self, name, meta):
         ocp_data = {"external_player": name}
 
         # these are injected when player is queried
@@ -336,7 +348,12 @@ class MprisPlayerCtl(Thread):
                 ocp_data["image"] = v.value
             elif k == "mpris:length":
                 ocp_data["length"] = v.value
+        return ocp_data
 
+    async def update_player_meta(self, name, meta):
+        ocp_data = self._meta2dict(name, meta)
+        if name not in self.player_meta:
+            LOG.info(f"MPRIS info: {ocp_data}")
         self.player_meta[name] = ocp_data
         await self.handle_sync_player(ocp_data)
 

@@ -1,7 +1,6 @@
-from ovos_bus_client.message import Message
 from ovos_utils.log import LOG
-
-from ovos_config.config import Configuration
+from ovos_utils.ocp import MediaState, TrackState
+from ovos_bus_client.message import Message
 from ovos_media.media_backends.base import BaseMediaService
 from ovos_plugin_manager.ocp import find_ocp_audio_plugins
 from ovos_plugin_manager.templates.media import RemoteAudioPlayerBackend
@@ -12,7 +11,6 @@ class AudioService(BaseMediaService):
         Handles playback of audio and selecting proper backend for the uri
         to be played.
     """
-
 
     def load_services(self):
         """Method for loading services.
@@ -67,13 +65,20 @@ class AudioService(BaseMediaService):
         if track:
             # Inform about the track about to start.
             LOG.debug('New track coming up!')
-            self.bus.emit(Message('mycroft.audio.playing_track',
+            self.bus.emit(Message('ovos.audio.playing_track',
                                   data={'track': track}))
         else:
             # If no track is about to start last track of the queue has been
             # played.
             LOG.debug('End of playlist!')
-            self.bus.emit(Message('mycroft.audio.queue_end'))
+            self.bus.emit(Message('ovos.audio.queue_end'))
+
+    def handle_media_state_change(self, message: Message):
+        state = message.data["state"]
+        if self.current and state == MediaState.LOADED_MEDIA:
+            self.current.play()
+            self.bus.emit(Message("ovos.common_play.track.state",
+                                  {"state": TrackState.PLAYING_AUDIO}))
 
     def remove_listeners(self):
         self.bus.remove('ovos.audio.service.play', self.handle_play)
