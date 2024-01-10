@@ -161,8 +161,8 @@ class MprisPlayerCtl(Thread):
         # previous ones!
         if self.manage_players:
             self._update_ocp()
-            for p in self.players:
-                if p != name:
+            for p, dta in self.players.items():
+                if p != name and dta.get("state", "") == "Playing":
                     LOG.info(f"Stopping MPRIS player: {p}")
                     await self._stop_player(p)
 

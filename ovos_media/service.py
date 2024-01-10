@@ -54,25 +54,12 @@ class MediaService(Thread):
             bus.run_in_thread()
         self.bus = bus
         self.status.bind(self.bus)
+        self.status.set_alive()
         self.init_messagebus()
-
         self.ocp = OCPMediaPlayer(self.bus)
 
     def run(self):
-        self.status.set_alive()
-        # if self.ocp.wait_for_load():
-        #    if len(self.ocp.service) == 0:
-        #        LOG.warning('No audio backends loaded! '
-        #                    'Audio playback is not available')
-        #        LOG.info("Running audio service in TTS only mode")
-        # If at least TTS exists, report ready
         self.status.set_ready()
-
-    def handle_stop(self, message: Message):
-        """Handle stop message.
-
-        Shutdown any speech.
-        """
 
     def shutdown(self):
         """Shutdown the audio service cleanly.
@@ -87,4 +74,3 @@ class MediaService(Thread):
         Start speech related handlers.
         """
         Configuration.set_config_update_handlers(self.bus)
-        self.bus.on('mycroft.stop', self.handle_stop)

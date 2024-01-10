@@ -331,6 +331,8 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.add_event('ovos.common_play.shuffle.unset', self.handle_unset_shuffle)
         self.add_event('ovos.common_play.repeat.set', self.handle_set_repeat)
         self.add_event('ovos.common_play.repeat.unset', self.handle_unset_repeat)
+        self.add_event('ovos.common_play.SEI.get', self.handle_get_SEIs)
+        self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))  # report to ovos-core
 
     @property
     def active_skill(self) -> str:
@@ -500,6 +502,23 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
         return True
 
+    def handle_get_SEIs(self, message: Message):
+        """report available StreamExtractorIds
+        OCP plugins handle specific SEIs and return a real stream / extra metadata
+
+        this moves parsing to playback time instead of search time
+
+        SEIs are identifiers of the format "{SEI}//{uri}"
+        that might be present in media results
+
+        seis are NOT uris, a uri comes after {SEI}//
+
+        eg. for the youtube plugin a skill can return
+          "youtube//https://youtube.com/watch?v=wChqNkd6F24"
+        """
+        xtract = load_stream_extractors()  # @lru_cache, its a lazy loaded singleton
+        self.bus.emit(message.response({"SEI": xtract.supported_seis}))
+
     def on_invalid_media(self):
         """
         Handle media playback errors. Show an error and play the next track.
@@ -525,8 +544,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             raise TypeError(f"Expected MediaEntry, got: {track}")
         if self.mpris:
             self.mpris.stop()
-        if self.state == PlayerState.PLAYING:
-            self.pause()  # make it more responsive
+
         if disambiguation:
             self.media.search_playlist.replace([t for t in disambiguation
                                                 if t not in self.media.search_playlist])
@@ -614,10 +632,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         End playback if there is no next track, accounting for repeat and
         shuffle settings.
         """
-        if self.playback_type == PlaybackType.UNDEFINED:
-            LOG.error("self.playback_type is undefined, can not play next")
-            return
-        elif self.playback_type in [PlaybackType.MPRIS]:
+        if self.playback_type in [PlaybackType.MPRIS]:
             if self.mpris:
                 self.mpris.play_next()
             return
@@ -625,7 +640,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             LOG.debug(f"Defer playing next track to skill")
             self.bus.emit(Message(f'ovos.common_play.{self.now_playing.skill_id}.next'))
             return
-        self.pause()  # make more responsive
 
         if self.loop_state == LoopState.REPEAT_TRACK:
             LOG.debug("Repeating single track")
@@ -667,7 +681,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.bus.emit(Message(
                 f'ovos.common_play.{self.now_playing.skill_id}.prev'))
             return
-        self.pause()  # make more responsive
 
         if self.shuffle:
             # TODO: Should skipping back get a random track instead of previous?
