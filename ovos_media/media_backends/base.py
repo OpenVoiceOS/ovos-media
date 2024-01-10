@@ -155,6 +155,16 @@ class BaseMediaService:
         """
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def handle_media_state_change(self, message: Message):
+        """
+        if self.current and state == MediaState.LOADED_MEDIA:
+            self.current.play()
+            self.bus.emit(Message("ovos.common_play.track.state",
+                                  {"state": TrackState.PLAYING_AUDIO}))
+        """
+        raise NotImplementedError
+
     def wait_for_load(self, timeout=3 * 60):
         """Wait for services to be loaded.
 
