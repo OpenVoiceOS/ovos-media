@@ -162,9 +162,12 @@ class MprisPlayerCtl(Thread):
         if self.manage_players:
             self._update_ocp()
             for p, dta in self.players.items():
-                if p != name and dta.get("state", "") == "Playing":
-                    LOG.info(f"Stopping MPRIS player: {p}")
-                    await self._stop_player(p)
+                try:
+                    if p != name and self.player_meta[name]["state"] == "Playing":
+                        LOG.info(f"Stopping MPRIS player: {p}")
+                        await self._stop_player(p)
+                except:
+                    LOG.error(f"failed to stop: {p}")
 
     async def _play_prev(self, name, max_tries=1):
         if name not in self.players:
