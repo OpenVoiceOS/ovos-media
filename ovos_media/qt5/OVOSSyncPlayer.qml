@@ -41,6 +41,15 @@ Mycroft.Delegate {
         var seconds = ((millis % 60000) / 1000).toFixed(0);
         return minutes + ":" + (seconds < 10 ? '0' : '') + seconds;
     }
+
+    onFocusChanged: {
+        if (focus) {
+            repeatButton.forceActiveFocus()
+        }
+    }
+
+    KeyNavigation.down: repeatButton
+
     Image {
         id: imgbackground
         anchors.fill: parent
@@ -173,11 +182,17 @@ Mycroft.Delegate {
 
                 AudioPlayerControl {
                     id: repeatButton
-                    controlIcon: sessionData.loopStatus === "RepeatTrack" ? Qt.resolvedUrl("images/media-playlist-repeat.svg") : sessionData.loopStatus === "None" ? Qt.resolvedUrl("images/media-playlist-repeat-track.svg") : Qt.resolvedUrl("images/media-playlist-repeat.svg")
+                    controlIcon: sessionData.loopStatus === "RepeatTrack" ? Qt.resolvedUrl("images/media-playlist-repeat-track.svg") : sessionData.loopStatus === "None" ? Qt.resolvedUrl("images/media-playlist-repeat.svg") : Qt.resolvedUrl("images/media-playlist-repeat.svg")
                     controlIconColor: sessionData.loopStatus === "None" ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
                     horizontalMode: root.horizontalMode
 
+                    KeyNavigation.right: prevButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
+
                     onClicked: {
+                        triggerGuiEvent("repeat.toggle", {})
                     }
                 }
 
@@ -187,6 +202,12 @@ Mycroft.Delegate {
                     controlIconColor: sessionData.canPrev === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
 
+                    KeyNavigation.left: repeatButton
+                    KeyNavigation.right: playButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
+
                     onClicked: {
                         triggerGuiEvent("previous", {})
                     }
@@ -194,9 +215,15 @@ Mycroft.Delegate {
 
                 AudioPlayerControl {
                     id: playButton
-                    controlIcon: playerState === MediaPlayer.PlayingState ? Qt.resolvedUrl("images/media-playback-pause.svg") : Qt.resolvedUrl("images/media-playback-start.svg")
+                    controlIcon: sessionData.canPause  === true ? Qt.resolvedUrl("images/media-playback-pause.svg") : Qt.resolvedUrl("images/media-playback-start.svg")
                     controlIconColor: sessionData.canResume === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
+
+                    KeyNavigation.left: prevButton
+                    KeyNavigation.right: nextButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
 
                     onClicked: {
                         if (playerState === "Paused"){
@@ -210,23 +237,16 @@ Mycroft.Delegate {
                 }
 
                 AudioPlayerControl {
-                    id: stopButton
-                    controlIcon: Qt.resolvedUrl("images/media-playback-stop.svg")
-                    controlIconColor: Kirigami.Theme.textColor
-
-                    onClicked: {
-                        if(playerState === "Playing") {
-                            playerState = "Stopped"
-                            triggerGuiEvent("stop", {})
-                        }
-                    }
-                }
-
-                AudioPlayerControl {
                     id: nextButton
                     controlIcon: Qt.resolvedUrl("images/media-skip-forward.svg")
                     controlIconColor: sessionData.canNext === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
+
+                    KeyNavigation.left: playButton
+                    KeyNavigation.right: shuffleButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
 
                     onClicked: {
                         triggerGuiEvent("next", {})
@@ -239,7 +259,15 @@ Mycroft.Delegate {
                     controlIconColor: sessionData.shuffleStatus === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
                     horizontalMode: root.horizontalMode
 
-                    onClicked: {}
+                    KeyNavigation.left: nextButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
+
+
+                    onClicked: {
+                        triggerGuiEvent("shuffle.toggle", {})
+                    }
                 }
             }
         }

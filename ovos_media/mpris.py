@@ -37,6 +37,8 @@ class MprisPlayerCtl(Thread):
         self.resume_event = Event()
         self.next_event = Event()
         self.prev_event = Event()
+        self.shuffle_event = Event()
+        self.repeat_event = Event()
 
         self._ocp_player = player
         self.mediaPlayer2Interface = _MediaPlayer2Interface(self._ocp_player,
@@ -117,8 +119,8 @@ class MprisPlayerCtl(Thread):
             data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
 
             self._ocp_player.set_now_playing(data)
+            self._ocp_player.gui.update_seekbar_capabilities()
             if data["state"] == "Playing":
-                self._ocp_player.gui.prepare_playlist()
                 self._ocp_player.set_now_playing(data)
                 # move GUI to player page
                 if render:
@@ -156,6 +158,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.set_player_state(PlayerState.PLAYING)
             else:
                 self._ocp_player.set_player_state(PlayerState.STOPPED)
+            self._ocp_player.gui.update_seekbar_capabilities()
 
     async def handle_lost_player(self, name):
         LOG.info(f"Lost MPRIS Player: {name}")
@@ -235,6 +238,86 @@ class MprisPlayerCtl(Thread):
                 await self._pause_player(name, max_tries)
             else:
                 LOG.warning(f"player {name} can not be paused")
+
+    async def _shuffle_enable(self, name, max_tries=1):
+        if name not in self.players:
+            LOG.error(f"Invalid player: {name}")
+            return
+        try:
+            LOG.debug(f"enabling shuffle for player {name}")
+            player = self.players[name].get_interface(
+                'org.mpris.MediaPlayer2.Player')
+            await player.set_shuffle(True)
+        except:
+            max_tries -= 1
+            if max_tries > 0:
+                await self._shuffle_enable(name, max_tries)
+            else:
+                LOG.warning(f"player {name} cant control shuffle")
+
+    async def _shuffle_disable(self, name, max_tries=1):
+        if name not in self.players:
+            LOG.error(f"Invalid player: {name}")
+            return
+        try:
+            LOG.debug(f"disabling shuffle for player {name}")
+            player = self.players[name].get_interface(
+                'org.mpris.MediaPlayer2.Player')
+            await player.set_shuffle(False)
+        except:
+            max_tries -= 1
+            if max_tries > 0:
+                await self._shuffle_disable(name, max_tries)
+            else:
+                LOG.warning(f"player {name} cant control shuffle")
+
+    async def _repeat_disable(self, name, max_tries=1):
+        if name not in self.players:
+            LOG.error(f"Invalid player: {name}")
+            return
+        try:
+            LOG.debug(f"disabling repeat for player {name}")
+            player = self.players[name].get_interface(
+                'org.mpris.MediaPlayer2.Player')
+            await player.set_loop_status("None")
+        except:
+            max_tries -= 1
+            if max_tries > 0:
+                await self._repeat_disable(name, max_tries)
+            else:
+                LOG.warning(f"player {name} cant control repeat state")
+
+    async def _repeat_enable(self, name, max_tries=1):
+        if name not in self.players:
+            LOG.error(f"Invalid player: {name}")
+            return
+        try:
+            LOG.debug(f"enabling repeat for player {name}")
+            player = self.players[name].get_interface(
+                'org.mpris.MediaPlayer2.Player')
+            await player.set_loop_status("Playlist")
+        except:
+            max_tries -= 1
+            if max_tries > 0:
+                await self._repeat_enable(name, max_tries)
+            else:
+                LOG.warning(f"player {name} cant control repeat state")
+
+    async def _repeat_track_enable(self, name, max_tries=1):
+        if name not in self.players:
+            LOG.error(f"Invalid player: {name}")
+            return
+        try:
+            LOG.debug(f"enabling repeat for player {name}")
+            player = self.players[name].get_interface(
+                'org.mpris.MediaPlayer2.Player')
+            await player.set_loop_status("Track")
+        except:
+            max_tries -= 1
+            if max_tries > 0:
+                await self._repeat_track_enable(name, max_tries)
+            else:
+                LOG.warning(f"player {name} cant control repeat state")
 
     async def _resume_player(self, name, max_tries=1):
         if name not in self.players:
@@ -462,6 +545,24 @@ class MprisPlayerCtl(Thread):
                 await self._resume_player(self.main_player)
                 self.resume_event.clear()
 
+            if self.shuffle_event.is_set():
+                if self.player_meta[self.main_player].get("shuffle",  self._ocp_player.shuffle):
+                    await self._shuffle_enable(self.main_player)
+                else:
+                    await self._shuffle_disable(self.main_player)
+                self.shuffle_event.clear()
+
+            if self.repeat_event.is_set():
+                state = self.player_meta[self.main_player].get("loop_state") or \
+                        self._ocp_player.loop_state
+                if state == LoopState.NONE:
+                    await self._repeat_enable(self.main_player)
+                elif state == LoopState.REPEAT:
+                    await self._repeat_track_enable(self.main_player)
+                elif state == LoopState.REPEAT_TRACK:
+                    await self._repeat_disable(self.main_player)
+                self.repeat_event.clear()
+
             # scan for new external players
             await self.scan_players()
             sleep(1)  # TODO configurable time between checks
@@ -474,10 +575,19 @@ class MprisPlayerCtl(Thread):
             sleep(1)  # TODO configurable time between checks
 
     def run(self):
+        count = 0
+        max_count = 5
         try:
             self.loop.run_until_complete(self.event_loop())
         except Exception as e:
-            LOG.error(e)
+            if not self.shutdown_event.is_set():
+                LOG.exception(e)
+                count += 1
+                if count <= max_count:
+                    LOG.warning(f"MPRIS daemon crashed, restarting: retry {count} out of {max_count}")
+                    self.run()
+                else:
+                    LOG.error("MPRIS exited")
 
     def play_prev(self):
         self.prev_event.set()
@@ -493,6 +603,12 @@ class MprisPlayerCtl(Thread):
 
     def stop(self):
         self.stop_event.set()
+
+    def toggle_shuffle(self):
+        self.shuffle_event.set()
+
+    def toggle_repeat(self):
+        self.repeat_event.set()
 
     def shutdown(self):
         self.stop()

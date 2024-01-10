@@ -70,7 +70,7 @@ Item {
             model: disambiguationModel.data
             focus: false
             interactive: true
-            bottomMargin: delegate.controlBarItem.height + Kirigami.Units.largeSpacing
+            bottomMargin: Kirigami.Units.largeSpacing
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: Kirigami.Units.largeSpacing
@@ -82,7 +82,6 @@ Item {
 
             delegate: Controls.ItemDelegate {
                 id: delegateItemCardTwo
-                width: parent.width
                 height: Kirigami.Units.gridUnit * 5
 
                 background: Rectangle {

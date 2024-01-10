@@ -27,6 +27,12 @@ Item {
     id: root
     property bool compactMode: height < 600 ? 1 : 0
 
+    onFocusChanged: {
+        if (focus) {
+            txtFld.forceActiveFocus()
+        }
+    }
+
     Component.onCompleted: {
         txtFld.forceActiveFocus()
     }

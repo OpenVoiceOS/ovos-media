@@ -89,6 +89,8 @@ class MediaService(Thread):
 
         Stop any playing audio and make sure threads are joined correctly.
         """
+        # TODO - update gui for no-media in now_playing page
+        self.ocp.reset()
         self.status.set_stopping()
         self.ocp.shutdown()
 

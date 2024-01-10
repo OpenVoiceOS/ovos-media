@@ -19,8 +19,6 @@ Mycroft.Delegate {
     rightPadding: 0
     topPadding: 0
     bottomPadding: 0
-    readonly property var mediaService: Mycroft.MediaService
-    property var mediaStatus: mediaService.playbackState
 
     function movePageRight(){
         parent.parent.parent.currentIndex++
@@ -203,8 +201,8 @@ Mycroft.Delegate {
             anchors.left: parent.left
             anchors.right: parent.right
             height: Mycroft.Units.gridUnit * 3
-            visible: root.mediaStatus === MediaPlayer.PlayingState ? 1 : 0
-            enabled: root.mediaStatus === MediaPlayer.PlayingState ? 1 : 0
+            visible: sessionData.canPause === MediaPlayer.PlayingState ? 1 : 0
+            enabled: sessionData.canPause === MediaPlayer.PlayingState ? 1 : 0
         }
 
         Kirigami.Separator {
@@ -242,11 +240,13 @@ Mycroft.Delegate {
                 }
 
                 Keys.onUpPressed: {
-                    if(homescreenStackLayout.currentIndex === 0){
-                        search.forceActiveFocus()
-                    }
-                    if(homescreenStackLayout.currentIndex === 1){
-                        ocpSkillsView.forceActiveFocus()
+                    if(root.visible) {
+                        if(homescreenStackLayout.currentIndex === 0){
+                            search.forceActiveFocus()
+                        }
+                        if(homescreenStackLayout.currentIndex === 1){
+                            ocpSkillsView.forceActiveFocus()
+                        }
                     }
                 }
 
@@ -293,11 +293,13 @@ Mycroft.Delegate {
                 }
 
                 Keys.onUpPressed: {
-                    if(homescreenStackLayout.currentIndex === 0){
-                        search.forceActiveFocus()
-                    }
-                    if(homescreenStackLayout.currentIndex === 1){
-                        ocpSkillsView.forceActiveFocus()
+                    if(root.visible) {
+                        if(homescreenStackLayout.currentIndex === 0){
+                            search.forceActiveFocus()
+                        }
+                        if(homescreenStackLayout.currentIndex === 1){
+                            ocpSkillsView.forceActiveFocus()
+                        }
                     }
                 }
 

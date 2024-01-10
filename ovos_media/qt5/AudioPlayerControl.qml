@@ -18,27 +18,6 @@ Button {
     property color controlIconColor
     property color controlBackgroundColor: HelperJS.isLight(Kirigami.Theme.backgroundColor) ? Qt.lighter(Kirigami.Theme.backgroundColor, 1.5) : Qt.darker(Kirigami.Theme.backgroundColor, 1.5)
 
-    SequentialAnimation {
-        id: playerControlButtonAnimation
-
-        PropertyAnimation {
-            target: playerControlButtonBackground
-            property: "color"
-            to: HelperJS.isLight(Kirigami.Theme.backgroundColor) ? Qt.darker(Kirigami.Theme.backgroundColor, 1.5) : Qt.lighter(Kirigami.Theme.backgroundColor, 1.5)
-            duration: 200
-        }
-
-        PropertyAnimation {
-            target: playerControlButtonBackground
-            property: "color"
-            to: playerControlButton.controlBackgroundColor
-            duration: 200
-        }
-    }
-
-    onPressed: {
-        playerControlButtonAnimation.running = true;
-    }
 
     contentItem: Kirigami.Icon {
         anchors.fill: parent
@@ -56,5 +35,12 @@ Button {
         id: playerControlButtonBackground
         radius: 5
         color: playerControlButton.controlBackgroundColor
+        border.color: playerControlButton.activeFocus ? Kirigami.Theme.highlightColor : "transparent"
+        border.width: playerControlButton.activeFocus ? 2 : 0
+        layer.enabled: true
+        layer.effect: DropShadow {
+            horizontalOffset: 1
+            verticalOffset: 2
+        }
     }
 }

@@ -1,4 +1,3 @@
-import inspect
 import random
 import time
 from os.path import join, dirname
@@ -13,6 +12,7 @@ from ovos_utils.ocp import OCP_ID, PlayerState, LoopState, PlaybackType, Playbac
     MediaEntry
 
 from ovos_config import Configuration
+from ovos_media.gui import OCPGUIInterface, OCPGUIState
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import MprisPlayerCtl
 from ovos_plugin_manager.ocp import load_stream_extractors
@@ -41,7 +41,9 @@ class OCPMediaCatalog:
         skill_name = message.data.get("skill_name") or skill_id
         img = message.data.get("thumbnail")
         has_featured = bool(message.data.get("featured_tracks"))
-        media_type = message.data.get("media_type") or [MediaType.GENERIC]
+        media_types = message.data.get("media_types") or \
+                     message.data.get("media_type") or \
+                     [MediaType.GENERIC]
 
         if skill_id not in self.ocp_skills:
             LOG.debug(f"Registered {skill_id}")
@@ -53,7 +55,7 @@ class OCPMediaCatalog:
                 "skill_id": skill_id,
                 "skill_name": skill_name,
                 "thumbnail": img,
-                "media_type": media_type
+                "media_types": media_types
             }
 
     def handle_ocp_skill_detach(self, message):
@@ -71,8 +73,8 @@ class OCPMediaCatalog:
         if adult:
             return skills
         return [s for s in skills
-                if MediaType.ADULT not in s["media_type"] and
-                MediaType.HENTAI not in s["media_type"]]
+                if MediaType.ADULT not in s["media_types"] and
+                MediaType.HENTAI not in s["media_types"]]
 
     def clear(self):
         self.search_playlist.clear()
@@ -306,6 +308,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
         self.gui = OCPGUIInterface()
         self.gui.bind(self)
+        # TODO - update gui for no-media in now_playing page
 
     def register_bus_handlers(self):
         # ovos common play bus api
@@ -330,8 +333,10 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.add_event('ovos.common_play.unduck', self.handle_unduck_request)
         self.add_event('ovos.common_play.cork', self.handle_cork_request)
         self.add_event('ovos.common_play.uncork', self.handle_uncork_request)
+        self.add_event('ovos.common_play.shuffle.toggle', self.handle_shuffle_toggle_request)
         self.add_event('ovos.common_play.shuffle.set', self.handle_set_shuffle)
         self.add_event('ovos.common_play.shuffle.unset', self.handle_unset_shuffle)
+        self.add_event('ovos.common_play.repeat.toggle', self.handle_repeat_toggle_request)
         self.add_event('ovos.common_play.repeat.set', self.handle_set_repeat)
         self.add_event('ovos.common_play.repeat.unset', self.handle_unset_repeat)
         self.add_event('ovos.common_play.SEI.get', self.handle_get_SEIs)
@@ -847,6 +852,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.update_props({"CanPause": state == PlayerState.PLAYING,
                                      "CanPlay": state == PlayerState.PAUSED,
                                      "PlaybackStatus": state2str[state]})
+        self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_player_media_update(self, message):
         """
@@ -871,6 +877,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.handle_invalid_media(message)
             if self.ocp_config.get("autoplay", True):
                 self.play_next()
+        self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_invalid_media(self, message):
         self.gui.manage_display(OCPGUIState.PLAYBACK_ERROR)
@@ -900,13 +907,16 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
     def handle_pause_request(self, message):
         self.pause()
+        self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_stop_request(self, message):
         self.stop()
         self.reset()
+        self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_resume_request(self, message):
         self.resume()
+        self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_seek_request(self, message):
         # from bus api
@@ -930,15 +940,19 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
     def handle_set_shuffle(self, message):
         self.shuffle = True
+        self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_unset_shuffle(self, message):
         self.shuffle = False
+        self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_set_repeat(self, message):
         self.loop_state = LoopState.REPEAT
+        self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_unset_repeat(self, message):
         self.loop_state = LoopState.NONE
+        self.gui.update_seekbar_capabilities()  # update icon
 
     # playlist control bus api
     def handle_repeat_toggle_request(self, message):
@@ -949,10 +963,16 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         elif self.loop_state == LoopState.NONE:
             self.loop_state = LoopState.REPEAT
         LOG.info(f"Repeat: {self.loop_state}")
+        self.gui.update_seekbar_capabilities()  # update icon
+        if self.mpris and self.playback_type == PlaybackType.MPRIS:
+            self.mpris.toggle_repeat()
 
     def handle_shuffle_toggle_request(self, message):
         self.shuffle = not self.shuffle
         LOG.info(f"Shuffle: {self.shuffle}")
+        self.gui.update_seekbar_capabilities()  # update icon
+        if self.mpris and self.playback_type == PlaybackType.MPRIS:
+            self.mpris.toggle_shuffle()
 
     def handle_playlist_set_request(self, message):
         self.playlist.clear()
