@@ -366,7 +366,11 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.add_event('ovos.common_play.repeat.set', self.handle_set_repeat)
         self.add_event('ovos.common_play.repeat.unset', self.handle_unset_repeat)
         self.add_event('ovos.common_play.SEI.get', self.handle_get_SEIs)
+        self.add_event('ovos.common_play.search.start', self.handle_search_start)
         self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))  # report to ovos-core
+
+    def handle_search_start(self, message):
+        self.gui.manage_display(OCPGUIState.SPINNER)
 
     @property
     def active_skill(self) -> str:
@@ -564,7 +568,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.bus.emit(Message("mycroft.audio.play_sound", {"uri": "snd/error.mp3"}))
         self.gui.manage_display(OCPGUIState.PLAYBACK_ERROR)
         LOG.warning(f"Failed to play: {self.now_playing}")
-        time.sleep(1.5)  # let the user process that playback failed before moving on
+        time.sleep(3)  # let the user process that playback failed before moving on
         self.play_next()
 
     # media controls
@@ -658,6 +662,8 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         if self.mpris:
             self.mpris.update_props({"CanGoNext": self.can_next})
             self.mpris.update_props({"CanGoPrevious": self.can_prev})
+
+        self.gui.update_seekbar_capabilities()  # pause/play icon
 
     def play_shuffle(self):
         """
@@ -758,6 +764,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.pause()
         self.set_player_state(PlayerState.PAUSED)
         self._paused_on_duck = False
+        self.gui.update_seekbar_capabilities()  # pause/play icon
 
     def resume(self):
         """
@@ -779,6 +786,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.resume()
 
         self.set_player_state(PlayerState.PLAYING)
+        self.gui.update_seekbar_capabilities()  # pause/play icon
 
     def seek(self, position: int):
         """
@@ -812,6 +820,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         if self.mpris and self.playback_type in [PlaybackType.MPRIS]:
             self.mpris.pause()
         self.set_player_state(PlayerState.STOPPED)
+        self.gui.update_seekbar_capabilities()  # pause/play icon
 
     def handle_MPRIS_takeover(self):
         """ Called when a MPRIS external player becomes active"""
@@ -1056,9 +1065,9 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         """
         if self.state == PlayerState.PLAYING:
             if self.playback_type in [PlaybackType.VIDEO]:
-                self.video_service._lower_volume()
+                self.video_service.lower_volume()
             elif self.playback_type in [PlaybackType.AUDIO]:
-                self.audio_service._lower_volume()
+                self.audio_service.lower_volume()
             self._paused_on_duck = True
 
     def handle_unduck_request(self, message):
