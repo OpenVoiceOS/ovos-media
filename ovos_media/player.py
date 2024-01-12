@@ -449,7 +449,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         @param track: MediaEntry or dict representation of a MediaEntry to play
         """
         if isinstance(track, dict):
-            track = self._dict2result(track)
+            track = MediaEntry.from_dict(track)
         if not isinstance(track, (MediaEntry, Playlist)):
             raise ValueError(f"Expected MediaEntry, but got: {track}")
 
@@ -526,21 +526,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.play_next()
 
     # media controls
-    @staticmethod
-    def _dict2result(track):
-        if track.get("playlist"):
-            LOG.debug(f"got playlist result: {track}")
-            kwargs = {k: v for k, v in track.items()
-                    if k in inspect.signature(Playlist).parameters}
-            playlist = Playlist(**kwargs)
-            for e in track["playlist"]:
-                playlist.add_entry(e)
-            return playlist
-        else:
-            kwargs = {k: v for k, v in track.items()
-                      if k in inspect.signature(MediaEntry).parameters}
-            return MediaEntry(**kwargs)
-
     def play_media(self, track: Union[dict, MediaEntry],
                    disambiguation: List[Union[dict, MediaEntry]] = None,
                    playlist: List[Union[dict, MediaEntry]] = None):
@@ -551,7 +536,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         @param playlist: list of tracks in the current playlist
         """
         if isinstance(track, dict):
-            track = self._dict2result(track)
+            track = MediaEntry.from_dict(track)
             LOG.debug(f"play result: {track}")
 
         if isinstance(track, Playlist):
