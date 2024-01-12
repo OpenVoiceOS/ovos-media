@@ -33,8 +33,8 @@ class OCPMediaCatalog:
         # TODO - add search results clear/replace events
 
     def shutdown(self):
-        self.bus.remove("ovos.common_play.announce")
-        self.bus.remove("ovos.common_play.skills.detach")
+        self.bus.remove("ovos.common_play.announce", self.handle_skill_announce)
+        self.bus.remove("ovos.common_play.skills.detach", self.handle_ocp_skill_detach)
 
     def handle_skill_announce(self, message):
         skill_id = message.data.get("skill_id")
@@ -125,7 +125,7 @@ class NowPlaying(MediaEntry):
         self.skill_icon = ""
         self.image = ""
 
-    def update(self, entry: dict, skipkeys: list = None, newonly: bool = False):
+    def update(self, entry: MediaEntry, skipkeys: list = None, newonly: bool = False):
         """
         Update this MediaEntry
         @param entry: dict or MediaEntry object to update this object with
@@ -331,6 +331,8 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.add_event('ovos.common_play.shuffle.unset', self.handle_unset_shuffle)
         self.add_event('ovos.common_play.repeat.set', self.handle_set_repeat)
         self.add_event('ovos.common_play.repeat.unset', self.handle_unset_repeat)
+        self.add_event('ovos.common_play.SEI.get', self.handle_get_SEIs)
+        self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))  # report to ovos-core
 
     @property
     def active_skill(self) -> str:
@@ -447,11 +449,10 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         @param track: MediaEntry or dict representation of a MediaEntry to play
         """
         if isinstance(track, dict):
-            kwargs = {k: v for k, v in track.items()
-                      if k in inspect.signature(MediaEntry).parameters}
-            track = MediaEntry(**kwargs)
-        if not isinstance(track, MediaEntry):
+            track = MediaEntry.from_dict(track)
+        if not isinstance(track, (MediaEntry, Playlist)):
             raise ValueError(f"Expected MediaEntry, but got: {track}")
+
         self.now_playing.reset()  # reset now_playing to remove old metadata
         if isinstance(track, MediaEntry):
             # single track entry (MediaEntry)
@@ -500,6 +501,23 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
         return True
 
+    def handle_get_SEIs(self, message: Message):
+        """report available StreamExtractorIds
+        OCP plugins handle specific SEIs and return a real stream / extra metadata
+
+        this moves parsing to playback time instead of search time
+
+        SEIs are identifiers of the format "{SEI}//{uri}"
+        that might be present in media results
+
+        seis are NOT uris, a uri comes after {SEI}//
+
+        eg. for the youtube plugin a skill can return
+          "youtube//https://youtube.com/watch?v=wChqNkd6F24"
+        """
+        xtract = load_stream_extractors()  # @lru_cache, its a lazy loaded singleton
+        self.bus.emit(message.response({"SEI": xtract.supported_seis}))
+
     def on_invalid_media(self):
         """
         Handle media playback errors. Show an error and play the next track.
@@ -518,15 +536,18 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         @param playlist: list of tracks in the current playlist
         """
         if isinstance(track, dict):
-            kwargs = {k: v for k, v in track.items()
-                      if k in inspect.signature(MediaEntry).parameters}
-            track = MediaEntry(**kwargs)
-        if not isinstance(track, MediaEntry):
+            track = MediaEntry.from_dict(track)
+            LOG.debug(f"play result: {track}")
+
+        if isinstance(track, Playlist):
+            playlist = track
+            track = track[0]
+        elif not isinstance(track, MediaEntry):
             raise TypeError(f"Expected MediaEntry, got: {track}")
+
         if self.mpris:
             self.mpris.stop()
-        if self.state == PlayerState.PLAYING:
-            self.pause()  # make it more responsive
+
         if disambiguation:
             self.media.search_playlist.replace([t for t in disambiguation
                                                 if t not in self.media.search_playlist])
@@ -614,10 +635,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         End playback if there is no next track, accounting for repeat and
         shuffle settings.
         """
-        if self.playback_type == PlaybackType.UNDEFINED:
-            LOG.error("self.playback_type is undefined, can not play next")
-            return
-        elif self.playback_type in [PlaybackType.MPRIS]:
+        if self.playback_type in [PlaybackType.MPRIS]:
             if self.mpris:
                 self.mpris.play_next()
             return
@@ -625,7 +643,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             LOG.debug(f"Defer playing next track to skill")
             self.bus.emit(Message(f'ovos.common_play.{self.now_playing.skill_id}.next'))
             return
-        self.pause()  # make more responsive
 
         if self.loop_state == LoopState.REPEAT_TRACK:
             LOG.debug("Repeating single track")
@@ -667,7 +684,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.bus.emit(Message(
                 f'ovos.common_play.{self.now_playing.skill_id}.prev'))
             return
-        self.pause()  # make more responsive
 
         if self.shuffle:
             # TODO: Should skipping back get a random track instead of previous?
@@ -860,19 +876,15 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
     # ovos common play bus api requests
     def handle_play_request(self, message):
-        LOG.debug("Received external OVOS playback request")
+        LOG.debug("Received OCP playback request")
         repeat = message.data.get("repeat", False)
         if repeat:
             self.loop_state = LoopState.REPEAT
 
-        if message.data.get("tracks"):
-            # backwards compat / old style
-            playlist = disambiguation = message.data["tracks"]
-            media = playlist[0]
-        else:
-            media = message.data.get("media")
-            playlist = message.data.get("playlist") or [media]
-            disambiguation = message.data.get("disambiguation") or [media]
+        media = message.data.get("media")
+        playlist = message.data.get("playlist") or [media]
+        disambiguation = message.data.get("disambiguation") or [media]
+
         self.play_media(media, disambiguation, playlist)
 
     def handle_pause_request(self, message):

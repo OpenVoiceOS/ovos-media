@@ -1,25 +1,30 @@
 import abc
 import time
 from threading import Lock
+from typing import Callable
 
-from ovos_bus_client.message import Message
-from ovos_utils.log import LOG
-from ovos_utils.process_utils import MonotonicEvent
-
-from ovos_config.config import Configuration
 from ovos_plugin_manager.templates.media import MediaBackend, RemoteAudioPlayerBackend, RemoteVideoPlayerBackend, \
     RemoteWebPlayerBackend
+from ovos_utils.ocp import MediaState, TrackState
+
+from ovos_bus_client.message import Message
+from ovos_config.config import Configuration
 from ovos_media.utils import validate_message_context
+from ovos_utils.log import LOG
+from ovos_utils.process_utils import MonotonicEvent
 
 
 class BaseMediaService:
 
-    def __init__(self, bus, config=None, autoload=True, validate_source=True):
+    def __init__(self, bus, namespace: str, plugin_loader: Callable,
+                 config=None, autoload=True, validate_source=True):
         """
             Args:
                 bus: OVOS messagebus
         """
         self.bus = bus
+        self.namespace = namespace
+        self.plugin_loader = plugin_loader
         self.config = config or Configuration().get("media") or {}
         self.service_lock = Lock()
 
@@ -52,14 +57,93 @@ class BaseMediaService:
             data[s.name] = info
         return data
 
-    @abc.abstractmethod
+    def track_start(self, track):
+        """Callback method called from the services to indicate start of
+        playback of a track or end of playlist.
+        """
+        if track:
+            # Inform about the track about to start.
+            LOG.debug(f'New {self.namespace} track coming up!')
+            self.bus.emit(Message(f'ovos.{self.namespace}.playing_track',
+                                  data={'track': track}))
+        else:
+            # If no track is about to start last track of the queue has been
+            # played.
+            LOG.debug('End of playlist!')
+            self.bus.emit(Message(f'ovos.{self.namespace}.queue_end'))
+
     def load_services(self):
         """Method for loading services.
 
         Sets up the global service, default and registers the event handlers
         for the subsystem.
         """
-        raise NotImplementedError
+        local = []
+        remote = []
+
+        plugs = self.plugin_loader()
+        for player_name, plug_cfg in self.config.get(f"{self.namespace}_players", {}).items():
+            plug_name = plug_cfg["module"]
+            try:
+                service = plugs[plug_name](plug_cfg, self.bus)
+                service.aliases = plug_cfg.get("aliases", []) or [plug_name]
+                service.name = player_name
+                if isinstance(service, RemoteAudioPlayerBackend):
+                    remote.append(service)
+                else:
+                    local.append(service)
+            except:
+                LOG.exception(f"Failed to load {plug_name}")
+
+        # Sort services so local services are checked first
+        self.services = local + remote
+
+        # Register end of track callback
+        for s in self.services:
+            s.set_track_start_callback(self.track_start)
+
+        # Setup event handlers
+        self.bus.on(f'ovos.{self.namespace}.service.play', self.handle_play)
+        self.bus.on(f'ovos.{self.namespace}.service.pause', self.pause)
+        self.bus.on(f'ovos.{self.namespace}.service.resume', self.resume)
+        self.bus.on(f'ovos.{self.namespace}.service.stop', self.stop)
+        self.bus.on(f'ovos.{self.namespace}.service.track_info', self.handle_track_info)
+        self.bus.on(f'ovos.{self.namespace}.service.list_backends', self.handle_list_backends)
+        self.bus.on(f'ovos.{self.namespace}.service.set_track_position', self.handle_set_track_position)
+        self.bus.on(f'ovos.{self.namespace}.service.get_track_position', self.handle_get_track_position)
+        self.bus.on(f'ovos.{self.namespace}.service.get_track_length', self.handle_get_track_length)
+        self.bus.on(f'ovos.{self.namespace}.service.seek_forward', self.handle_seek_forward)
+        self.bus.on(f'ovos.{self.namespace}.service.seek_backward', self.handle_seek_backward)
+        self.bus.on(f'ovos.{self.namespace}.service.duck', self.lower_volume)
+        self.bus.on(f'ovos.{self.namespace}.service.unduck', self.restore_volume)
+
+        self._loaded.set()  # Report services loaded
+        return self.services
+
+    def get_preferred_players(self):
+        return []
+
+    def handle_media_state_change(self, message: Message):
+        """
+        if self.current and state == MediaState.LOADED_MEDIA:
+            self.current.play()
+            self.bus.emit(Message("ovos.common_play.track.state",
+                                  {"state": TrackState.PLAYING_AUDIO}))
+        """
+        state = message.data["state"]
+        if self.current and state == MediaState.LOADED_MEDIA:
+            self.current.play()
+            if self.namespace == "audio":
+                self.bus.emit(Message("ovos.common_play.track.state",
+                                      {"state": TrackState.PLAYING_AUDIO}))
+            elif self.namespace == "video":
+                self.bus.emit(Message("ovos.common_play.track.state",
+                                      {"state": TrackState.PLAYING_AUDIO}))
+            elif self.namespace == "web":
+                self.bus.emit(Message("ovos.common_play.track.state",
+                                      {"state": TrackState.PLAYING_AUDIO}))
+            else:
+                pass  # ???
 
     @abc.abstractmethod
     def handle_media_state_change(self, message: Message):
@@ -222,10 +306,11 @@ class BaseMediaService:
             tracks = message.data['tracks']
 
             # Find if the user wants to use a specific backend
+            query = message.data.get("utterance", "").lower()
             for s in self.services:
                 try:
-                    if ('utterance' in message.data and
-                            s.name in message.data['utterance']):
+                    # match query against "aliases" (assigned from config on load)
+                    if any(a.lower() in query.lower() for a in s.aliases):
                         preferred_service = s
                         LOG.debug(s.name + ' would be preferred')
                         break
@@ -333,4 +418,13 @@ class BaseMediaService:
         self.remove_listeners()
 
     def remove_listeners(self):
-        pass  # for extra logic to be called on shutdown
+        self.bus.remove(f'ovos.{self.namespace}.service.play', self.handle_play)
+        self.bus.remove(f'ovos.{self.namespace}.service.pause', self.pause)
+        self.bus.remove(f'ovos.{self.namespace}.service.resume', self.resume)
+        self.bus.remove(f'ovos.{self.namespace}.service.stop', self.stop)
+        self.bus.remove(f'ovos.{self.namespace}.service.track_info', self.handle_track_info)
+        self.bus.remove(f'ovos.{self.namespace}.service.get_track_position', self.handle_get_track_position)
+        self.bus.remove(f'ovos.{self.namespace}.service.set_track_position', self.handle_set_track_position)
+        self.bus.remove(f'ovos.{self.namespace}.service.get_track_length', self.handle_get_track_length)
+        self.bus.remove(f'ovos.{self.namespace}.service.seek_forward', self.handle_seek_forward)
+        self.bus.remove(f'ovos.{self.namespace}.service.seek_backward', self.handle_seek_backward)

@@ -17,8 +17,11 @@ from ovos_config import Configuration
 def validate_message_context(message, native_sources=None):
     destination = message.context.get("destination")
     if destination:
-        native_sources = native_sources or Configuration()["Audio"].get(
-            "native_sources", ["debug_cli", "audio"]) or []
+        # moved to global config level, used to be in "Audio" subsection 
+        native_sources = native_sources or \
+                        Configuration().get("native_sources") or \
+                        Configuration().get("Audio", {}).get("native_sources") or \
+                        ["debug_cli", "audio"]
         if any(s in destination for s in native_sources):
             # request from device
             return True
@@ -26,7 +29,3 @@ def validate_message_context(message, native_sources=None):
         return False
     # broadcast for everyone
     return True
-
-
-def report_timing(ident, stopwatch, data):
-    """ TODO - implement metrics upload at some point """
