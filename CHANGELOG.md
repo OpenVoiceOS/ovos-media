@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/379c62b2b7f6d6ff6f5fb59d1feb683bbbb56f41...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a3...HEAD)
+
+**Merged pull requests:**
+
+- MPRIS, SEIs and housekeeping [\#3](https://github.com/OpenVoiceOS/ovos-media/pull/3) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.1a3](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a3) (2024-01-10)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/379c62b2b7f6d6ff6f5fb59d1feb683bbbb56f41...V0.0.1a3)
 
 **Implemented enhancements:**
 
