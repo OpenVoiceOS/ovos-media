@@ -310,7 +310,7 @@ class BaseMediaService:
             for s in self.services:
                 try:
                     # match query against "aliases" (assigned from config on load)
-                    if any(a.lower() in query for a in s.aliases):
+                    if any(a.lower() in query.lower() for a in s.aliases):
                         preferred_service = s
                         LOG.debug(s.name + ' would be preferred')
                         break
