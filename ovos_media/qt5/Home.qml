@@ -143,7 +143,7 @@ Mycroft.Delegate {
             MouseArea {
                 anchors.fill: parent
                 onClicked: {
-                    Mycroft.MycroftController.sendRequest("system.display.homescreen", {})
+                    Mycroft.MycroftController.sendRequest("homescreen.manager.show_active", {})
                 }
             }
         }

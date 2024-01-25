@@ -172,7 +172,5 @@ Item {
         }
     }
 
-    Component.onCompleted: {
-        disambiguationListView.forceActiveFocus()
-    }
+
 }

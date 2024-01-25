@@ -456,6 +456,11 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         if not isinstance(track, (MediaEntry, Playlist)):
             raise ValueError(f"Expected MediaEntry, but got: {track}")
 
+        # remove existing MPRIS entry if we were tracking that
+        if self.now_playing.playback == PlaybackType.MPRIS and \
+                track.playback != PlaybackType.MPRIS:
+            self.playlist.clear()
+
         self.now_playing.reset()  # reset now_playing to remove old metadata
         if isinstance(track, MediaEntry):
             # single track entry (MediaEntry)
@@ -889,7 +894,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
         media = message.data.get("media")
         playlist = message.data.get("playlist") or [media]
-        disambiguation = message.data.get("disambiguation") or [media]
+        disambiguation = message.data.get("disambiguation") or playlist
 
         self.play_media(media, disambiguation, playlist)
 

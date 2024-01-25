@@ -79,9 +79,11 @@ class MprisPlayerCtl(Thread):
             data = self.player_meta[self.main_player]
 
             # reset ocp, it will display metadata of current track
+            render = False
             if self._ocp_player.active_skill != self.main_player:
                 self._ocp_player.reset()
                 self._ocp_player.active_skill = self.main_player
+                render = True
 
             # player state
             state = data.get("state") or "Playing"
@@ -113,12 +115,14 @@ class MprisPlayerCtl(Thread):
             data["status"] = TrackState.PLAYING_MPRIS
             data["length"] = data.get("length", 0) / 1000
             data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
+
             self._ocp_player.set_now_playing(data)
             if data["state"] == "Playing":
                 self._ocp_player.gui.prepare_playlist()
                 self._ocp_player.set_now_playing(data)
                 # move GUI to player page
-                self._ocp_player.gui.manage_display(OCPGUIState.PLAYER)
+                if render:
+                    self._ocp_player.gui.manage_display(OCPGUIState.PLAYER)
 
     async def handle_new_player(self, data):
         if data['name'] not in self._player_fails:

@@ -28,7 +28,7 @@ Item {
 
             Image {
                 id: nowPlayingImage
-                source: nowPlayingHomeBar.mediaArt
+                source: sessionData.image
                 Layout.fillHeight: true
                 Layout.preferredWidth: nowPlayingImage.height
                 fillMode: Image.PreserveAspectFit

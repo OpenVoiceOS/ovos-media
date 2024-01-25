@@ -62,7 +62,6 @@ class MediaService(Thread):
         self.ocp.add_event("ovos.common_play.ping", self.handle_ping)
         self.ocp.add_event("ovos.common_play.search.start", self.handle_search_start)
         self.ocp.add_event("ovos.common_play.search.end", self.handle_search_end)
-        # self.ocp.add_event("mycroft.gui.screen.close", self.handle_close)
 
     def handle_home(self, message):
         self.ocp.gui.manage_display(OCPGUIState.HOME)
@@ -73,9 +72,6 @@ class MediaService(Thread):
         @param message: message associated with request
         """
         self.bus.emit(message.reply("ovos.common_play.pong"))
-
-    def handle_close(self, message):
-        self.ocp.gui.release()
 
     def handle_search_start(self, message):
         """when OCP pipeline triggers, show search animation"""

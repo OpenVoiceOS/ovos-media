@@ -1,11 +1,8 @@
 import enum
-import time
 from os.path import join, dirname
 from threading import Timer
 
 from ovos_bus_client.apis.gui import GUIInterface
-from ovos_bus_client.message import Message
-from ovos_utils.events import EventSchedulerInterface
 from ovos_utils.ocp import *
 
 from ovos_config import Configuration
@@ -13,7 +10,6 @@ from ovos_config import Configuration
 
 class OCPGUIState(str, enum.Enum):
     HOME = "home"
-    APPS = "apps"  # skill selection menu
     PLAYER = "player"  # show playback metadata
     PLAYLIST = "playlist"
     DISAMBIGUATION = "disambiguation"
@@ -33,14 +29,8 @@ class OCPGUIInterface(GUIInterface):
         self.notification_timeout = None
         self.search_mode_is_app = False
         self.persist_home_display = False
-        self.player_page = "OVOSSyncPlayer"  # sync player
         self.state = OCPGUIState.SPINNER
 
-    def handle_set_player(self, message):
-        # plugins can set the player page
-        page = message.data["page"]
-        self.player_page = page
-        LOG.debug(f"Player page set to {page}")
 
     def bind(self, player):
         self.player = player
@@ -53,8 +43,6 @@ class OCPGUIInterface(GUIInterface):
                               self.handle_play_from_search)
         self.player.add_event('ovos.common_play.skill.play',
                               self.handle_play_skill_featured_media)
-        self.player.add_event('ovos.common_play.gui.set_player',
-                              self.handle_set_player)
 
     def release(self):
         self.clear()
@@ -125,13 +113,12 @@ class OCPGUIInterface(GUIInterface):
         # handle any state management needed before render
         if state == OCPGUIState.HOME:
             self.prepare_home()
-            if self.state != state:
-                self.render_home()
+            self.render_home()
         elif state == OCPGUIState.PLAYER:
             self.prepare_playlist()
+            self.prepare_search()
             self.prepare_player()
-            if self.state != state:
-                self.render_player()
+            self.render_player()
         elif state == OCPGUIState.PLAYLIST:
             self.prepare_playlist()
             if self.state != state:
@@ -146,7 +133,6 @@ class OCPGUIInterface(GUIInterface):
             self.render_playback_error()
         self.state = state
 
-
     def remove_homescreen(self):
         self.release()
 
@@ -154,8 +140,6 @@ class OCPGUIInterface(GUIInterface):
     def prepare_home(self):
         self.persist_home_display = True
         self.update_ocp_skills()  # populate self["skillCards"]
-        if self.player.state != PlayerState.PLAYING:
-            self.player_page = "OVOSSyncPlayer"  # reset player
 
     def prepare_player(self):
         self.persist_home_display = True
@@ -171,7 +155,7 @@ class OCPGUIInterface(GUIInterface):
 
     # OCP rendering
     def render_pages(self, timeout=None, index=0):
-        pages = ["Home", "PlayerLoader", "PlaylistView"]
+        pages = ["Home", "OVOSSyncPlayer", "PlaylistView"]
         self.show_pages(pages, index,
                         override_idle=timeout or True,
                         override_animations=True)
@@ -186,14 +170,6 @@ class OCPGUIInterface(GUIInterface):
 
     def render_player(self):
         self.send_event("ocp.gui.hide.busy.overlay")  # remove search spinner
-        if self.get("playerBackend", "") != self.player_page:
-            self.send_event("ocp.gui.player.loader.clear")  # if player changed, remove previous
-
-        self["playerBackend"] = self.player_page
-        if len(self.player.disambiguation) and len(self.player.tracks):
-            self["displaySuggestionBar"] = True
-        else:
-            self["displaySuggestionBar"] = False
 
         self.render_pages(index=1)
 
@@ -203,12 +179,10 @@ class OCPGUIInterface(GUIInterface):
             self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
     def render_playlist(self, timeout=None):
-        self["displaySuggestionBar"] = False
         self.render_pages(timeout, index=2)
         self.send_event("ocp.gui.show.suggestion.view.playlist")
 
     def render_disambiguation(self, timeout=None):
-        self["displaySuggestionBar"] = False
         self.render_pages(timeout, index=2)
         self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
@@ -277,7 +251,6 @@ class OCPGUIInterface(GUIInterface):
 
         self.player.playlist.clear()
         self.player.media.replace(playlist)
-        self["displaySuggestionBar"] = False
 
         self.manage_display(OCPGUIState.DISAMBIGUATION)
 

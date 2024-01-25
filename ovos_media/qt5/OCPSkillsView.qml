@@ -42,19 +42,6 @@ Item {
         id: colLay1
         anchors.fill: parent
 
-        Kirigami.Heading {
-            id: watchItemList
-            text: "Skills"
-            level: 2
-        }
-
-        Kirigami.Separator {
-            id: sept2
-            Layout.fillWidth: true
-            Layout.preferredHeight: 1
-            z: 100
-        }
-
         Item {            
             Layout.fillWidth: true            
             Layout.fillHeight: true            

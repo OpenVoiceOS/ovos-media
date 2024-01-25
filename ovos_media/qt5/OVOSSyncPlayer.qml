@@ -9,8 +9,10 @@ import QtQuick.Templates 2.12 as T
 import QtMultimedia 5.12
 import "code/helper.js" as HelperJS
 
-Item {
-    id: root
+Mycroft.Delegate {
+    fillWidth: true
+    skillBackgroundSource: sessionData.bg_image
+    skillBackgroundColorOverlay: Qt.rgba(0, 0, 0, 0.85)
     property var thumbnail: sessionData.image
     property var title: sessionData.title
     property var author: sessionData.artist
@@ -42,7 +44,7 @@ Item {
     Image {
         id: imgbackground
         anchors.fill: parent
-        source: root.thumbnail
+        source: sessionData.image
 
         MouseArea {
             anchors.fill: parent
@@ -82,7 +84,7 @@ Item {
                     id: img
                     property bool rounded: true
                     property bool adapt: true
-                    source: root.thumbnail
+                    source: sessionData.image
                     width: parent.height
                     anchors.horizontalCenter: parent.horizontalCenter
                     height: width
@@ -116,7 +118,7 @@ Item {
 
                     Label {
                         id: authortitle
-                        text: root.author
+                        text: sessionData.artist
                         maximumLineCount: 1
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -135,7 +137,7 @@ Item {
 
                     Label {
                         id: songtitle
-                        text: root.title
+                        text: sessionData.title
                         maximumLineCount: 1
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -171,8 +173,8 @@ Item {
 
                 AudioPlayerControl {
                     id: repeatButton
-                    controlIcon: root.loopStatus === "RepeatTrack" ? Qt.resolvedUrl("images/media-playlist-repeat.svg") : root.loopStatus === "None" ? Qt.resolvedUrl("images/media-playlist-repeat-track.svg") : Qt.resolvedUrl("images/media-playlist-repeat.svg")
-                    controlIconColor: root.loopStatus === "None" ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
+                    controlIcon: sessionData.loopStatus === "RepeatTrack" ? Qt.resolvedUrl("images/media-playlist-repeat.svg") : sessionData.loopStatus === "None" ? Qt.resolvedUrl("images/media-playlist-repeat-track.svg") : Qt.resolvedUrl("images/media-playlist-repeat.svg")
+                    controlIconColor: sessionData.loopStatus === "None" ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
                     horizontalMode: root.horizontalMode
 
                     onClicked: {
@@ -182,7 +184,7 @@ Item {
                 AudioPlayerControl {
                     id: prevButton
                     controlIcon: Qt.resolvedUrl("images/media-skip-backward.svg")
-                    controlIconColor: root.canPrev === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
+                    controlIconColor: sessionData.canPrev === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
 
                     onClicked: {
@@ -193,7 +195,7 @@ Item {
                 AudioPlayerControl {
                     id: playButton
                     controlIcon: playerState === MediaPlayer.PlayingState ? Qt.resolvedUrl("images/media-playback-pause.svg") : Qt.resolvedUrl("images/media-playback-start.svg")
-                    controlIconColor: root.canResume === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
+                    controlIconColor: sessionData.canResume === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
 
                     onClicked: {
@@ -223,7 +225,7 @@ Item {
                 AudioPlayerControl {
                     id: nextButton
                     controlIcon: Qt.resolvedUrl("images/media-skip-forward.svg")
-                    controlIconColor: root.canNext === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
+                    controlIconColor: sessionData.canNext === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
 
                     onClicked: {
@@ -234,7 +236,7 @@ Item {
                 AudioPlayerControl {
                     id: shuffleButton
                     controlIcon: Qt.resolvedUrl("images/media-playlist-shuffle.svg")
-                    controlIconColor: root.shuffleStatus === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
+                    controlIconColor: sessionData.shuffleStatus === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
                     horizontalMode: root.horizontalMode
 
                     onClicked: {}

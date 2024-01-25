@@ -171,7 +171,5 @@ Item {
         }
     }
 
-    Component.onCompleted: {
-        resultsListView.forceActiveFocus()
-    }
+
 }
