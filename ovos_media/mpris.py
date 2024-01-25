@@ -1,4 +1,5 @@
 import asyncio
+import os.path
 from threading import Thread, Event
 from time import sleep
 
@@ -7,6 +8,8 @@ from dbus_next.constants import BusType
 from dbus_next.message import Message as DbusMessage, MessageType as DbusMessageType
 from dbus_next.service import ServiceInterface, method, dbus_property, PropertyAccess
 from ovos_bus_client.message import Message
+
+from ovos_media.gui import OCPGUIState
 from ovos_utils.log import LOG
 from ovos_utils.ocp import TrackState, PlaybackType, PlayerState, LoopState, MediaState
 
@@ -45,7 +48,7 @@ class MprisPlayerCtl(Thread):
         self.players = {}
         self.player_meta = {}
         self._player_fails = {}
-        self.manage_players = True # manage_players
+        self.manage_players = True  # manage_players
         # TODO from ovos_media.conf
         self.ignored_players = [
             "org.mpris.MediaPlayer2.OCP",
@@ -71,6 +74,7 @@ class MprisPlayerCtl(Thread):
     def _update_ocp(self):
         if self.stop_event.is_set() or not self.manage_players:
             return
+
         if self._ocp_player and self.player_meta.get(self.main_player):
             data = self.player_meta[self.main_player]
 
@@ -93,11 +97,11 @@ class MprisPlayerCtl(Thread):
 
             state = data.get("loop_state") or 0
             if state == 1:
-                self._ocp_player.loop_state = LoopState.REPEAT
+                self._ocp_player.loop_state =  data["loop_state"] = LoopState.REPEAT
             elif state == 2:
-                self._ocp_player.loop_state = LoopState.REPEAT_TRACK
+                self._ocp_player.loop_state =  data["loop_state"] = LoopState.REPEAT_TRACK
             else:
-                self._ocp_player.loop_state = LoopState.NONE
+                self._ocp_player.loop_state =  data["loop_state"] = LoopState.NONE
 
             self._ocp_player.shuffle = data.get("shuffle") or self._ocp_player.shuffle
             self._ocp_player.playback_type = PlaybackType.MPRIS
@@ -107,7 +111,14 @@ class MprisPlayerCtl(Thread):
             data["bg_image"] = data.get("image")
             data["playback"] = PlaybackType.MPRIS
             data["status"] = TrackState.PLAYING_MPRIS
+            data["length"] = data.get("length", 0) / 1000
+            data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
             self._ocp_player.set_now_playing(data)
+            if data["state"] == "Playing":
+                self._ocp_player.gui.prepare_playlist()
+                self._ocp_player.set_now_playing(data)
+                # move GUI to player page
+                self._ocp_player.gui.manage_display(OCPGUIState.PLAYER)
 
     async def handle_new_player(self, data):
         if data['name'] not in self._player_fails:
@@ -117,6 +128,7 @@ class MprisPlayerCtl(Thread):
         LOG.info(f"MPRIS Player Shuffle: {shuffle}")
         if self.manage_players:
             self._ocp_player.shuffle = shuffle
+            self._ocp_player.gui.update_seekbar_capabilities()
 
     async def handle_player_loop_state(self, state):
         LOG.info(f"MPRIS Player Repeat: {state}")
@@ -127,6 +139,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.loop_state = LoopState.REPEAT_TRACK
             else:
                 self._ocp_player.loop_state = LoopState.NONE
+            self._ocp_player.gui.update_seekbar_capabilities()
 
     async def handle_player_state(self, state):
         LOG.info(f"MPRIS Player State: {state}")
@@ -162,9 +175,10 @@ class MprisPlayerCtl(Thread):
         if self.manage_players:
             self._update_ocp()
             for p, dta in self.players.items():
+                if p == name:
+                    continue
                 try:
-                    if p != name and self.player_meta[name]["state"] == "Playing":
-                        LOG.info(f"Stopping MPRIS player: {p}")
+                    if self.player_meta[name]["state"] == "Playing":
                         await self._stop_player(p)
                 except:
                     LOG.error(f"failed to stop: {p}")
@@ -241,7 +255,7 @@ class MprisPlayerCtl(Thread):
             return
         try:
             if self.player_meta[name]["state"] == "Playing":
-                LOG.debug(f"stopping player {name}")
+                LOG.info(f"Stopping MPRIS player: {name}")
                 player = self.players[name].get_interface(
                     'org.mpris.MediaPlayer2.Player')
                 await player.call_stop()
@@ -253,6 +267,7 @@ class MprisPlayerCtl(Thread):
                 LOG.warning(f"player {name} can not be stopped")
         if name == self.main_player:
             self.main_player = None
+        self.player_meta[name]["state"] = "Stopped"
 
     async def _stop_all(self):
         for p in self.players:
@@ -275,7 +290,9 @@ class MprisPlayerCtl(Thread):
         players = []
         for name in reply.body[0]:
             if "org.mpris.MediaPlayer2" in name:
-                if name in self.players or name in self.ignored_players:
+                if name.startswith("org.mpris.MediaPlayer2.kdeconnect.") or \
+                        name in self.players or \
+                        name in self.ignored_players:
                     continue
                 await self.handle_new_player({"name": name})
                 introspection = await self.dbus.introspect(
@@ -316,6 +333,8 @@ class MprisPlayerCtl(Thread):
                     ocp_data = self._meta2dict(name, variant.value)
                     LOG.info(f"MPRIS info: {ocp_data}")
                     await self.update_player_meta(player_name, variant.value)
+                    if name == self.main_player:
+                        self._update_ocp()
                 elif changed == "Shuffle":
                     self.player_meta[player_name]["shuffle"] = variant.value
                     await self.handle_player_shuffle(variant.value)
@@ -351,6 +370,10 @@ class MprisPlayerCtl(Thread):
                 ocp_data["image"] = v.value
             elif k == "mpris:length":
                 ocp_data["length"] = v.value
+
+        # some players dont report state directly (eg, firefox)
+        if not ocp_data["state"] and ocp_data.get("title"):
+            ocp_data["state"] = "Playing"
         return ocp_data
 
     async def update_player_meta(self, name, meta):
@@ -358,6 +381,9 @@ class MprisPlayerCtl(Thread):
         if name not in self.player_meta:
             LOG.info(f"MPRIS info: {ocp_data}")
         self.player_meta[name] = ocp_data
+        if self.main_player is None and ocp_data.get("state", "") == "Playing":
+            LOG.info(f"Active MPRIS player: {name}")
+            await self._set_main_player(name)
         await self.handle_sync_player(ocp_data)
 
     async def query_player(self, name):

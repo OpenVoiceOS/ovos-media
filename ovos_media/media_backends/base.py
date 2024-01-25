@@ -84,6 +84,9 @@ class BaseMediaService:
         plugs = self.plugin_loader()
         for player_name, plug_cfg in self.config.get(f"{self.namespace}_players", {}).items():
             plug_name = plug_cfg["module"]
+            if plug_name not in plugs:
+                LOG.error(f"{plug_name} configured but not installed")
+                continue
             try:
                 service = plugs[plug_name](plug_cfg, self.bus)
                 service.aliases = plug_cfg.get("aliases", []) or [plug_name]
@@ -144,26 +147,6 @@ class BaseMediaService:
                                       {"state": TrackState.PLAYING_AUDIO}))
             else:
                 pass  # ???
-
-    @abc.abstractmethod
-    def handle_media_state_change(self, message: Message):
-        """
-        if self.current and state == MediaState.LOADED_MEDIA:
-            self.current.play()
-            self.bus.emit(Message("ovos.common_play.track.state",
-                                  {"state": TrackState.PLAYING_AUDIO}))
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def handle_media_state_change(self, message: Message):
-        """
-        if self.current and state == MediaState.LOADED_MEDIA:
-            self.current.play()
-            self.bus.emit(Message("ovos.common_play.track.state",
-                                  {"state": TrackState.PLAYING_AUDIO}))
-        """
-        raise NotImplementedError
 
     def wait_for_load(self, timeout=3 * 60):
         """Wait for services to be loaded.

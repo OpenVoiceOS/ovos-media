@@ -6,6 +6,7 @@ from ovos_utils.process_utils import ProcessStatus, StatusCallbackMap
 
 from ovos_config.config import Configuration
 from ovos_media.player import OCPMediaPlayer
+from ovos_media.gui import OCPGUIState
 
 
 def on_ready():
@@ -57,6 +58,32 @@ class MediaService(Thread):
         self.status.set_alive()
         self.init_messagebus()
         self.ocp = OCPMediaPlayer(self.bus)
+        self.ocp.add_event('ovos.common_play.home', self.handle_home)
+        self.ocp.add_event("ovos.common_play.ping", self.handle_ping)
+        self.ocp.add_event("ovos.common_play.search.start", self.handle_search_start)
+        self.ocp.add_event("ovos.common_play.search.end", self.handle_search_end)
+        # self.ocp.add_event("mycroft.gui.screen.close", self.handle_close)
+
+    def handle_home(self, message):
+        self.ocp.gui.manage_display(OCPGUIState.HOME)
+
+    def handle_ping(self, message):
+        """
+        Handle ovos.common_play.ping Messages and emit a response
+        @param message: message associated with request
+        """
+        self.bus.emit(message.reply("ovos.common_play.pong"))
+
+    def handle_close(self, message):
+        self.ocp.gui.release()
+
+    def handle_search_start(self, message):
+        """when OCP pipeline triggers, show search animation"""
+        self.ocp.gui.manage_display(OCPGUIState.SPINNER)
+
+    def handle_search_end(self, message):
+        """remove search spinner"""
+        self.ocp.gui.remove_search_spinner()
 
     def run(self):
         self.status.set_ready()

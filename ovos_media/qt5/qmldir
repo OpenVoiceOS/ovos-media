@@ -1,0 +1,12 @@
+AudioPlayerControl 1.0 AudioPlayerControl.qml
+Disambiguation 1.0 Disambiguation.qml
+GenericCloseControl 1.0 GenericCloseControl.qml
+Home 1.0 Home.qml
+NowPlayingHomeBar 1.0 NowPlayingHomeBar.qml
+OCPSkillsView 1.0 OCPSkillsView.qml
+OVOSSyncPlayer 1.0 OVOSSyncPlayer.qml
+PlayerLoader 1.0 PlayerLoader.qml
+Playlist 1.0 Playlist.qml
+Search 1.0 Search.qml
+SuggestionsView 1.0 SuggestionsView.qml
+delegates delegates
