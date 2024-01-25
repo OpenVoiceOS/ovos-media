@@ -18,7 +18,7 @@ from ovos_media.mpris import MprisPlayerCtl
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_workshop import OVOSAbstractApplication
-
+from ovos_media.gui import OCPGUIInterface, OCPGUIState
 
 class OCPMediaCatalog:
     def __init__(self, bus, config):
@@ -304,6 +304,9 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         else:
             self.mpris = MprisPlayerCtl(self, manage_players=manage_players)
 
+        self.gui = OCPGUIInterface()
+        self.gui.bind(self)
+
     def register_bus_handlers(self):
         # ovos common play bus api
         self.add_event('ovos.common_play.player.state', self.handle_player_state_update)
@@ -453,15 +456,17 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         if not isinstance(track, (MediaEntry, Playlist)):
             raise ValueError(f"Expected MediaEntry, but got: {track}")
 
+        # remove existing MPRIS entry if we were tracking that
+        if self.now_playing.playback == PlaybackType.MPRIS and \
+                track.playback != PlaybackType.MPRIS:
+            self.playlist.clear()
+
         self.now_playing.reset()  # reset now_playing to remove old metadata
         if isinstance(track, MediaEntry):
             # single track entry (MediaEntry)
             self.now_playing.update(track)
-            # copy now_playing (without event handlers) to playlist
-            # entry = self.now_playing.as_entry()
             if track not in self.playlist:  # compared by uri
                 self.playlist.add_entry(track)
-
         elif isinstance(track, Playlist):
             # this is a playlist result (list of dicts)
             self.playlist.clear()
@@ -469,8 +474,11 @@ class OCPMediaPlayer(OVOSAbstractApplication):
                 self.playlist.add_entry(entry)
             self.now_playing.update(self.playlist[0])
 
-        # sync playlist position
-        if self.playlist.position != 0:
+        if track.playback == PlaybackType.MPRIS:
+            self.playlist.clear()
+            self.playlist.add_entry(track)
+        else:
+            # sync playlist position
             self.playlist.goto_track(self.now_playing)
 
         if self.mpris:
@@ -518,10 +526,11 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         xtract = load_stream_extractors()  # @lru_cache, its a lazy loaded singleton
         self.bus.emit(message.response({"SEI": xtract.supported_seis}))
 
-    def on_invalid_media(self):
+    def on_invalid_stream(self):
         """
         Handle media playback errors. Show an error and play the next track.
         """
+        self.gui.manage_display(OCPGUIState.PLAYBACK_ERROR)
         LOG.warning(f"Failed to play: {self.now_playing}")
         self.play_next()
 
@@ -574,8 +583,10 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         # validate new stream
         if not self.validate_stream():
             LOG.warning("Stream Validation Failed")
-            self.on_invalid_media()
+            self.on_invalid_stream()
             return
+
+        self.gui.manage_display(OCPGUIState.PLAYER)
 
         self.track_history.setdefault(self.now_playing.uri, 0)
         self.track_history[self.now_playing.uri] += 1
@@ -766,7 +777,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
                                   PlaybackType.UNDEFINED]:
             self.web_service.stop()
         if self.mpris and self.playback_type in [PlaybackType.MPRIS]:
-            self.mpris.stop()
+            self.mpris.pause()
         self.set_player_state(PlayerState.STOPPED)
 
     def handle_MPRIS_takeover(self):
@@ -862,7 +873,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
                 self.play_next()
 
     def handle_invalid_media(self, message):
-        pass
+        self.gui.manage_display(OCPGUIState.PLAYBACK_ERROR)
 
     def handle_playback_ended(self, message):
         if len(self.playlist) and self.ocp_config.get("autoplay", True) and \
@@ -883,7 +894,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
         media = message.data.get("media")
         playlist = message.data.get("playlist") or [media]
-        disambiguation = message.data.get("disambiguation") or [media]
+        disambiguation = message.data.get("disambiguation") or playlist
 
         self.play_media(media, disambiguation, playlist)
 
