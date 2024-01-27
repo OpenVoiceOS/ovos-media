@@ -815,6 +815,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.video_service.stop()
         self.web_service.stop()
         self.stop_skill()
+        self.now_playing.original_uri = ""
 
     def stop_skill(self):
         """
