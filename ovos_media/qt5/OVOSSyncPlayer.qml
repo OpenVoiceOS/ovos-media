@@ -31,6 +31,10 @@ Mycroft.Delegate {
     property bool horizontalMode: sessionData.horizontal
 
 
+    onTitleChanged: {
+        likeIcon.visible = sessionData.isLike
+    }
+
     onFocusChanged: {
         if (focus) {
             playButton.forceActiveFocus()

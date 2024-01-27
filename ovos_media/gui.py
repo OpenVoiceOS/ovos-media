@@ -59,7 +59,8 @@ class OCPGUIInterface(GUIInterface):
         self["canPause"] = self.player.state == PlayerState.PLAYING
         self["canPrev"] = self.player.can_prev
         self["canNext"] = self.player.can_next
-        self["isLike"] = self.player.now_playing.original_uri in self.player.media.liked_songs
+        self["isLike"] = self.player.now_playing.original_uri in self.player.media.liked_songs and\
+                         self.player.now_playing.playback != PlaybackType.MPRIS
 
         if self.player.loop_state == LoopState.NONE:
             self["loopStatus"] = "None"
