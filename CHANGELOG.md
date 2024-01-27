@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a5...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a6...HEAD)
+
+**Fixed bugs:**
+
+- fix/MPRIS like button [\#6](https://github.com/OpenVoiceOS/ovos-media/pull/6) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.1a6](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a6) (2024-01-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a5...V0.0.1a6)
 
 **Implemented enhancements:**
 
