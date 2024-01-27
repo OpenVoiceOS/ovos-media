@@ -225,9 +225,17 @@ Mycroft.Delegate {
                     horizontalMode: root.horizontalMode
 
                     KeyNavigation.left: prevButton
-                    KeyNavigation.right: nextButton
+
                     Keys.onReturnPressed: {
                          clicked()
+                    }
+
+                    Keys.onRightPressed: {
+                        if (likeIcon.visible){
+                            likeIcon.forceActiveFocus()
+                        } else {
+                            nextButton.forceActiveFocus()
+                        }
                     }
 
                     onClicked: {
@@ -241,16 +249,46 @@ Mycroft.Delegate {
                     }
                 }
 
+
+                AudioPlayerControl {
+                    id: likeIcon
+                    controlIcon: Qt.resolvedUrl("images/liked.svg")
+                    controlIconColor: sessionData.isLike === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
+                    horizontalMode: root.horizontalMode
+                    visible: sessionData.isLike
+
+                    KeyNavigation.left: playButton
+                    KeyNavigation.right: nextButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
+
+                    onClicked: {
+                        triggerGuiEvent("unlike", {"uri": sessionData.uri, "track": sessionData.media})
+                        sessionData.isLike = true
+                        likeIcon.visible = false
+                        playButton.forceActiveFocus()
+                    }
+                }
+
+
                 AudioPlayerControl {
                     id: nextButton
                     controlIcon: Qt.resolvedUrl("images/media-skip-forward.svg")
                     controlIconColor: sessionData.canNext === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
 
-                    KeyNavigation.left: playButton
                     KeyNavigation.right: shuffleButton
                     Keys.onReturnPressed: {
                          clicked()
+                    }
+
+                    Keys.onLeftPressed: {
+                        if (likeIcon.visible){
+                            likeIcon.forceActiveFocus()
+                        } else {
+                            playButton.forceActiveFocus()
+                        }
                     }
 
                     onClicked: {
@@ -265,34 +303,11 @@ Mycroft.Delegate {
                     horizontalMode: root.horizontalMode
 
                     KeyNavigation.left: nextButton
-                    KeyNavigation.right: likeButton
                     Keys.onReturnPressed: {
                          clicked()
                     }
-
-
                     onClicked: {
                         triggerGuiEvent("shuffle.toggle", {})
-                    }
-                }
-
-                AudioPlayerControl {
-                    id: likeIcon
-                    controlIcon: Qt.resolvedUrl("images/liked.svg")
-                    controlIconColor: sessionData.isLike === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
-                    horizontalMode: root.horizontalMode
-                    visible: sessionData.isLike
-
-                    KeyNavigation.left: shuffleButton
-                    Keys.onReturnPressed: {
-                         clicked()
-                    }
-
-                    onClicked: {
-                        triggerGuiEvent("unlike", {"uri": sessionData.uri, "track": sessionData.media})
-                        sessionData.isLike = true
-                        likeIcon.visible = false
-                        playButton.forceActiveFocus()
                     }
                 }
 
