@@ -27,20 +27,9 @@ Mycroft.Delegate {
     property var shuffleStatus: sessionData.shuffleStatus
 
     //Player Support Vertical / Horizontal Layouts
-    //property bool horizontalMode: width > height ? 1 : 0
-    property bool horizontalMode: false
+    // property bool horizontalMode: width > height ? 1 : 0
+    property bool horizontalMode: sessionData.horizontal
 
-    function formatedDuration(millis){
-        var minutes = Math.floor(millis / 60000);
-        var seconds = ((millis % 60000) / 1000).toFixed(0);
-        return minutes + ":" + (seconds < 10 ? '0' : '') + seconds;
-    }
-
-    function formatedPosition(millis){
-        var minutes = Math.floor(millis / 60000);
-        var seconds = ((millis % 60000) / 1000).toFixed(0);
-        return minutes + ":" + (seconds < 10 ? '0' : '') + seconds;
-    }
 
     onFocusChanged: {
         if (focus) {
@@ -48,7 +37,7 @@ Mycroft.Delegate {
         }
     }
 
-    KeyNavigation.down: repeatButton
+    KeyNavigation.down: playButton
 
     Image {
         id: imgbackground
@@ -98,6 +87,17 @@ Mycroft.Delegate {
                     anchors.horizontalCenter: parent.horizontalCenter
                     height: width
                     z: 20
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (sessionData.uri &&  likeIcon.visible === false) {
+                                sessionData.isLike = true
+                                triggerGuiEvent("like", {"uri": sessionData.uri, "track": sessionData.media})
+                                likeIcon.visible = true
+                            }
+                        }
+                    }
 
                     layer.enabled: rounded
                     layer.effect: OpacityMask {
@@ -164,6 +164,7 @@ Mycroft.Delegate {
                 }
             }
         }
+
 
         Rectangle {
             id: innerBox
@@ -260,6 +261,7 @@ Mycroft.Delegate {
                     horizontalMode: root.horizontalMode
 
                     KeyNavigation.left: nextButton
+                    KeyNavigation.right: likeButton
                     Keys.onReturnPressed: {
                          clicked()
                     }
@@ -269,6 +271,27 @@ Mycroft.Delegate {
                         triggerGuiEvent("shuffle.toggle", {})
                     }
                 }
+
+                AudioPlayerControl {
+                    id: likeIcon
+                    controlIcon: Qt.resolvedUrl("images/liked.svg")
+                    controlIconColor: sessionData.isLike === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
+                    horizontalMode: root.horizontalMode
+                    visible: sessionData.isLike
+
+                    KeyNavigation.left: shuffleButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
+
+                    onClicked: {
+                        triggerGuiEvent("unlike", {"uri": sessionData.uri, "track": sessionData.media})
+                        sessionData.isLike = true
+                        likeIcon.visible = false
+                        playButton.forceActiveFocus()
+                    }
+                }
+
             }
         }
     }
@@ -276,5 +299,6 @@ Mycroft.Delegate {
     GenericCloseControl {
         id: genericCloseControl
     }
+
 }
 

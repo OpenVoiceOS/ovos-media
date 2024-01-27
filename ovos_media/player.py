@@ -4,6 +4,7 @@ from os.path import join, dirname
 from threading import RLock
 from typing import List, Union
 
+from json_database import JsonStorageXDG
 from ovos_utils.gui import is_gui_connected, is_gui_running
 from ovos_utils.log import LOG
 from ovos_utils.messagebus import Message
@@ -12,17 +13,20 @@ from ovos_utils.ocp import OCP_ID, PlayerState, LoopState, PlaybackType, Playbac
     MediaEntry
 
 from ovos_config import Configuration
+from ovos_config.meta import get_xdg_base
 from ovos_media.gui import OCPGUIInterface, OCPGUIState
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import MprisPlayerCtl
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_workshop import OVOSAbstractApplication
-from ovos_media.gui import OCPGUIInterface, OCPGUIState
+
 
 class OCPMediaCatalog:
     def __init__(self, bus, config):
         self.bus = bus
+        self.liked_songs = JsonStorageXDG("OCP_liked_songs",
+                                          subfolder=get_xdg_base())
         self.search_playlist = Playlist()
         self.ocp_skills = {}
         self.featured_skills = {}
@@ -30,11 +34,29 @@ class OCPMediaCatalog:
         self.config = config or {}
         self.bus.on("ovos.common_play.skills.detach", self.handle_ocp_skill_detach)
         self.bus.on("ovos.common_play.announce", self.handle_skill_announce)
+        self.bus.on("ovos.common_play.like", self.handle_like)
+        self.bus.on("ovos.common_play.unlike", self.handle_unlike)
         # TODO - add search results clear/replace events
 
     def shutdown(self):
         self.bus.remove("ovos.common_play.announce", self.handle_skill_announce)
         self.bus.remove("ovos.common_play.skills.detach", self.handle_ocp_skill_detach)
+
+    def handle_like(self, message):
+        track = message.data.get("track", {})
+        uri = message.data["uri"]
+        track["uri"] = uri  # ensure original uri, instead of extracted final stream
+        self.liked_songs[uri] = track
+        self.liked_songs.store()
+        LOG.info(f"liked song: {uri}")
+
+    def handle_unlike(self, message):
+        uri = message.data["uri"]
+        track = message.data.get("track", {})
+        if uri in self.liked_songs:
+            self.liked_songs.pop(uri)
+            self.liked_songs.store()
+            LOG.info(f"unliked song: {uri}")
 
     def handle_skill_announce(self, message):
         skill_id = message.data.get("skill_id")
@@ -42,8 +64,8 @@ class OCPMediaCatalog:
         img = message.data.get("thumbnail")
         has_featured = bool(message.data.get("featured_tracks"))
         media_types = message.data.get("media_types") or \
-                     message.data.get("media_type") or \
-                     [MediaType.GENERIC]
+                      message.data.get("media_type") or \
+                      [MediaType.GENERIC]
 
         if skill_id not in self.ocp_skills:
             LOG.debug(f"Registered {skill_id}")
@@ -91,6 +113,7 @@ class NowPlaying(MediaEntry):
         self.stream_xtract = load_stream_extractors()
         self.position = 0
         super().__init__(*args, **kwargs)
+        self.original_uri = self.uri
         self.bus.on("ovos.common_play.track.state", self.handle_track_state_change)
         self.bus.on("ovos.common_play.media.state", self.handle_media_state_change)
         self.bus.on("ovos.common_play.play", self.handle_external_play)
@@ -157,6 +180,7 @@ class NowPlaying(MediaEntry):
         if meta:
             LOG.info(f"OCP plugins metadata: {meta}")
             self.update(meta, newonly=True)
+            self.original_uri = uri
         elif not any((uri.startswith(s) for s in ["http", "file", "/"])):
             LOG.info(f"OCP WARNING: plugins returned no metadata for uri {uri}")
 

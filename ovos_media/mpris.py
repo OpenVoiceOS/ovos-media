@@ -119,12 +119,11 @@ class MprisPlayerCtl(Thread):
             data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
 
             self._ocp_player.set_now_playing(data)
-            self._ocp_player.gui.update_seekbar_capabilities()
+            self._ocp_player.gui.prepare_gui_data()
             if data["state"] == "Playing":
-                self._ocp_player.set_now_playing(data)
                 # move GUI to player page
                 if render:
-                    self._ocp_player.gui.manage_display(OCPGUIState.PLAYER)
+                    self._ocp_player.gui.render_player()
 
     async def handle_new_player(self, data):
         if data['name'] not in self._player_fails:
