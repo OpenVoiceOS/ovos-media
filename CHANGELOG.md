@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a4...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a5...HEAD)
+
+**Implemented enhancements:**
+
+- liked songs + MPRIS shuffle/repeat [\#5](https://github.com/OpenVoiceOS/ovos-media/pull/5) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.1a5](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a5) (2024-01-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a4...V0.0.1a5)
 
 **Implemented enhancements:**
 
