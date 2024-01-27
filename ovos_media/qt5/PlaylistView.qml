@@ -22,7 +22,7 @@ Mycroft.Delegate {
             if(suggestionStackLayout.currentIndex === 0){
                 playlistView.forceActiveFocus()
             }
-            if(suggestionStackLayout.currentIndex === 1){
+            else {
                 disambiguationView.forceActiveFocus()
             }
         }
@@ -103,10 +103,20 @@ Mycroft.Delegate {
                     if(suggestionStackLayout.currentIndex === 0){
                         playlistView.forceActiveFocus()
                     }
+                    else {
+                        disambiguationView.forceActiveFocus()
+                    }
+                }
+
+                Keys.onLeftPressed: {
+                    if(suggestionStackLayout.currentIndex === 0){
+                        playlistView.forceActiveFocus()
+                    }
                     if(suggestionStackLayout.currentIndex === 1){
                         disambiguationView.forceActiveFocus()
                     }
                 }
+
 
                 Keys.onReturnPressed: {
                     suggestionStackLayout.currentIndex = 0
