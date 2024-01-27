@@ -28,9 +28,6 @@ class OCPGUIInterface(GUIInterface):
         self.active_extension = Configuration().get("gui", {}).get("extension", "generic")
         self.notification_timeout = None
         self.search_mode_is_app = False
-        self.persist_home_display = False
-        self.state = OCPGUIState.SPINNER
-
 
     def bind(self, player):
         self.player = player
@@ -53,16 +50,16 @@ class OCPGUIInterface(GUIInterface):
         skills_cards = [
             {"skill_id": skill["skill_id"],
              "title": skill["skill_name"],
-             "image": skill["thumbnail"],
-             "media_type": skill.get("media_type") or [MediaType.GENERIC]
+             "image": skill.get("thumbnail") or f"{dirname(__file__)}/qt5/images/placeholder.png"
              } for skill in self.player.media.get_featured_skills()]
         self["skillCards"] = skills_cards
 
     def update_seekbar_capabilities(self):
-        self["canResume"] = True
-        self["canPause"] = True
+        self["canResume"] = self.player.state == PlayerState.PAUSED
+        self["canPause"] = self.player.state == PlayerState.PLAYING
         self["canPrev"] = self.player.can_prev
         self["canNext"] = self.player.can_next
+        self["isLike"] = self.player.now_playing.original_uri in self.player.media.liked_songs
 
         if self.player.loop_state == LoopState.NONE:
             self["loopStatus"] = "None"
@@ -71,17 +68,11 @@ class OCPGUIInterface(GUIInterface):
         elif self.player.loop_state == LoopState.REPEAT:
             self["loopStatus"] = "Repeat"
 
-        if self.player.now_playing.playback == PlaybackType.MPRIS:
-            self["loopStatus"] = "None"
-            self["shuffleStatus"] = False
-        else:
-            self["shuffleStatus"] = self.player.shuffle
+        self["shuffleStatus"] = self.player.shuffle
 
     def update_current_track(self):
-        self.update_seekbar_capabilities()
-
         self["media"] = self.player.now_playing.infocard
-        self["uri"] = self.player.now_playing.uri
+        self["uri"] = self.player.now_playing.original_uri
         self["title"] = self.player.now_playing.title
         self["image"] = self.player.now_playing.image or \
                         join(dirname(__file__), "res/qt5/images/ocp.png")
@@ -110,48 +101,35 @@ class OCPGUIInterface(GUIInterface):
 
     # GUI
     def manage_display(self, state: OCPGUIState, timeout=None):
+        self.prepare_gui_data()
         # handle any state management needed before render
         if state == OCPGUIState.HOME:
-            self.prepare_home()
             self.render_home()
         elif state == OCPGUIState.PLAYER:
-            self.prepare_playlist()
-            self.prepare_search()
             self.prepare_player()
             self.render_player()
         elif state == OCPGUIState.PLAYLIST:
-            self.prepare_playlist()
-            if self.state != state:
-                self.render_playlist(timeout)
+            self.render_playlist(timeout)
         elif state == OCPGUIState.DISAMBIGUATION:
-            self.prepare_search()
-            if self.state != state:
-                self.render_disambiguation(timeout)
+            self.render_disambiguation(timeout)
         elif state == OCPGUIState.SPINNER:
             self.render_search_spinner()
         elif state == OCPGUIState.PLAYBACK_ERROR:
             self.render_playback_error()
-        self.state = state
 
     def remove_homescreen(self):
         self.release()
 
     # OCP pre-rendering
-    def prepare_home(self):
-        self.persist_home_display = True
-        self.update_ocp_skills()  # populate self["skillCards"]
+    def prepare_gui_data(self):
+        self.update_seekbar_capabilities()
+        self.update_current_track()  # populate now_playing metadata
+        self.update_playlist()  # populate self["playlistModel"]
+        self.update_search_results()  # populate self["searchModel"]
 
     def prepare_player(self):
-        self.persist_home_display = True
         self.remove_search_spinner()
         self.clear_notification()
-        self.update_current_track()  # populate now_playing metadata
-
-    def prepare_playlist(self):
-        self.update_playlist()  # populate self["playlistModel"]
-
-    def prepare_search(self):
-        self.update_search_results()  # populate self["searchModel"]
 
     # OCP rendering
     def render_pages(self, timeout=None, index=0):
@@ -161,6 +139,7 @@ class OCPGUIInterface(GUIInterface):
                         override_animations=True)
 
     def render_home(self):
+        self.update_ocp_skills()  # populate self["skillCards"]
         self["homepage_index"] = 0
         self["displayBottomBar"] = False
         # Check if the skills page has anything to show, only show it if it does
@@ -192,7 +171,6 @@ class OCPGUIInterface(GUIInterface):
         self.remove_search_spinner()
 
     def render_search_spinner(self, persist_home=False):
-        self.persist_home_display = persist_home
         self.display_notification("Searching...Your query is being processed")
         self["footer_text"] = "Querying Skills\n\n"
         self.send_event("ocp.gui.show.busy.overlay")
@@ -256,7 +234,7 @@ class OCPGUIInterface(GUIInterface):
 
     # player -> gui
     def handle_sync_seekbar(self, message):
-        """ event sent by ovos audio_only backend plugins """
+        """ event sent by media plugins """
         self["length"] = message.data["length"]
         self["position"] = message.data["position"]
 

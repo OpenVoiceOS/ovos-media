@@ -27,20 +27,18 @@ Mycroft.Delegate {
     property var shuffleStatus: sessionData.shuffleStatus
 
     //Player Support Vertical / Horizontal Layouts
-    //property bool horizontalMode: width > height ? 1 : 0
-    property bool horizontalMode: false
+    // property bool horizontalMode: width > height ? 1 : 0
+    property bool horizontalMode: sessionData.horizontal
 
-    function formatedDuration(millis){
-        var minutes = Math.floor(millis / 60000);
-        var seconds = ((millis % 60000) / 1000).toFixed(0);
-        return minutes + ":" + (seconds < 10 ? '0' : '') + seconds;
+
+    onFocusChanged: {
+        if (focus) {
+            playButton.forceActiveFocus()
+        }
     }
 
-    function formatedPosition(millis){
-        var minutes = Math.floor(millis / 60000);
-        var seconds = ((millis % 60000) / 1000).toFixed(0);
-        return minutes + ":" + (seconds < 10 ? '0' : '') + seconds;
-    }
+    KeyNavigation.down: playButton
+
     Image {
         id: imgbackground
         anchors.fill: parent
@@ -89,6 +87,17 @@ Mycroft.Delegate {
                     anchors.horizontalCenter: parent.horizontalCenter
                     height: width
                     z: 20
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (sessionData.uri &&  likeIcon.visible === false) {
+                                sessionData.isLike = true
+                                triggerGuiEvent("like", {"uri": sessionData.uri, "track": sessionData.media})
+                                likeIcon.visible = true
+                            }
+                        }
+                    }
 
                     layer.enabled: rounded
                     layer.effect: OpacityMask {
@@ -156,6 +165,7 @@ Mycroft.Delegate {
             }
         }
 
+
         Rectangle {
             id: innerBox
             anchors.bottom: parent.bottom
@@ -173,11 +183,17 @@ Mycroft.Delegate {
 
                 AudioPlayerControl {
                     id: repeatButton
-                    controlIcon: sessionData.loopStatus === "RepeatTrack" ? Qt.resolvedUrl("images/media-playlist-repeat.svg") : sessionData.loopStatus === "None" ? Qt.resolvedUrl("images/media-playlist-repeat-track.svg") : Qt.resolvedUrl("images/media-playlist-repeat.svg")
+                    controlIcon: sessionData.loopStatus === "RepeatTrack" ? Qt.resolvedUrl("images/media-playlist-repeat-track.svg") : sessionData.loopStatus === "None" ? Qt.resolvedUrl("images/media-playlist-repeat.svg") : Qt.resolvedUrl("images/media-playlist-repeat.svg")
                     controlIconColor: sessionData.loopStatus === "None" ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
                     horizontalMode: root.horizontalMode
 
+                    KeyNavigation.right: prevButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
+
                     onClicked: {
+                        triggerGuiEvent("repeat.toggle", {})
                     }
                 }
 
@@ -187,6 +203,12 @@ Mycroft.Delegate {
                     controlIconColor: sessionData.canPrev === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
 
+                    KeyNavigation.left: repeatButton
+                    KeyNavigation.right: playButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
+
                     onClicked: {
                         triggerGuiEvent("previous", {})
                     }
@@ -194,9 +216,15 @@ Mycroft.Delegate {
 
                 AudioPlayerControl {
                     id: playButton
-                    controlIcon: playerState === MediaPlayer.PlayingState ? Qt.resolvedUrl("images/media-playback-pause.svg") : Qt.resolvedUrl("images/media-playback-start.svg")
+                    controlIcon: sessionData.canPause  === true ? Qt.resolvedUrl("images/media-playback-pause.svg") : Qt.resolvedUrl("images/media-playback-start.svg")
                     controlIconColor: sessionData.canResume === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
+
+                    KeyNavigation.left: prevButton
+                    KeyNavigation.right: nextButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
 
                     onClicked: {
                         if (playerState === "Paused"){
@@ -210,23 +238,16 @@ Mycroft.Delegate {
                 }
 
                 AudioPlayerControl {
-                    id: stopButton
-                    controlIcon: Qt.resolvedUrl("images/media-playback-stop.svg")
-                    controlIconColor: Kirigami.Theme.textColor
-
-                    onClicked: {
-                        if(playerState === "Playing") {
-                            playerState = "Stopped"
-                            triggerGuiEvent("stop", {})
-                        }
-                    }
-                }
-
-                AudioPlayerControl {
                     id: nextButton
                     controlIcon: Qt.resolvedUrl("images/media-skip-forward.svg")
                     controlIconColor: sessionData.canNext === true ? Kirigami.Theme.textColor : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.4)
                     horizontalMode: root.horizontalMode
+
+                    KeyNavigation.left: playButton
+                    KeyNavigation.right: shuffleButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
 
                     onClicked: {
                         triggerGuiEvent("next", {})
@@ -239,8 +260,38 @@ Mycroft.Delegate {
                     controlIconColor: sessionData.shuffleStatus === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
                     horizontalMode: root.horizontalMode
 
-                    onClicked: {}
+                    KeyNavigation.left: nextButton
+                    KeyNavigation.right: likeButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
+
+
+                    onClicked: {
+                        triggerGuiEvent("shuffle.toggle", {})
+                    }
                 }
+
+                AudioPlayerControl {
+                    id: likeIcon
+                    controlIcon: Qt.resolvedUrl("images/liked.svg")
+                    controlIconColor: sessionData.isLike === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
+                    horizontalMode: root.horizontalMode
+                    visible: sessionData.isLike
+
+                    KeyNavigation.left: shuffleButton
+                    Keys.onReturnPressed: {
+                         clicked()
+                    }
+
+                    onClicked: {
+                        triggerGuiEvent("unlike", {"uri": sessionData.uri, "track": sessionData.media})
+                        sessionData.isLike = true
+                        likeIcon.visible = false
+                        playButton.forceActiveFocus()
+                    }
+                }
+
             }
         }
     }
@@ -248,5 +299,6 @@ Mycroft.Delegate {
     GenericCloseControl {
         id: genericCloseControl
     }
+
 }
 
