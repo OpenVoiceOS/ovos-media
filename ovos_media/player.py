@@ -181,8 +181,10 @@ class NowPlaying(MediaEntry):
             LOG.info(f"OCP plugins metadata: {meta}")
             self.update(meta, newonly=True)
             self.original_uri = uri
-        elif not any((uri.startswith(s) for s in ["http", "file", "/"])):
-            LOG.info(f"OCP WARNING: plugins returned no metadata for uri {uri}")
+
+        # validate extracted uri
+        if not any((self.uri.startswith(s) for s in ["http", "file", "/"])):
+            raise ValueError(f"invalid stream: {uri}")
 
     # bus api
     def handle_external_play(self, message):
@@ -559,8 +561,10 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         """
         Handle media playback errors. Show an error and play the next track.
         """
+        self.bus.emit(Message("mycroft.audio.play_sound", {"uri": "snd/error.mp3"}))
         self.gui.manage_display(OCPGUIState.PLAYBACK_ERROR)
         LOG.warning(f"Failed to play: {self.now_playing}")
+        time.sleep(1.5)  # let the user process that playback failed before moving on
         self.play_next()
 
     # media controls

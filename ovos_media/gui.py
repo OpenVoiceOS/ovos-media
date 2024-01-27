@@ -169,9 +169,10 @@ class OCPGUIInterface(GUIInterface):
         self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
     def render_playback_error(self):
+        self["image"] = join(dirname(__file__), "qt5/images/fail.svg")
         self.display_notification("Sorry, An error occurred while playing media")
         self["footer_text"] = "Sorry, An error occurred while playing media"
-        self.remove_search_spinner()
+        self.render_pages(index=1)
 
     def render_search_spinner(self, persist_home=False):
         self.display_notification("Searching...Your query is being processed")
