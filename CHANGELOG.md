@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a7...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a8...HEAD)
+
+**Implemented enhancements:**
+
+- error sound [\#8](https://github.com/OpenVoiceOS/ovos-media/pull/8) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.1a8](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a8) (2024-01-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a7...V0.0.1a8)
 
 **Fixed bugs:**
 
