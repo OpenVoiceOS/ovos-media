@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a6...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a7...HEAD)
+
+**Fixed bugs:**
+
+- fix/keynav\_like\_button [\#7](https://github.com/OpenVoiceOS/ovos-media/pull/7) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.1a7](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a7) (2024-01-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a6...V0.0.1a7)
 
 **Fixed bugs:**
 
