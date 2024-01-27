@@ -82,6 +82,7 @@ Item {
             highlightRangeMode: ListView.StrictlyEnforceRange
             snapMode: ListView.SnapToItem
             KeyNavigation.down: playlistButtonTangle
+            KeyNavigation.right: playlistButtonTangle
 
             delegate: Controls.ItemDelegate {
                 id: delegateItemCard

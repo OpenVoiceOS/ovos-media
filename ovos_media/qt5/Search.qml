@@ -106,10 +106,10 @@ Item {
                     font.bold: true
 
                     onAccepted: {
-                        triggerGuiEvent("search", { "utterance": txtFldInternal.text})
+                        triggerGuiEvent("play_search", { "utterance": txtFldInternal.text})
                     }
                     Keys.onReturnPressed: {
-                        triggerGuiEvent("search", { "utterance": txtFldInternal.text})
+                        triggerGuiEvent("play_search", { "utterance": txtFldInternal.text})
                     }
                 }
             }
@@ -157,7 +157,7 @@ Item {
                 }
 
                 onClicked: {
-                    triggerGuiEvent("search", { "utterance": txtFldInternal.text})
+                    triggerGuiEvent("play_search", { "utterance": txtFldInternal.text})
                 }
 
                 onPressed: {

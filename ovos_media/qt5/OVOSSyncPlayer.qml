@@ -95,7 +95,7 @@ Mycroft.Delegate {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
-                            if (sessionData.uri &&  likeIcon.visible === false) {
+                            if (sessionData.uri && sessionData.isMusic && likeIcon.visible === false) {
                                 sessionData.isLike = true
                                 triggerGuiEvent("like", {"uri": sessionData.uri, "track": sessionData.media})
                                 likeIcon.visible = true
@@ -255,7 +255,7 @@ Mycroft.Delegate {
                     controlIcon: Qt.resolvedUrl("images/liked.svg")
                     controlIconColor: sessionData.isLike === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
                     horizontalMode: root.horizontalMode
-                    visible: sessionData.isLike
+                    visible: sessionData.isLike && sessionData.isMusic
 
                     KeyNavigation.left: playButton
                     KeyNavigation.right: nextButton
