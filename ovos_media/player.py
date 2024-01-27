@@ -852,7 +852,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.update_props({"CanPause": state == PlayerState.PLAYING,
                                      "CanPlay": state == PlayerState.PAUSED,
                                      "PlaybackStatus": state2str[state]})
-        self.gui.update_seekbar_capabilities()  # update icon
+        self.gui.update_seekbar_capabilities()  # update icons
 
     def handle_player_media_update(self, message):
         """
@@ -877,7 +877,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.handle_invalid_media(message)
             if self.ocp_config.get("autoplay", True):
                 self.play_next()
-        self.gui.update_seekbar_capabilities()  # update icon
+        self.gui.update_seekbar_capabilities()  # update icons
 
     def handle_invalid_media(self, message):
         self.gui.manage_display(OCPGUIState.PLAYBACK_ERROR)
@@ -907,16 +907,22 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
     def handle_pause_request(self, message):
         self.pause()
-        self.gui.update_seekbar_capabilities()  # update icon
+        # if mpris, wait for its status report instead to avoid flickering
+        if not self.mpris:
+            self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_stop_request(self, message):
         self.stop()
         self.reset()
-        self.gui.update_seekbar_capabilities()  # update icon
+        # if mpris, wait for its status report instead to avoid flickering
+        if not self.mpris:
+            self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_resume_request(self, message):
         self.resume()
-        self.gui.update_seekbar_capabilities()  # update icon
+        # if mpris, wait for its status report instead to avoid flickering
+        if not self.mpris:
+            self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_seek_request(self, message):
         # from bus api
@@ -940,19 +946,27 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
     def handle_set_shuffle(self, message):
         self.shuffle = True
-        self.gui.update_seekbar_capabilities()  # update icon
+        # if mpris, wait for its status report instead to avoid flickering
+        if not self.mpris:
+            self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_unset_shuffle(self, message):
         self.shuffle = False
-        self.gui.update_seekbar_capabilities()  # update icon
+        # if mpris, wait for its status report instead to avoid flickering
+        if not self.mpris:
+            self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_set_repeat(self, message):
         self.loop_state = LoopState.REPEAT
-        self.gui.update_seekbar_capabilities()  # update icon
+        # if mpris, wait for its status report instead to avoid flickering
+        if not self.mpris:
+            self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_unset_repeat(self, message):
         self.loop_state = LoopState.NONE
-        self.gui.update_seekbar_capabilities()  # update icon
+        # if mpris, wait for its status report instead to avoid flickering
+        if not self.mpris:
+            self.gui.update_seekbar_capabilities()  # update icon
 
     # playlist control bus api
     def handle_repeat_toggle_request(self, message):
@@ -963,16 +977,18 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         elif self.loop_state == LoopState.NONE:
             self.loop_state = LoopState.REPEAT
         LOG.info(f"Repeat: {self.loop_state}")
-        self.gui.update_seekbar_capabilities()  # update icon
         if self.mpris and self.playback_type == PlaybackType.MPRIS:
             self.mpris.toggle_repeat()
+        else:  # if mpris, wait for its status report instead to avoid flickering
+            self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_shuffle_toggle_request(self, message):
         self.shuffle = not self.shuffle
         LOG.info(f"Shuffle: {self.shuffle}")
-        self.gui.update_seekbar_capabilities()  # update icon
         if self.mpris and self.playback_type == PlaybackType.MPRIS:
             self.mpris.toggle_shuffle()
+        else:  # if mpris, wait for its status report instead to avoid flickering
+            self.gui.update_seekbar_capabilities()  # update icon
 
     def handle_playlist_set_request(self, message):
         self.playlist.clear()

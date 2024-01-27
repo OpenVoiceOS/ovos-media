@@ -44,7 +44,7 @@ Mycroft.Delegate {
 
     onFocusChanged: {
         if (focus) {
-            repeatButton.forceActiveFocus()
+            playButton.forceActiveFocus()
         }
     }
 
