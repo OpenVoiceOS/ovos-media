@@ -16,7 +16,6 @@ Mycroft.Delegate {
     property var thumbnail: sessionData.image
     property var title: sessionData.title
     property var author: sessionData.artist
-    property var playerState: sessionData.status
 
     property var loopStatus: sessionData.loopStatus
     property var canResume: sessionData.canResume
@@ -239,11 +238,9 @@ Mycroft.Delegate {
                     }
 
                     onClicked: {
-                        if (playerState === "Paused"){
-                            playerState = "Playing"
+                        if (sessionData.canResume){
                             triggerGuiEvent("resume", {})
                         } else {
-                            playerState = "Paused"
                             triggerGuiEvent("pause", {})
                         }
                     }
