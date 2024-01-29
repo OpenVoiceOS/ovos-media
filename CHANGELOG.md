@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a9...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a10...HEAD)
+
+**Implemented enhancements:**
+
+- feat/favorite\_tracks [\#10](https://github.com/OpenVoiceOS/ovos-media/pull/10) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.1a10](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a10) (2024-01-28)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a9...V0.0.1a10)
 
 **Implemented enhancements:**
 
