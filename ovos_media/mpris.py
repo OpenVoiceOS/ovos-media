@@ -116,7 +116,21 @@ class MprisPlayerCtl(Thread):
             data["playback"] = PlaybackType.MPRIS
             data["status"] = TrackState.PLAYING_MPRIS
             data["length"] = data.get("length", 0) / 1000
-            data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
+            # dedicated icons for some common players
+            if self.main_player == 'org.mpris.MediaPlayer2.spotify':
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/spotify.png"
+            elif self.main_player.startswith("org.mpris.MediaPlayer2.firefox"):
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/firefox.png"
+            elif self.main_player.startswith("org.mpris.MediaPlayer2.chromium"):
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/chromium.png"
+            elif self.main_player == "org.mpris.MediaPlayer2.vlc":
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/vlc.png"
+            elif self.main_player == "org.mpris.MediaPlayer2.mpv":
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpv.png"
+            elif self.main_player == "org.mpris.MediaPlayer2.audacious":
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/audacious.png"
+            else:
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
 
             self._ocp_player.set_now_playing(data)
             self._ocp_player.gui.prepare_gui_data()
@@ -133,7 +147,7 @@ class MprisPlayerCtl(Thread):
         LOG.info(f"MPRIS Player Shuffle: {shuffle}")
         if self.manage_players:
             self._ocp_player.shuffle = shuffle
-            self._ocp_player.gui.update_seekbar_capabilities()
+            self._ocp_player.gui.update_buttons()
 
     async def handle_player_loop_state(self, state):
         LOG.info(f"MPRIS Player Repeat: {state}")
@@ -144,7 +158,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.loop_state = LoopState.REPEAT_TRACK
             else:
                 self._ocp_player.loop_state = LoopState.NONE
-            self._ocp_player.gui.update_seekbar_capabilities()
+            self._ocp_player.gui.update_buttons()
 
     async def handle_player_state(self, state):
         LOG.info(f"MPRIS Player State: {state}")
@@ -157,7 +171,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.set_player_state(PlayerState.PLAYING)
             else:
                 self._ocp_player.set_player_state(PlayerState.STOPPED)
-            self._ocp_player.gui.update_seekbar_capabilities()
+            self._ocp_player.gui.update_buttons()
 
     async def handle_lost_player(self, name):
         LOG.info(f"Lost MPRIS Player: {name}")

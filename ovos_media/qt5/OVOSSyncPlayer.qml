@@ -23,6 +23,7 @@ Mycroft.Delegate {
     property var canPrev: sessionData.canPrev
     property var canRepeat: sessionData.canRepeat
     property var canShuffle: sessionData.canShuffle
+    property var isLike: sessionData.isLike
     property var shuffleStatus: sessionData.shuffleStatus
 
     //Player Support Vertical / Horizontal Layouts
@@ -31,6 +32,10 @@ Mycroft.Delegate {
 
 
     onTitleChanged: {
+        likeIcon.visible = sessionData.isLike
+    }
+
+    onIsLikeChanged: {
         likeIcon.visible = sessionData.isLike
     }
 
@@ -96,7 +101,10 @@ Mycroft.Delegate {
                         onClicked: {
                             if (sessionData.uri && sessionData.isMusic && likeIcon.visible === false) {
                                 sessionData.isLike = true
-                                triggerGuiEvent("like", {"uri": sessionData.uri, "track": sessionData.media})
+                                triggerGuiEvent("like", {"uri": sessionData.uri,
+                                                   "title": sessionData.title,
+                                                   "image": sessionData.image,
+                                                   "artist": sessionData.artist})
                                 likeIcon.visible = true
                             }
                         }
@@ -261,7 +269,10 @@ Mycroft.Delegate {
                     }
 
                     onClicked: {
-                        triggerGuiEvent("unlike", {"uri": sessionData.uri, "track": sessionData.media})
+                        triggerGuiEvent("unlike", {"uri": sessionData.uri,
+                                                   "title": sessionData.title,
+                                                   "image": sessionData.image,
+                                                   "artist": sessionData.artist})
                         sessionData.isLike = true
                         likeIcon.visible = false
                         playButton.forceActiveFocus()

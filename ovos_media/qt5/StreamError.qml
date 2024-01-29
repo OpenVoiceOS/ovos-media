@@ -29,7 +29,7 @@ Mycroft.Delegate {
                 renderType: Text.NativeRendering
                 font.family: "Noto Sans Display"
                 font.styleName: "Black"
-                text: qsTr("Playback Error")
+                text: qsTr(sessionData.error)
                 color: Kirigami.Theme.textColor
             }
 

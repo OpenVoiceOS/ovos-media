@@ -1,7 +1,8 @@
 import enum
+import random
 from os.path import join, dirname
 from threading import Timer
-import random
+
 from ovos_bus_client.apis.gui import GUIInterface
 from ovos_utils.ocp import *
 
@@ -24,37 +25,49 @@ class OCPGUIInterface(GUIInterface):
         super(OCPGUIInterface, self).__init__(skill_id=OCP_ID,
                                               ui_directories={"qt5": f"{dirname(__file__)}/qt5"})
         self.ocp_skills = {}  # skill_id: meta
-
-        self.active_extension = Configuration().get("gui", {}).get("extension", "generic")
         self.notification_timeout = None
-        self.search_mode_is_app = False
 
     def bind(self, player):
         self.player = player
         super().set_bus(self.bus)
-        self.player.add_event("ovos.common_play.playback_time",
-                              self.handle_sync_seekbar)
         self.player.add_event('ovos.common_play.playlist.play',
                               self.handle_play_from_playlist)
+        self.player.add_event('ovos.common_play.liked_tracks.play',
+                              self.handle_play_from_liked_tracks)
         self.player.add_event('ovos.common_play.search.play',
                               self.handle_play_from_search)
         self.player.add_event('ovos.common_play.skill.play',
                               self.handle_play_skill_featured_media)
+        self.player.add_event('ovos.common_play.home',
+                              self.handle_home)
+
+    def handle_home(self, message):
+        self.manage_display(OCPGUIState.HOME)
 
     def release(self):
         self.clear()
         super().release()
 
     # OCPMediaPlayer interface
-    def update_ocp_skills(self):
+    def update_ocp_cards(self):
         skills_cards = [
             {"skill_id": skill["skill_id"],
              "title": skill["skill_name"],
              "image": skill.get("thumbnail") or f"{dirname(__file__)}/qt5/images/placeholder.png"
              } for skill in self.player.media.get_featured_skills()]
         self["skillCards"] = skills_cards
+        liked_cards = sorted([
+            {"uri": uri,
+             "title": song["title"],
+             "image": song.get("image")
+             } for uri, song in self.player.media.liked_songs.items()
+            if song["title"] and song.get("image")],
+            key=lambda k: k.get("play_count", 0),
+            reverse=True)
+        self["showLiked"] = len(liked_cards) >= 1
+        self["likedCards"] = liked_cards
 
-    def update_seekbar_capabilities(self):
+    def update_buttons(self):
         self["canResume"] = self.player.state == PlayerState.PAUSED
         self["canPause"] = self.player.state == PlayerState.PLAYING
         self["canPrev"] = self.player.can_prev
@@ -62,7 +75,7 @@ class OCPGUIInterface(GUIInterface):
         self["isLike"] = self.player.now_playing.original_uri in self.player.media.liked_songs and \
                          self.player.now_playing.playback != PlaybackType.MPRIS
         self["isMusic"] = self.player.now_playing.media_type == MediaType.MUSIC and \
-                         self.player.now_playing.playback != PlaybackType.MPRIS
+                          self.player.now_playing.playback != PlaybackType.MPRIS
 
         if self.player.loop_state == LoopState.NONE:
             self["loopStatus"] = "None"
@@ -107,25 +120,25 @@ class OCPGUIInterface(GUIInterface):
         self.prepare_gui_data()
         # handle any state management needed before render
         if state == OCPGUIState.HOME:
-            self.render_home()
+            self.render_home(timeout=timeout)
         elif state == OCPGUIState.PLAYER:
             self.prepare_player()
-            self.render_player()
+            self.render_player(timeout=timeout)
         elif state == OCPGUIState.PLAYLIST:
-            self.render_playlist(timeout)
+            self.render_playlist(timeout=timeout)
         elif state == OCPGUIState.DISAMBIGUATION:
-            self.render_disambiguation(timeout)
+            self.render_disambiguation(timeout=timeout)
         elif state == OCPGUIState.SPINNER:
             self.render_search_spinner()
         elif state == OCPGUIState.PLAYBACK_ERROR:
-            self.render_playback_error()
+            self.render_error()
 
     def remove_homescreen(self):
         self.release()
 
     # OCP pre-rendering
     def prepare_gui_data(self):
-        self.update_seekbar_capabilities()
+        self.update_buttons()
         self.update_current_track()  # populate now_playing metadata
         self.update_playlist()  # populate self["playlistModel"]
         self.update_search_results()  # populate self["searchModel"]
@@ -144,17 +157,17 @@ class OCPGUIInterface(GUIInterface):
                         override_idle=timeout or True,
                         override_animations=True)
 
-    def render_home(self):
-        self.update_ocp_skills()  # populate self["skillCards"]
+    def render_home(self, timeout=None):
+        self.update_ocp_cards()  # populate self["skillCards"]
         self["homepage_index"] = 0
         self["displayBottomBar"] = False
         # Check if the skills page has anything to show, only show it if it does
         if self["skillCards"]:
             self["displayBottomBar"] = True
-        self.render_pages(index=0)
+        self.render_pages(index=0, timeout=timeout)
 
-    def render_player(self):
-        self.render_pages(index=1)
+    def render_player(self, timeout=None):
+        self.render_pages(index=1, timeout=timeout)
         if len(self.player.tracks):
             self.send_event("ocp.gui.show.suggestion.view.playlist")
         elif len(self.player.disambiguation):
@@ -168,7 +181,8 @@ class OCPGUIInterface(GUIInterface):
         self.render_pages(timeout, index=2)
         self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
-    def render_playback_error(self):
+    def render_error(self, error="Playback Error"):
+        self["error"] = error
         self["animation"] = f"animations/{random.choice(['error', 'error2', 'error3', 'error4'])}.json"
         self["image"] = join(dirname(__file__), "qt5/images/fail.svg")
         self.display_notification("Sorry, An error occurred while playing media")
@@ -211,6 +225,34 @@ class OCPGUIInterface(GUIInterface):
         self.start_timeout_notification()
 
     # gui <-> playlists
+    def handle_play_from_liked_tracks(self, message):
+        LOG.debug("Playback requested for liked tracks")
+        uri = message.data.get("uri")
+
+        # liked songs playlist
+        pl = self.player.media.liked_songs_playlist
+
+        if not len(pl):
+            LOG.error("No liked tracks")
+            self.render_error("No liked tracks")
+            self.bus.emit(message.forward("mycroft.audio.play_sound",
+                                          {"uri": "snd/error.mp3"}))
+            return
+
+        # uri2track
+        track = None
+        if uri:
+            track = self.player.media.liked_songs.get(uri)
+            if track:
+                # inject data for playback not present in GUI
+                track["media_type"] = MediaType.MUSIC
+                track["playback"] = PlaybackType.AUDIO
+            else:
+                LOG.error("Track is not part of liked songs!")
+
+        track = track or pl[0]
+        self.player.play_media(track, disambiguation=pl)
+
     def handle_play_from_playlist(self, message):
         LOG.debug("Playback requested from playlist results")
         media = message.data["playlistData"]
@@ -240,21 +282,3 @@ class OCPGUIInterface(GUIInterface):
         self.player.media.replace(playlist)
 
         self.manage_display(OCPGUIState.DISAMBIGUATION)
-
-    # player -> gui
-    def handle_sync_seekbar(self, message):
-        """ event sent by media plugins """
-        self["length"] = message.data["length"]
-        self["position"] = message.data["position"]
-
-    def handle_end_of_playback(self, message=None):
-        show_results = False
-        try:
-            if len(self["searchModel"]["data"]):
-                show_results = True
-        except:
-            pass
-
-        # show search results, release screen after 60 seconds
-        if show_results:
-            self.manage_display(OCPGUIState.PLAYLIST, timeout=60)
