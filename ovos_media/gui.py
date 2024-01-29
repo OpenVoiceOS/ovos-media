@@ -25,10 +25,7 @@ class OCPGUIInterface(GUIInterface):
         super(OCPGUIInterface, self).__init__(skill_id=OCP_ID,
                                               ui_directories={"qt5": f"{dirname(__file__)}/qt5"})
         self.ocp_skills = {}  # skill_id: meta
-
-        self.active_extension = Configuration().get("gui", {}).get("extension", "generic")
         self.notification_timeout = None
-        self.search_mode_is_app = False
 
     def bind(self, player):
         self.player = player
