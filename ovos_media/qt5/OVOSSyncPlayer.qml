@@ -23,6 +23,7 @@ Mycroft.Delegate {
     property var canPrev: sessionData.canPrev
     property var canRepeat: sessionData.canRepeat
     property var canShuffle: sessionData.canShuffle
+    property var isLike: sessionData.isLike
     property var shuffleStatus: sessionData.shuffleStatus
 
     //Player Support Vertical / Horizontal Layouts
@@ -31,6 +32,10 @@ Mycroft.Delegate {
 
 
     onTitleChanged: {
+        likeIcon.visible = sessionData.isLike
+    }
+
+    onIsLikeChanged: {
         likeIcon.visible = sessionData.isLike
     }
 

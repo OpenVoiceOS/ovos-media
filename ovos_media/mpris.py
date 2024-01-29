@@ -147,7 +147,7 @@ class MprisPlayerCtl(Thread):
         LOG.info(f"MPRIS Player Shuffle: {shuffle}")
         if self.manage_players:
             self._ocp_player.shuffle = shuffle
-            self._ocp_player.gui.update_seekbar_capabilities()
+            self._ocp_player.gui.update_buttons()
 
     async def handle_player_loop_state(self, state):
         LOG.info(f"MPRIS Player Repeat: {state}")
@@ -158,7 +158,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.loop_state = LoopState.REPEAT_TRACK
             else:
                 self._ocp_player.loop_state = LoopState.NONE
-            self._ocp_player.gui.update_seekbar_capabilities()
+            self._ocp_player.gui.update_buttons()
 
     async def handle_player_state(self, state):
         LOG.info(f"MPRIS Player State: {state}")
@@ -171,7 +171,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.set_player_state(PlayerState.PLAYING)
             else:
                 self._ocp_player.set_player_state(PlayerState.STOPPED)
-            self._ocp_player.gui.update_seekbar_capabilities()
+            self._ocp_player.gui.update_buttons()
 
     async def handle_lost_player(self, name):
         LOG.info(f"Lost MPRIS Player: {name}")

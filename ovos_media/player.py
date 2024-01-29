@@ -5,12 +5,6 @@ from threading import RLock
 from typing import List, Union
 
 from json_database import JsonStorageXDG
-from ovos_utils.gui import is_gui_connected, is_gui_running
-from ovos_utils.log import LOG
-from ovos_utils.messagebus import Message
-from ovos_utils.ocp import MediaType, Playlist
-from ovos_utils.ocp import OCP_ID, PlayerState, LoopState, PlaybackType, PlaybackMode, TrackState, MediaState, \
-    MediaEntry
 
 from ovos_config import Configuration
 from ovos_config.meta import get_xdg_base
@@ -19,6 +13,12 @@ from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import MprisPlayerCtl
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
+from ovos_utils.gui import is_gui_connected, is_gui_running
+from ovos_utils.log import LOG
+from ovos_utils.messagebus import Message
+from ovos_utils.ocp import MediaType, Playlist
+from ovos_utils.ocp import OCP_ID, PlayerState, LoopState, PlaybackType, PlaybackMode, TrackState, MediaState, \
+    MediaEntry
 from ovos_workshop import OVOSAbstractApplication
 from ovos_workshop.decorators.ocp import ocp_search
 from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
@@ -407,7 +407,18 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.add_event('ovos.common_play.search.start', self.handle_search_start)
         self.add_event("ovos.common_play.like", self.handle_like)
         self.add_event("ovos.common_play.unlike", self.handle_unlike)
+        self.add_event("ovos.common_play.status", self.handle_status)
         self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))  # report to ovos-core
+        self.handle_status(Message("ovos.common_play.status"))  # report to ovos-core
+
+    def handle_status(self, message):
+        self.bus.emit(message.response({
+            "playback_type": self.playback_type,
+            "media_type": self.now_playing.media_type,
+            "player_state": self.state,
+            "loop_state": self.loop_state,
+            "media_state": self.media_state
+        }))
 
     def handle_like(self, message):
         # sent from GUI or intent
@@ -419,6 +430,10 @@ class OCPMediaPlayer(OVOSAbstractApplication):
                                        "image": image, "uri": uri}
         self.media.liked_songs.store()
         LOG.info(f"liked song: {uri}")
+        self.gui.update_buttons()  # show in Player
+        self.gui.update_ocp_cards()  # show in Home
+        self.bus.emit(message.forward("mycroft.audio.play_sound",
+                                      {"uri": "snd/acknowledge.mp3"}))
 
     def handle_unlike(self, message):
         # sent from GUI or intent
@@ -538,6 +553,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
                                      "PlaybackStatus": state2str[state]})
         self.bus.emit(Message("ovos.common_play.player.state",
                               {"state": self.state}))
+        self.handle_status(Message("ovos.common_play.status"))  # report full status to ovos-core
 
     def set_now_playing(self, track: Union[dict, MediaEntry, Playlist]):
         """
@@ -579,6 +595,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.update_props(
                 {"Metadata": self.now_playing.mpris_metadata}
             )
+        self.handle_status(Message("ovos.common_play.status"))  # report full status to ovos-core
 
     # stream handling
     def validate_stream(self) -> bool:
@@ -728,7 +745,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.update_props({"CanGoNext": self.can_next})
             self.mpris.update_props({"CanGoPrevious": self.can_prev})
 
-        self.gui.update_seekbar_capabilities()  # pause/play icon
+        self.gui.update_buttons()  # pause/play icon
 
     def play_shuffle(self):
         """
@@ -829,7 +846,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.pause()
         self.set_player_state(PlayerState.PAUSED)
         self._paused_on_duck = False
-        self.gui.update_seekbar_capabilities()  # pause/play icon
+        self.gui.update_buttons()  # pause/play icon
 
     def resume(self):
         """
@@ -851,7 +868,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.resume()
 
         self.set_player_state(PlayerState.PLAYING)
-        self.gui.update_seekbar_capabilities()  # pause/play icon
+        self.gui.update_buttons()  # pause/play icon
 
     def seek(self, position: int):
         """
@@ -885,7 +902,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         if self.mpris and self.playback_type in [PlaybackType.MPRIS]:
             self.mpris.pause()
         self.set_player_state(PlayerState.STOPPED)
-        self.gui.update_seekbar_capabilities()  # pause/play icon
+        self.gui.update_buttons()  # pause/play icon
 
     def handle_MPRIS_takeover(self):
         """ Called when a MPRIS external player becomes active"""
@@ -955,7 +972,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.update_props({"CanPause": state == PlayerState.PLAYING,
                                      "CanPlay": state == PlayerState.PAUSED,
                                      "PlaybackStatus": state2str[state]})
-        self.gui.update_seekbar_capabilities()  # update icons
+        self.gui.update_buttons()  # update icons
 
     def handle_player_media_update(self, message):
         """
@@ -980,7 +997,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.handle_invalid_media(message)
             if self.ocp_config.get("autoplay", True):
                 self.play_next()
-        self.gui.update_seekbar_capabilities()  # update icons
+        self.gui.update_buttons()  # update icons
 
     def handle_invalid_media(self, message):
         self.gui.manage_display(OCPGUIState.PLAYBACK_ERROR)
@@ -1015,20 +1032,20 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.pause()
         # if mpris, wait for its status report instead to avoid flickering
         if not self.mpris:
-            self.gui.update_seekbar_capabilities()  # update icon
+            self.gui.update_buttons()  # update icon
 
     def handle_stop_request(self, message):
         self.stop()
         self.reset()
         # if mpris, wait for its status report instead to avoid flickering
         if not self.mpris:
-            self.gui.update_seekbar_capabilities()  # update icon
+            self.gui.update_buttons()  # update icon
 
     def handle_resume_request(self, message):
         self.resume()
         # if mpris, wait for its status report instead to avoid flickering
         if not self.mpris:
-            self.gui.update_seekbar_capabilities()  # update icon
+            self.gui.update_buttons()  # update icon
 
     def handle_seek_request(self, message):
         # from bus api
@@ -1054,25 +1071,25 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.shuffle = True
         # if mpris, wait for its status report instead to avoid flickering
         if not self.mpris:
-            self.gui.update_seekbar_capabilities()  # update icon
+            self.gui.update_buttons()  # update icon
 
     def handle_unset_shuffle(self, message):
         self.shuffle = False
         # if mpris, wait for its status report instead to avoid flickering
         if not self.mpris:
-            self.gui.update_seekbar_capabilities()  # update icon
+            self.gui.update_buttons()  # update icon
 
     def handle_set_repeat(self, message):
         self.loop_state = LoopState.REPEAT
         # if mpris, wait for its status report instead to avoid flickering
         if not self.mpris:
-            self.gui.update_seekbar_capabilities()  # update icon
+            self.gui.update_buttons()  # update icon
 
     def handle_unset_repeat(self, message):
         self.loop_state = LoopState.NONE
         # if mpris, wait for its status report instead to avoid flickering
         if not self.mpris:
-            self.gui.update_seekbar_capabilities()  # update icon
+            self.gui.update_buttons()  # update icon
 
     # playlist control bus api
     def handle_repeat_toggle_request(self, message):
@@ -1086,7 +1103,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         if self.mpris and self.playback_type == PlaybackType.MPRIS:
             self.mpris.toggle_repeat()
         else:  # if mpris, wait for its status report instead to avoid flickering
-            self.gui.update_seekbar_capabilities()  # update icon
+            self.gui.update_buttons()  # update icon
 
     def handle_shuffle_toggle_request(self, message):
         self.shuffle = not self.shuffle
@@ -1094,7 +1111,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         if self.mpris and self.playback_type == PlaybackType.MPRIS:
             self.mpris.toggle_shuffle()
         else:  # if mpris, wait for its status report instead to avoid flickering
-            self.gui.update_seekbar_capabilities()  # update icon
+            self.gui.update_buttons()  # update icon
 
     def handle_playlist_set_request(self, message):
         self.playlist.clear()
