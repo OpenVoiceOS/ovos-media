@@ -25,7 +25,10 @@ class OCPGUIInterface(GUIInterface):
         super(OCPGUIInterface, self).__init__(skill_id=OCP_ID,
                                               ui_directories={"qt5": f"{dirname(__file__)}/qt5"})
         self.ocp_skills = {}  # skill_id: meta
+
+        self.active_extension = Configuration().get("gui", {}).get("extension", "generic")
         self.notification_timeout = None
+        self.search_mode_is_app = False
 
     def bind(self, player):
         self.player = player
@@ -38,11 +41,6 @@ class OCPGUIInterface(GUIInterface):
                               self.handle_play_from_search)
         self.player.add_event('ovos.common_play.skill.play',
                               self.handle_play_skill_featured_media)
-        self.player.add_event('ovos.common_play.home',
-                              self.handle_home)
-
-    def handle_home(self, message):
-        self.manage_display(OCPGUIState.HOME)
 
     def release(self):
         self.clear()
@@ -67,7 +65,7 @@ class OCPGUIInterface(GUIInterface):
         self["showLiked"] = len(liked_cards) >= 1
         self["likedCards"] = liked_cards
 
-    def update_buttons(self):
+    def update_seekbar_capabilities(self):
         self["canResume"] = self.player.state == PlayerState.PAUSED
         self["canPause"] = self.player.state == PlayerState.PLAYING
         self["canPrev"] = self.player.can_prev
@@ -131,14 +129,14 @@ class OCPGUIInterface(GUIInterface):
         elif state == OCPGUIState.SPINNER:
             self.render_search_spinner()
         elif state == OCPGUIState.PLAYBACK_ERROR:
-            self.render_error()
+            self.render_playback_error()
 
     def remove_homescreen(self):
         self.release()
 
     # OCP pre-rendering
     def prepare_gui_data(self):
-        self.update_buttons()
+        self.update_seekbar_capabilities()
         self.update_current_track()  # populate now_playing metadata
         self.update_playlist()  # populate self["playlistModel"]
         self.update_search_results()  # populate self["searchModel"]
@@ -181,8 +179,7 @@ class OCPGUIInterface(GUIInterface):
         self.render_pages(timeout, index=2)
         self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
-    def render_error(self, error="Playback Error"):
-        self["error"] = error
+    def render_playback_error(self):
         self["animation"] = f"animations/{random.choice(['error', 'error2', 'error3', 'error4'])}.json"
         self["image"] = join(dirname(__file__), "qt5/images/fail.svg")
         self.display_notification("Sorry, An error occurred while playing media")
@@ -226,18 +223,11 @@ class OCPGUIInterface(GUIInterface):
 
     # gui <-> playlists
     def handle_play_from_liked_tracks(self, message):
-        LOG.debug("Playback requested for liked tracks")
+        LOG.debug("Playback requested from liked tracks")
         uri = message.data.get("uri")
 
         # liked songs playlist
         pl = self.player.media.liked_songs_playlist
-
-        if not len(pl):
-            LOG.error("No liked tracks")
-            self.render_error("No liked tracks")
-            self.bus.emit(message.forward("mycroft.audio.play_sound",
-                                          {"uri": "snd/error.mp3"}))
-            return
 
         # uri2track
         track = None
