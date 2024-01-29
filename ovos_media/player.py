@@ -35,8 +35,6 @@ class OCPMediaCatalog:
         self.config = config or {}
         self.bus.on("ovos.common_play.skills.detach", self.handle_ocp_skill_detach)
         self.bus.on("ovos.common_play.announce", self.handle_skill_announce)
-        self.bus.on("ovos.common_play.like", self.handle_like)
-        self.bus.on("ovos.common_play.unlike", self.handle_unlike)
         # TODO - add search results clear/replace events
 
     def shutdown(self):
@@ -52,23 +50,6 @@ class OCPMediaCatalog:
             # HACK to allow sort_by_conf to work once this is in a Playlist object
             pl[idx]["match_confidence"] = p.get("play_count", 0) + 50
         return sorted(pl, key=lambda k: k.get("play_count", 0), reverse=True)
-
-    def handle_like(self, message):
-        uri = message.data["uri"]
-        title = message.data.get("title")
-        image = message.data.get("image")
-        artist = message.data.get("artist")
-        self.liked_songs[uri] = {"title": title, "artist": artist,
-                                 "image": image, "uri": uri}
-        self.liked_songs.store()
-        LOG.info(f"liked song: {uri}")
-
-    def handle_unlike(self, message):
-        uri = message.data["uri"]
-        if uri in self.liked_songs:
-            self.liked_songs.pop(uri)
-            self.liked_songs.store()
-            LOG.info(f"unliked song: {uri}")
 
     def handle_skill_announce(self, message):
         skill_id = message.data.get("skill_id")
@@ -379,7 +360,28 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.add_event('ovos.common_play.repeat.unset', self.handle_unset_repeat)
         self.add_event('ovos.common_play.SEI.get', self.handle_get_SEIs)
         self.add_event('ovos.common_play.search.start', self.handle_search_start)
+        self.add_event("ovos.common_play.like", self.handle_like)
+        self.add_event("ovos.common_play.unlike", self.handle_unlike)
         self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))  # report to ovos-core
+
+    def handle_like(self, message):
+        # sent from GUI or intent
+        uri = message.data.get("uri") or self.now_playing.original_uri
+        title = message.data.get("title") or self.now_playing.title
+        image = message.data.get("image") or self.now_playing.image
+        artist = message.data.get("artist") or self.now_playing.artist
+        self.media.liked_songs[uri] = {"title": title, "artist": artist,
+                                       "image": image, "uri": uri}
+        self.media.liked_songs.store()
+        LOG.info(f"liked song: {uri}")
+
+    def handle_unlike(self, message):
+        # sent from GUI or intent
+        uri = message.data.get("uri") or self.now_playing.original_uri
+        if uri in self.media.liked_songs:
+            self.media.liked_songs.pop(uri)
+            self.media.liked_songs.store()
+            LOG.info(f"unliked song: {uri}")
 
     def handle_search_start(self, message):
         self.gui.manage_display(OCPGUIState.SPINNER)
