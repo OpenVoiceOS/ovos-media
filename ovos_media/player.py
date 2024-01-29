@@ -20,11 +20,15 @@ from ovos_media.mpris import MprisPlayerCtl
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_workshop import OVOSAbstractApplication
+from ovos_workshop.decorators.ocp import ocp_search
+from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 
 
-class OCPMediaCatalog:
-    def __init__(self, bus, config):
-        self.bus = bus
+class OCPMediaCatalog(OVOSCommonPlaybackSkill):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.skill_icon = f"{dirname(__file__)}/qt5/images/liked.svg"
+
         self.liked_songs = JsonStorageXDG("OCP_liked_songs",
                                           subfolder=get_xdg_base())
         LOG.debug(f"Liked songs playlist loaded: {self.liked_songs.path}")
@@ -32,14 +36,55 @@ class OCPMediaCatalog:
         self.ocp_skills = {}
         self.featured_skills = {}
         self.search_lock = RLock()
-        self.config = config or {}
-        self.bus.on("ovos.common_play.skills.detach", self.handle_ocp_skill_detach)
-        self.bus.on("ovos.common_play.announce", self.handle_skill_announce)
+        self.add_event("ovos.common_play.skills.detach", self.handle_ocp_skill_detach)
+        self.add_event("ovos.common_play.announce", self.handle_skill_announce)
+
         # TODO - add search results clear/replace events
 
-    def shutdown(self):
-        self.bus.remove("ovos.common_play.announce", self.handle_skill_announce)
-        self.bus.remove("ovos.common_play.skills.detach", self.handle_ocp_skill_detach)
+        # register keywords
+        def norm_name(n):
+            return n.split("|")[0].split("(")[0].split("[")[0].split("{")[0].split("-")[0].strip()
+
+        self.register_ocp_keyword(MediaType.MUSIC, "song_name",
+                                  [norm_name(n["title"]) for n in self.liked_songs.values()])
+        self.register_ocp_keyword(MediaType.MUSIC, "playlist_name",
+                                  ["favorite", "liked", "favorites",
+                                   "favorite songs", "favorite tracks",
+                                   "favorite music", "my favorite songs",
+                                   "my favorite tracks", "my favorite music",
+                                   "liked songs", "liked tracks", "liked music",
+                                   "my liked songs", "my liked tracks", "my liked music"])
+
+    @ocp_search()
+    def search_db(self, phrase, media_type):
+        base_score = 15 if media_type == MediaType.MUSIC else 0
+        entities = self.ocp_voc_match(phrase)
+        base_score += 30 * len(entities)
+
+        if entities.get("playlist_name"):
+            if phrase.lower() == entities["playlist_name"]:
+                base_score = 100
+            yield {
+                "match_confidence": min(base_score + 35, 100),
+                "media_type": MediaType.MUSIC,
+                "playback": PlaybackType.AUDIO,
+                "playlist": self.liked_songs_playlist,  # return full playlist result
+                "skill_icon": self.skill_icon,
+                "title": "Liked Songs",
+                "skill_id": self.skill_id
+            }
+
+        if entities.get("song_name"):
+            title = entities["song_name"]
+            candidates = [song for song in self.liked_songs_playlist
+                          if title.lower() in song["title"].lower()]
+            for c in candidates:
+                c["match_confidence"] = min(base_score + 40, 100)
+                c["media_type"] = MediaType.MUSIC
+                c["playback"] = PlaybackType.AUDIO
+                c["skill_id"] = self.skill_id
+                c["skill_icon"] = self.skill_icon
+                yield c
 
     @property
     def liked_songs_playlist(self):
@@ -312,7 +357,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         """
         super(OCPMediaPlayer, self).bind(bus)
         self.now_playing = NowPlaying(bus)
-        self.media = OCPMediaCatalog(self.bus, self.ocp_config)
+        self.media = OCPMediaCatalog(bus=self.bus, skill_id=OCP_ID + ".favorites")
         self.audio_service = AudioService(self.bus)
         self.video_service = VideoService(self.bus)
         self.web_service = WebService(self.bus)
