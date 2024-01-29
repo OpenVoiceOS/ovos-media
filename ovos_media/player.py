@@ -99,7 +99,7 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
     def handle_skill_announce(self, message):
         skill_id = message.data.get("skill_id")
         skill_name = message.data.get("skill_name") or skill_id
-        img = message.data.get("thumbnail")
+        img = message.data.get("image") or message.data.get("thumbnail")
         has_featured = bool(message.data.get("featured_tracks"))
         media_types = message.data.get("media_types") or \
                       message.data.get("media_type") or \
@@ -114,7 +114,7 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
             self.featured_skills[skill_id] = {
                 "skill_id": skill_id,
                 "skill_name": skill_name,
-                "thumbnail": img,
+                "image": img,
                 "media_types": media_types
             }
 
@@ -162,6 +162,22 @@ class NowPlaying(MediaEntry):
         Return a MediaEntry representation of this object
         """
         return MediaEntry(**self.as_dict)
+
+    @property
+    def as_dict(self) -> dict:
+        """
+        Return a dict representation of this MediaEntry
+        """
+        return {"uri": self.uri,
+                "title": self.title,
+                "artist": self.artist,
+                "image": self.image,
+                "playback": self.playback,
+                "status": self.status,
+                "media_type": self.media_type,
+                "length": self.length,
+                "skill_id": self.skill_id,
+                "skill_icon": self.skill_icon}
 
     def shutdown(self):
         """
@@ -417,14 +433,20 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             "media_type": self.now_playing.media_type,
             "player_state": self.state,
             "loop_state": self.loop_state,
-            "media_state": self.media_state
+            "media_state": self.media_state,
+            "shuffle": self.shuffle,
+            "playlist_position": self.playlist.position,
+            "playlist_size": len(self.playlist),
+            "title": self.now_playing.title,
+            "artist": self.now_playing.artist,
+            "image": self.now_playing.image
         }))
 
     def handle_like(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
         title = message.data.get("title") or self.now_playing.title
-        image = message.data.get("image") or self.now_playing.image
+        image = message.data.get("image") or message.data.get("thumbnail") or self.now_playing.image
         artist = message.data.get("artist") or self.now_playing.artist
         self.media.liked_songs[uri] = {"title": title, "artist": artist,
                                        "image": image, "uri": uri}
@@ -487,7 +509,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         return []
 
     @property
-    def disambiguation(self) -> List[MediaEntry]:
+    def search_results(self) -> List[MediaEntry]:
         """
         Return a list of the previous search results as MediaEntry objects
         """
@@ -659,7 +681,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         """
         if isinstance(track, dict):
             track = MediaEntry.from_dict(track)
-            LOG.debug(f"play result: {track}")
+            LOG.debug(f"deserialized: {track}")
 
         if isinstance(track, Playlist):
             playlist = track
@@ -678,7 +700,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.playlist.replace(playlist)
         if track in self.playlist:
             self.playlist.goto_track(track)
-        LOG.debug(f"Playing: {track}")
         self.set_now_playing(track)
         self.play()
 
@@ -1188,8 +1209,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
     def handle_track_info_request(self, message):
         data = self.now_playing.as_dict
-        if self.playback_type == PlaybackType.AUDIO:
-            data = self.audio_service.track_info() or data
         self.bus.emit(message.response(data))
 
     # internal info

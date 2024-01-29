@@ -53,13 +53,13 @@ class OCPGUIInterface(GUIInterface):
         skills_cards = [
             {"skill_id": skill["skill_id"],
              "title": skill["skill_name"],
-             "image": skill.get("thumbnail") or f"{dirname(__file__)}/qt5/images/placeholder.png"
+             "image": skill.get("image") or skill.get("thumbnail") or f"{dirname(__file__)}/qt5/images/placeholder.png"
              } for skill in self.player.media.get_featured_skills()]
         self["skillCards"] = skills_cards
         liked_cards = sorted([
             {"uri": uri,
              "title": song["title"],
-             "image": song.get("image")
+             "image": song.get("image") or song.get("thumbnail") or f"{dirname(__file__)}/qt5/images/placeholder.png"
              } for uri, song in self.player.media.liked_songs.items()
             if song["title"] and song.get("image")],
             key=lambda k: k.get("play_count", 0),
@@ -74,7 +74,7 @@ class OCPGUIInterface(GUIInterface):
         self["canNext"] = self.player.can_next
         self["isLike"] = self.player.now_playing.original_uri in self.player.media.liked_songs and \
                          self.player.now_playing.playback != PlaybackType.MPRIS
-        self["isMusic"] = self.player.now_playing.media_type == MediaType.MUSIC and \
+        self["isMusic"] = self.player.now_playing.media_type in [MediaType.MUSIC, MediaType.RADIO] and \
                           self.player.now_playing.playback != PlaybackType.MPRIS
 
         if self.player.loop_state == LoopState.NONE:
@@ -107,7 +107,7 @@ class OCPGUIInterface(GUIInterface):
 
     def update_search_results(self):
         self["searchModel"] = {
-            "data": [e.infocard for e in self.player.disambiguation]
+            "data": [e.infocard for e in self.player.search_results]
         }
 
     def update_playlist(self):
@@ -170,7 +170,7 @@ class OCPGUIInterface(GUIInterface):
         self.render_pages(index=1, timeout=timeout)
         if len(self.player.tracks):
             self.send_event("ocp.gui.show.suggestion.view.playlist")
-        elif len(self.player.disambiguation):
+        elif len(self.player.search_results):
             self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
     def render_playlist(self, timeout=None):
@@ -226,7 +226,7 @@ class OCPGUIInterface(GUIInterface):
 
     # gui <-> playlists
     def handle_play_from_liked_tracks(self, message):
-        LOG.debug("Playback requested for liked tracks")
+        LOG.info("Playback requested for liked tracks")
         uri = message.data.get("uri")
 
         # liked songs playlist
@@ -254,20 +254,40 @@ class OCPGUIInterface(GUIInterface):
         self.player.play_media(track, disambiguation=pl)
 
     def handle_play_from_playlist(self, message):
-        LOG.debug("Playback requested from playlist results")
+        LOG.info("Playback requested from playlist results")
         media = message.data["playlistData"]
-        for track in self.player.playlist:
-            if track == media:  # found track
+        # if media is a playlist, it doesnt have a uri assigned
+
+        for track in self.player.search_results:
+            if isinstance(track, dict):
+                track = MediaEntry.from_dict(track)
+
+            if isinstance(track, MediaEntry) and \
+                    track.uri == media.get("uri"):  # found track
+                self.player.play_media(track)
+                break
+            elif isinstance(track, Playlist) and \
+                    track.title == media.get("track"):  # found playlist
                 self.player.play_media(track)
                 break
         else:
             LOG.error("Track is not part of loaded playlist!")
 
     def handle_play_from_search(self, message):
-        LOG.debug("Playback requested from search results")
+        LOG.info("Playback requested from search results")
         media = message.data["playlistData"]
-        for track in self.player.disambiguation:
-            if track == media:  # found track
+        # if media is a playlist, it doesnt have a uri assigned
+
+        for track in self.player.search_results:
+            if isinstance(track, dict):
+                track = MediaEntry.from_dict(track)
+
+            if isinstance(track, MediaEntry) and \
+                    track.uri == media.get("uri"):  # found track
+                self.player.play_media(track)
+                break
+            elif isinstance(track, Playlist) and \
+                    track.title == media.get("track"):  # found playlist
                 self.player.play_media(track)
                 break
         else:
@@ -275,7 +295,7 @@ class OCPGUIInterface(GUIInterface):
 
     def handle_play_skill_featured_media(self, message):
         skill_id = message.data["skill_id"]
-        LOG.debug(f"Featured Media request: {skill_id}")
+        LOG.info(f"Featured Media request: {skill_id}")
         playlist = message.data["playlist"]
 
         self.player.playlist.clear()

@@ -112,7 +112,7 @@ class MprisPlayerCtl(Thread):
 
             # update ocp metadata
             data["skill_id"] = data["external_player"]
-            data["bg_image"] = data.get("image")
+            data["bg_image"] = data.get("image") or data.get("thumbnail")
             data["playback"] = PlaybackType.MPRIS
             data["status"] = TrackState.PLAYING_MPRIS
             data["length"] = data.get("length", 0) / 1000
