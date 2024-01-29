@@ -116,7 +116,21 @@ class MprisPlayerCtl(Thread):
             data["playback"] = PlaybackType.MPRIS
             data["status"] = TrackState.PLAYING_MPRIS
             data["length"] = data.get("length", 0) / 1000
-            data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
+            # dedicated icons for some common players
+            if self.main_player == 'org.mpris.MediaPlayer2.spotify':
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/spotify.png"
+            elif self.main_player.startswith("org.mpris.MediaPlayer2.firefox"):
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/firefox.png"
+            elif self.main_player.startswith("org.mpris.MediaPlayer2.chromium"):
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/chromium.png"
+            elif self.main_player == "org.mpris.MediaPlayer2.vlc":
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/vlc.png"
+            elif self.main_player == "org.mpris.MediaPlayer2.mpv":
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpv.png"
+            elif self.main_player == "org.mpris.MediaPlayer2.audacious":
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/audacious.png"
+            else:
+                data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
 
             self._ocp_player.set_now_playing(data)
             self._ocp_player.gui.prepare_gui_data()

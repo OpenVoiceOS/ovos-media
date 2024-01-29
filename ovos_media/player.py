@@ -27,6 +27,7 @@ class OCPMediaCatalog:
         self.bus = bus
         self.liked_songs = JsonStorageXDG("OCP_liked_songs",
                                           subfolder=get_xdg_base())
+        LOG.debug(f"Liked songs playlist loaded: {self.liked_songs.path}")
         self.search_playlist = Playlist()
         self.ocp_skills = {}
         self.featured_skills = {}
@@ -42,17 +43,28 @@ class OCPMediaCatalog:
         self.bus.remove("ovos.common_play.announce", self.handle_skill_announce)
         self.bus.remove("ovos.common_play.skills.detach", self.handle_ocp_skill_detach)
 
+    @property
+    def liked_songs_playlist(self):
+        pl = list(self.liked_songs.values())
+        for idx, p in enumerate(pl):
+            pl[idx]["media_type"] = MediaType.MUSIC
+            pl[idx]["playback"] = PlaybackType.AUDIO
+            # HACK to allow sort_by_conf to work once this is in a Playlist object
+            pl[idx]["match_confidence"] = p.get("play_count", 0) + 50
+        return sorted(pl, key=lambda k: k.get("play_count", 0), reverse=True)
+
     def handle_like(self, message):
-        track = message.data.get("track", {})
         uri = message.data["uri"]
-        track["uri"] = uri  # ensure original uri, instead of extracted final stream
-        self.liked_songs[uri] = track
+        title = message.data.get("title")
+        image = message.data.get("image")
+        artist = message.data.get("artist")
+        self.liked_songs[uri] = {"title": title, "artist": artist,
+                                 "image": image, "uri": uri}
         self.liked_songs.store()
         LOG.info(f"liked song: {uri}")
 
     def handle_unlike(self, message):
         uri = message.data["uri"]
-        track = message.data.get("track", {})
         if uri in self.liked_songs:
             self.liked_songs.pop(uri)
             self.liked_songs.store()
@@ -598,7 +610,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.media.search_playlist.replace([t for t in disambiguation
                                                 if t not in self.media.search_playlist])
             self.media.search_playlist.sort_by_conf()
-            self.media.search_playlist.insert(0, track)
         if playlist:
             self.playlist.replace(playlist)
         if track in self.playlist:
@@ -616,6 +627,13 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         # stop any external media players
         if self.mpris and not self.mpris.stop_event.is_set():
             self.mpris.stop()
+
+        # track play count
+        if self.now_playing.uri in self.media.liked_songs:
+            if "play_count" not in self.media.liked_songs[self.now_playing.uri]:
+                self.media.liked_songs[self.now_playing.uri]["play_count"] = 0
+            self.media.liked_songs[self.now_playing.uri]["play_count"] += 1
+            self.media.liked_songs.store()
 
         # validate new stream
         if not self.validate_stream():
@@ -928,7 +946,10 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             LOG.debug(f"Playing next track")
             self.play_next()
             return
+
         LOG.info("Playback ended")
+        # show search for 60 seconds and exit to homescreen
+        self.gui.manage_display(OCPGUIState.DISAMBIGUATION, timeout=60)
 
     # ovos common play bus api requests
     def handle_play_request(self, message):

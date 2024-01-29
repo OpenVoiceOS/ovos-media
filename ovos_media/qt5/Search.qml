@@ -122,30 +122,13 @@ Item {
                 anchors.margins: compactMode ? Mycroft.Units.gridUnit / 2 : Mycroft.Units.gridUnit
                 height: compactMode ? Mycroft.Units.gridUnit * 3 : Mycroft.Units.gridUnit * 4
                 KeyNavigation.up: txtFld
-                KeyNavigation.down: homepageButtonTangle
+                KeyNavigation.right: ocpLikesView
+                KeyNavigation.down: ocpLikesView
 
                 background: Rectangle {
                     id: answerButtonBackground
                     color: answerButton.activeFocus ? Kirigami.Theme.highlightColor : Qt.darker(Kirigami.Theme.highlightColor, 1.5)
                     radius: Mycroft.Units.gridUnit
-                }
-
-                SequentialAnimation {
-                    id: answerButtonAnim
-
-                    PropertyAnimation {
-                        target: answerButtonBackground
-                        property: "color"
-                        to: Qt.lighter(Kirigami.Theme.highlightColor, 1.5)
-                        duration: 200
-                    }
-
-                    PropertyAnimation {
-                        target: answerButtonBackground
-                        property: "color"
-                        to: answerButton.activeFocus ? Kirigami.Theme.highlightColor : Qt.darker(Kirigami.Theme.highlightColor, 1.5)
-                        duration: 200
-                    }
                 }
 
                 contentItem: Item {
@@ -160,19 +143,50 @@ Item {
                     triggerGuiEvent("play_search", { "utterance": txtFldInternal.text})
                 }
 
-                onPressed: {
-                    answerButtonAnim.running = true;
-                }
-
                 Keys.onReturnPressed: {
                     clicked()
                 }
+            }
+
+            Rectangle {
+                id: heads2
+                anchors.top: answerButton.bottom
+                anchors.margins: Mycroft.Units.gridUnit
+                width: Mycroft.Units.gridUnit * 20
+                height: compactMode ? Mycroft.Units.gridUnit * 3 :  Mycroft.Units.gridUnit * 4
+                color: Kirigami.Theme.backgroundColor
+                radius: Mycroft.Units.gridUnit * 0.5
+                visible: sessionData.showLiked === true
+
+                Label {
+                    text: "Favorite Tracks"
+                    anchors.fill: parent
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                    wrapMode: Text.WordWrap
+                    color: Kirigami.Theme.textColor
+                    font.pixelSize: parent.height * 0.4
+                }
+            }
+
+            OCPLikesView {
+                id: ocpLikesView
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: heads2.bottom
+                anchors.bottom: bottomBar.top
+                anchors.margins: compactMode ? Mycroft.Units.gridUnit / 2 : Mycroft.Units.gridUnit
+                height: Mycroft.Units.gridUnit * 5
+                KeyNavigation.up: answerButton
+                KeyNavigation.down: homepageButtonTangle
+                visible: sessionData.showLiked === true
             }
         }
 
         Item {
             id: bottomAreaSearchPage
-            Layout.fillWidth: true            
+            Layout.fillWidth: true
             Layout.fillHeight: true
         }
     }
