@@ -275,8 +275,8 @@ class NowPlaying(MediaEntry):
 
         if state == self.status:
             return
+        LOG.info(f"TrackState changed: {repr(self.status)} -> {repr(state)}")
         self.status = state
-        LOG.info(f"TrackState changed: {repr(state)}")
 
         if state == TrackState.PLAYING_SKILL:
             # skill is handling playback internally
@@ -551,7 +551,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             raise TypeError(f"Expected MediaState and got: {state}")
         if state == self.media_state:
             return
-        self.media_state = state
         self.bus.emit(Message("ovos.common_play.media.state",
                               {"state": self.media_state}))
 
@@ -565,7 +564,8 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             raise TypeError(f"Expected PlayerState and got: {state}")
         if state == self.state:
             return
-        self.state = state
+        self.bus.emit(Message("ovos.common_play.player.state",
+                              {"state": self.state}))
         state2str = {PlayerState.PLAYING: "Playing",
                      PlayerState.PAUSED: "Paused",
                      PlayerState.STOPPED: "Stopped"}
@@ -573,8 +573,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.update_props({"CanPause": self.state == PlayerState.PLAYING,
                                      "CanPlay": self.state == PlayerState.PAUSED,
                                      "PlaybackStatus": state2str[state]})
-        self.bus.emit(Message("ovos.common_play.player.state",
-                              {"state": self.state}))
         self.handle_status(Message("ovos.common_play.status"))  # report full status to ovos-core
 
     def set_now_playing(self, track: Union[dict, MediaEntry, Playlist]):
@@ -735,7 +733,6 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             LOG.debug("Requesting playback: PlaybackType.AUDIO")
             # TODO - get preferred service and pass to self.play
             self.audio_service.play(self.now_playing.uri)
-            self.set_player_state(PlayerState.PLAYING)
 
         elif self.playback_type == PlaybackType.SKILL:
             # skill wants to handle playback
@@ -749,15 +746,11 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             LOG.debug("Requesting playback: PlaybackType.VIDEO")
             # TODO - get preferred service and pass to self.play
             self.video_service.play(self.now_playing.uri)
-            self.bus.emit(Message("ovos.common_play.track.state",
-                                  {"state": TrackState.PLAYING_VIDEO}))
 
         elif self.playback_type == PlaybackType.WEBVIEW:
             LOG.debug("Requesting playback: PlaybackType.WEBVIEW")
             # TODO - get preferred service and pass to self.play
             self.web_service.play(self.now_playing.uri)
-            self.bus.emit(Message("ovos.common_play.track.state",
-                                  {"state": TrackState.PLAYING_WEBVIEW}))
 
         else:
             raise ValueError("invalid playback request")
@@ -766,6 +759,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             self.mpris.update_props({"CanGoNext": self.can_next})
             self.mpris.update_props({"CanGoPrevious": self.can_prev})
 
+        self.set_player_state(PlayerState.PLAYING)
         self.gui.update_buttons()  # pause/play icon
 
     def play_shuffle(self):
@@ -978,7 +972,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             raise ValueError(f"Expected int or PlayerState, but got: {state}")
         if state == self.state:
             return
-        LOG.info(f"PlayerState changed: {repr(state)}")
+        LOG.info(f"PlayerState changed: {repr(self.state)} -> {repr(state)}")
         if state == PlayerState.PLAYING:
             self.state = PlayerState.PLAYING
         elif state == PlayerState.PAUSED:
@@ -1010,7 +1004,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             raise ValueError(f"Expected int or MediaState, but got: {state}")
         if state == self.media_state:
             return
-        LOG.debug(f"MediaState changed: {repr(state)}")
+        LOG.info(f"MediaState changed: {repr(self.media_state)} -> {repr(state)}")
         self.media_state = state
         if state == MediaState.END_OF_MEDIA:
             self.handle_playback_ended(message)

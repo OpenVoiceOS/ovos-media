@@ -6,8 +6,6 @@ from threading import Timer
 from ovos_bus_client.apis.gui import GUIInterface
 from ovos_utils.ocp import *
 
-from ovos_config import Configuration
-
 
 class OCPGUIState(str, enum.Enum):
     HOME = "home"
@@ -26,6 +24,15 @@ class OCPGUIInterface(GUIInterface):
                                               ui_directories={"qt5": f"{dirname(__file__)}/qt5"})
         self.ocp_skills = {}  # skill_id: meta
         self.notification_timeout = None
+
+        # other components may interact with this via their own
+        # GUIInterface if they share OCP_ID
+        self["audio_player_page"] = "OVOSSyncPlayer"
+        self["video_player_page"] = "OVOSSyncPlayer"
+        self["sync_player_page"] = "OVOSSyncPlayer"
+        self["web_player_page"] = "OVOSWebPlayer"
+        self["searchModel"] = {"data": []}
+        self["playlistModel"] = {"data": []}
 
     def bind(self, player):
         self.player = player
@@ -122,7 +129,7 @@ class OCPGUIInterface(GUIInterface):
         if state == OCPGUIState.HOME:
             self.render_home(timeout=timeout)
         elif state == OCPGUIState.PLAYER:
-            self.prepare_player()
+            self.clear_notification()
             self.render_player(timeout=timeout)
         elif state == OCPGUIState.PLAYLIST:
             self.render_playlist(timeout=timeout)
@@ -143,19 +150,33 @@ class OCPGUIInterface(GUIInterface):
         self.update_playlist()  # populate self["playlistModel"]
         self.update_search_results()  # populate self["searchModel"]
 
-    def prepare_player(self):
-        self.remove_search_spinner()
-        self.remove_error()
-        self.clear_notification()
-
     # OCP rendering
     def render_pages(self, timeout=None, index=0):
-        self.remove_search_spinner()
-        self.remove_error()
-        pages = ["Home", "OVOSSyncPlayer", "PlaylistView"]
+
+        pages = ["Home"]
+
+        if self.player.state != PlayerState.STOPPED:
+            # the audio/video plugins can define what page to show
+            # this is done by using GUIInterface with OCP_ID to share data
+            if self.player.now_playing.playback == PlaybackType.AUDIO:
+                p = self["audio_player_page"]
+            elif self.player.now_playing.playback == PlaybackType.VIDEO:
+                p = self["video_player_page"]
+            elif self.player.now_playing.playback == PlaybackType.WEBVIEW:
+                p = self["web_player_page"]
+            else:
+                p = self["sync_player_page"]
+
+            pages.append(p)
+
+        if len(self["playlistModel"]["data"]) or len(self["searchModel"]["data"]):
+            pages.append("PlaylistView")
+        if index == -1:
+            index = len(pages) - 1
         self.show_pages(pages, index,
                         override_idle=timeout or True,
-                        override_animations=True)
+                        override_animations=True,
+                        remove_others=True)
 
     def render_home(self, timeout=None):
         self.update_ocp_cards()  # populate self["skillCards"]
@@ -174,11 +195,11 @@ class OCPGUIInterface(GUIInterface):
             self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
     def render_playlist(self, timeout=None):
-        self.render_pages(timeout, index=2)
+        self.render_pages(timeout, index=-1)
         self.send_event("ocp.gui.show.suggestion.view.playlist")
 
     def render_disambiguation(self, timeout=None):
-        self.render_pages(timeout, index=2)
+        self.render_pages(timeout, index=-1)
         self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
     def render_error(self, error="Playback Error"):
@@ -186,23 +207,15 @@ class OCPGUIInterface(GUIInterface):
         self["animation"] = f"animations/{random.choice(['error', 'error2', 'error3', 'error4'])}.json"
         self["image"] = join(dirname(__file__), "qt5/images/fail.svg")
         self.display_notification("Sorry, An error occurred while playing media")
-        pages = ["Home", "OVOSSyncPlayer", "PlaylistView"]
-        self.remove_pages(pages)
-        self.show_page("StreamError", override_idle=20, override_animations=True)
+        self.show_page("StreamError", override_idle=30,
+                       override_animations=True, remove_others=True)
 
     def render_search_spinner(self, persist_home=False):
         self.display_notification("Searching...Your query is being processed")
-        pages = ["Home", "OVOSSyncPlayer", "PlaylistView"]
-        self.remove_pages(pages)
-        self.show_page("SearchingMedia", override_idle=True, override_animations=True)
+        self.show_page("SearchingMedia", override_idle=True,
+                       override_animations=True, remove_others=True)
 
-    def remove_search_spinner(self):
-        self.remove_page("SearchingMedia")
-
-    def remove_error(self):
-        self.remove_page("StreamError")
-
-    # notification / spinner
+    # notifications
     def display_notification(self, text, style="info"):
         """ Display a notification on the screen instead of spinner on platform that support it """
         self.show_controlled_notification(text, style=style)

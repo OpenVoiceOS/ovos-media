@@ -63,7 +63,7 @@ class BaseMediaService:
         """
         if track:
             # Inform about the track about to start.
-            LOG.debug(f'New {self.namespace} track coming up!')
+            LOG.info(f'New {self.namespace} track coming up!')
             self.bus.emit(Message(f'ovos.{self.namespace}.playing_track',
                                   data={'track': track}))
         else:
@@ -145,10 +145,10 @@ class BaseMediaService:
                                       {"state": TrackState.PLAYING_AUDIO}))
             elif self.namespace == "video":
                 self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_AUDIO}))
+                                      {"state": TrackState.PLAYING_VIDEO}))
             elif self.namespace == "web":
                 self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_AUDIO}))
+                                      {"state": TrackState.PLAYING_WEBVIEW}))
             else:
                 pass  # ???
 
