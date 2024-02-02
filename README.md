@@ -2,6 +2,16 @@
 
 Media playback service for OpenVoiceOS
 
+* [Install](#install)
+* [Architecture](#architecture)
+* [MPRIS integration](#mpris-integration)
+* [Pipeline](#pipeline)
+  - [ocp_high](#ocp-high)
+  - [ocp_mediun](#ocp-mediun)
+  - [ocp_fallback](#ocp-fallback)
+* [Favorite Songs](#favorite-songs)
+* [Configuration](#configuration)
+
 ## Install
 
 `pip install ovos-media` to install this package and the default plugins.
@@ -49,6 +59,7 @@ enabling OCP pipeline
 Integration with MPRIS allows OCP to control external players
 
 ![imagem](https://github.com/NeonJarbas/ovos-media/assets/33701864/856c0228-8fc5-4ee6-a19d-4290f2e07258)
+
 
 ## Pipeline
 
@@ -130,8 +141,18 @@ print(ocp.match_fallback("i wanna hear metallica", "en-us"))
 
 ```
 
+## Favorite Songs
 
-# Configuration
+You can like a song that is currently playing via GUI and intent "I like that song"
+
+![like](https://github.com/OpenVoiceOS/ovos-media/assets/33701864/27aee29a-ca3b-4c73-992e-9fd5ef513f4d)
+
+Liked songs can be played via intent "play my favorite songs" or GUI
+
+![favs](https://github.com/OpenVoiceOS/ovos-media/assets/33701864/cdf7a682-c417-43f7-a4ae-589b07de55cf)
+
+
+## Configuration
 
 under mycroft.conf
 
