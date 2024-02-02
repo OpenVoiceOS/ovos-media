@@ -77,6 +77,7 @@ The dataset used to train the classifiers can be found [here](https://github.com
 
 Training code for classifiers used in the OCP pipeline can be found [here](https://github.com/OpenVoiceOS/ovos-classifiers/tree/dev/scripts/training/ocp)
 
+Details on the classifiers can be found [here](https://github.com/OpenVoiceOS/ovos-core/tree/dev/ovos_core/intent_services/models)
 
 ### ocp_high
 
@@ -136,6 +137,8 @@ Uses [keyword matching](https://en.wikipedia.org/wiki/Aho%E2%80%93Corasick_algor
 OCP skills can provide these keywords at runtime, additional keywords for things such as media_genre were collected via SPARQL queries to wikidata
 
 The list of bundled keywords can be found [here](https://github.com/OpenVoiceOS/ovos-core/blob/dev/ovos_core/intent_services/models/ocp_entities_v0.csv)
+
+Skill names are automatically added as keywords, this ensures that if the skill name is present in an utterance the ocp_fallback pipeline will catch it
 
 ```python
 from ocp_nlp.intents import OCPPipelineMatcher
