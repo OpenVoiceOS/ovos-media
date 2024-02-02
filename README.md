@@ -27,29 +27,6 @@ disabling old OCP
 }
 ```
 
-enabling OCP pipeline
-```javascript
-{
-  // Intent Pipeline / plugins config
-  "intents" : {
-    // the pipeline is a ordered set of frameworks to send an utterance too
-    // if one of the frameworks fails the next one is used, until an answer is found
-    "pipeline": [
-        "converse",
-        "ocp_high",
-        "padatious_high",
-        "adapt",
-        "common_qa",
-        "ocp_medium",
-        "fallback_high",
-        "padatious_medium",
-        "fallback_medium",
-        "ocp_fallback",
-        "fallback_low"
-    ]
-  }
-}
-```
 
 ## Architecture
 
@@ -73,7 +50,30 @@ Integration with MPRIS allows OCP to control external players
 
 ## Pipeline
 
-Enabling pipelines
+Enabling OCP pipeline
+
+```javascript
+{
+  // Intent Pipeline / plugins config
+  "intents" : {
+    // the pipeline is a ordered set of frameworks to send an utterance too
+    // if one of the frameworks fails the next one is used, until an answer is found
+    "pipeline": [
+        "converse",
+        "ocp_high",
+        "padatious_high",
+        "adapt",
+        "common_qa",
+        "ocp_medium",
+        "fallback_high",
+        "padatious_medium",
+        "fallback_medium",
+        "ocp_fallback",
+        "fallback_low"
+    ]
+  }
+}
+```
 
 ### ocp_high
 
