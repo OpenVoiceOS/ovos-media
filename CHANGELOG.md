@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a12...HEAD)
+
+**Merged pull requests:**
+
+- gui fixes [\#11](https://github.com/OpenVoiceOS/ovos-media/pull/11) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.1a12](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a12) (2024-02-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a11...V0.0.1a12)
+
 ## [V0.0.1a11](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a11) (2024-01-29)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a10...V0.0.1a11)
