@@ -6,8 +6,6 @@ from threading import Timer
 from ovos_bus_client.apis.gui import GUIInterface
 from ovos_utils.ocp import *
 
-from ovos_config import Configuration
-
 
 class OCPGUIState(str, enum.Enum):
     HOME = "home"
@@ -26,6 +24,15 @@ class OCPGUIInterface(GUIInterface):
                                               ui_directories={"qt5": f"{dirname(__file__)}/qt5"})
         self.ocp_skills = {}  # skill_id: meta
         self.notification_timeout = None
+
+        # other components may interact with this via their own
+        # GUIInterface if they share OCP_ID
+        self["audio_player_page"] = "OVOSSyncPlayer"
+        self["video_player_page"] = "OVOSSyncPlayer"
+        self["sync_player_page"] = "OVOSSyncPlayer"
+        self["web_player_page"] = "OVOSWebPlayer"
+        self["searchModel"] = {"data": []}
+        self["playlistModel"] = {"data": []}
 
     def bind(self, player):
         self.player = player
@@ -53,13 +60,13 @@ class OCPGUIInterface(GUIInterface):
         skills_cards = [
             {"skill_id": skill["skill_id"],
              "title": skill["skill_name"],
-             "image": skill.get("thumbnail") or f"{dirname(__file__)}/qt5/images/placeholder.png"
+             "image": skill.get("image") or skill.get("thumbnail") or f"{dirname(__file__)}/qt5/images/placeholder.png"
              } for skill in self.player.media.get_featured_skills()]
         self["skillCards"] = skills_cards
         liked_cards = sorted([
             {"uri": uri,
              "title": song["title"],
-             "image": song.get("image")
+             "image": song.get("image") or song.get("thumbnail") or f"{dirname(__file__)}/qt5/images/placeholder.png"
              } for uri, song in self.player.media.liked_songs.items()
             if song["title"] and song.get("image")],
             key=lambda k: k.get("play_count", 0),
@@ -74,7 +81,7 @@ class OCPGUIInterface(GUIInterface):
         self["canNext"] = self.player.can_next
         self["isLike"] = self.player.now_playing.original_uri in self.player.media.liked_songs and \
                          self.player.now_playing.playback != PlaybackType.MPRIS
-        self["isMusic"] = self.player.now_playing.media_type == MediaType.MUSIC and \
+        self["isMusic"] = self.player.now_playing.media_type in [MediaType.MUSIC, MediaType.RADIO] and \
                           self.player.now_playing.playback != PlaybackType.MPRIS
 
         if self.player.loop_state == LoopState.NONE:
@@ -107,7 +114,7 @@ class OCPGUIInterface(GUIInterface):
 
     def update_search_results(self):
         self["searchModel"] = {
-            "data": [e.infocard for e in self.player.disambiguation]
+            "data": [e.infocard for e in self.player.search_results]
         }
 
     def update_playlist(self):
@@ -122,7 +129,7 @@ class OCPGUIInterface(GUIInterface):
         if state == OCPGUIState.HOME:
             self.render_home(timeout=timeout)
         elif state == OCPGUIState.PLAYER:
-            self.prepare_player()
+            self.clear_notification()
             self.render_player(timeout=timeout)
         elif state == OCPGUIState.PLAYLIST:
             self.render_playlist(timeout=timeout)
@@ -143,19 +150,33 @@ class OCPGUIInterface(GUIInterface):
         self.update_playlist()  # populate self["playlistModel"]
         self.update_search_results()  # populate self["searchModel"]
 
-    def prepare_player(self):
-        self.remove_search_spinner()
-        self.remove_error()
-        self.clear_notification()
-
     # OCP rendering
     def render_pages(self, timeout=None, index=0):
-        self.remove_search_spinner()
-        self.remove_error()
-        pages = ["Home", "OVOSSyncPlayer", "PlaylistView"]
+
+        pages = ["Home"]
+
+        if self.player.state != PlayerState.STOPPED:
+            # the audio/video plugins can define what page to show
+            # this is done by using GUIInterface with OCP_ID to share data
+            if self.player.now_playing.playback == PlaybackType.AUDIO:
+                p = self["audio_player_page"]
+            elif self.player.now_playing.playback == PlaybackType.VIDEO:
+                p = self["video_player_page"]
+            elif self.player.now_playing.playback == PlaybackType.WEBVIEW:
+                p = self["web_player_page"]
+            else:
+                p = self["sync_player_page"]
+
+            pages.append(p)
+
+        if len(self["playlistModel"]["data"]) or len(self["searchModel"]["data"]):
+            pages.append("PlaylistView")
+        if index == -1:
+            index = len(pages) - 1
         self.show_pages(pages, index,
                         override_idle=timeout or True,
-                        override_animations=True)
+                        override_animations=True,
+                        remove_others=True)
 
     def render_home(self, timeout=None):
         self.update_ocp_cards()  # populate self["skillCards"]
@@ -170,15 +191,15 @@ class OCPGUIInterface(GUIInterface):
         self.render_pages(index=1, timeout=timeout)
         if len(self.player.tracks):
             self.send_event("ocp.gui.show.suggestion.view.playlist")
-        elif len(self.player.disambiguation):
+        elif len(self.player.search_results):
             self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
     def render_playlist(self, timeout=None):
-        self.render_pages(timeout, index=2)
+        self.render_pages(timeout, index=-1)
         self.send_event("ocp.gui.show.suggestion.view.playlist")
 
     def render_disambiguation(self, timeout=None):
-        self.render_pages(timeout, index=2)
+        self.render_pages(timeout, index=-1)
         self.send_event("ocp.gui.show.suggestion.view.disambiguation")
 
     def render_error(self, error="Playback Error"):
@@ -186,23 +207,15 @@ class OCPGUIInterface(GUIInterface):
         self["animation"] = f"animations/{random.choice(['error', 'error2', 'error3', 'error4'])}.json"
         self["image"] = join(dirname(__file__), "qt5/images/fail.svg")
         self.display_notification("Sorry, An error occurred while playing media")
-        pages = ["Home", "OVOSSyncPlayer", "PlaylistView"]
-        self.remove_pages(pages)
-        self.show_page("StreamError", override_idle=20, override_animations=True)
+        self.show_page("StreamError", override_idle=30,
+                       override_animations=True, remove_others=True)
 
     def render_search_spinner(self, persist_home=False):
         self.display_notification("Searching...Your query is being processed")
-        pages = ["Home", "OVOSSyncPlayer", "PlaylistView"]
-        self.remove_pages(pages)
-        self.show_page("SearchingMedia", override_idle=True, override_animations=True)
+        self.show_page("SearchingMedia", override_idle=True,
+                       override_animations=True, remove_others=True)
 
-    def remove_search_spinner(self):
-        self.remove_page("SearchingMedia")
-
-    def remove_error(self):
-        self.remove_page("StreamError")
-
-    # notification / spinner
+    # notifications
     def display_notification(self, text, style="info"):
         """ Display a notification on the screen instead of spinner on platform that support it """
         self.show_controlled_notification(text, style=style)
@@ -226,7 +239,7 @@ class OCPGUIInterface(GUIInterface):
 
     # gui <-> playlists
     def handle_play_from_liked_tracks(self, message):
-        LOG.debug("Playback requested for liked tracks")
+        LOG.info("Playback requested for liked tracks")
         uri = message.data.get("uri")
 
         # liked songs playlist
@@ -254,20 +267,40 @@ class OCPGUIInterface(GUIInterface):
         self.player.play_media(track, disambiguation=pl)
 
     def handle_play_from_playlist(self, message):
-        LOG.debug("Playback requested from playlist results")
+        LOG.info("Playback requested from playlist results")
         media = message.data["playlistData"]
-        for track in self.player.playlist:
-            if track == media:  # found track
+        # if media is a playlist, it doesnt have a uri assigned
+
+        for track in self.player.search_results:
+            if isinstance(track, dict):
+                track = MediaEntry.from_dict(track)
+
+            if isinstance(track, MediaEntry) and \
+                    track.uri == media.get("uri"):  # found track
+                self.player.play_media(track)
+                break
+            elif isinstance(track, Playlist) and \
+                    track.title == media.get("track"):  # found playlist
                 self.player.play_media(track)
                 break
         else:
             LOG.error("Track is not part of loaded playlist!")
 
     def handle_play_from_search(self, message):
-        LOG.debug("Playback requested from search results")
+        LOG.info("Playback requested from search results")
         media = message.data["playlistData"]
-        for track in self.player.disambiguation:
-            if track == media:  # found track
+        # if media is a playlist, it doesnt have a uri assigned
+
+        for track in self.player.search_results:
+            if isinstance(track, dict):
+                track = MediaEntry.from_dict(track)
+
+            if isinstance(track, MediaEntry) and \
+                    track.uri == media.get("uri"):  # found track
+                self.player.play_media(track)
+                break
+            elif isinstance(track, Playlist) and \
+                    track.title == media.get("track"):  # found playlist
                 self.player.play_media(track)
                 break
         else:
@@ -275,7 +308,7 @@ class OCPGUIInterface(GUIInterface):
 
     def handle_play_skill_featured_media(self, message):
         skill_id = message.data["skill_id"]
-        LOG.debug(f"Featured Media request: {skill_id}")
+        LOG.info(f"Featured Media request: {skill_id}")
         playlist = message.data["playlist"]
 
         self.player.playlist.clear()

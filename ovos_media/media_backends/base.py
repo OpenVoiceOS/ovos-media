@@ -63,7 +63,7 @@ class BaseMediaService:
         """
         if track:
             # Inform about the track about to start.
-            LOG.debug(f'New {self.namespace} track coming up!')
+            LOG.info(f'New {self.namespace} track coming up!')
             self.bus.emit(Message(f'ovos.{self.namespace}.playing_track',
                                   data={'track': track}))
         else:
@@ -87,6 +87,9 @@ class BaseMediaService:
             if plug_name not in plugs:
                 LOG.error(f"{plug_name} configured but not installed")
                 continue
+            if not plug_cfg.get("active", True):
+                LOG.info(f"{plug_name} is disabled in configuration")
+                continue
             try:
                 service = plugs[plug_name](plug_cfg, self.bus)
                 service.aliases = plug_cfg.get("aliases", []) or [plug_name]
@@ -95,6 +98,7 @@ class BaseMediaService:
                     remote.append(service)
                 else:
                     local.append(service)
+                LOG.info(f"Loaded {self.__class__.__name__} plugin: {plug_name}")
             except:
                 LOG.exception(f"Failed to load {plug_name}")
 
@@ -141,10 +145,10 @@ class BaseMediaService:
                                       {"state": TrackState.PLAYING_AUDIO}))
             elif self.namespace == "video":
                 self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_AUDIO}))
+                                      {"state": TrackState.PLAYING_VIDEO}))
             elif self.namespace == "web":
                 self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_AUDIO}))
+                                      {"state": TrackState.PLAYING_WEBVIEW}))
             else:
                 pass  # ???
 

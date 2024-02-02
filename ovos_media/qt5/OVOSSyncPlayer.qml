@@ -24,7 +24,6 @@ Mycroft.Delegate {
     property var canRepeat: sessionData.canRepeat
     property var canShuffle: sessionData.canShuffle
     property var isLike: sessionData.isLike
-    property var shuffleStatus: sessionData.shuffleStatus
 
     //Player Support Vertical / Horizontal Layouts
     // property bool horizontalMode: width > height ? 1 : 0
@@ -307,7 +306,7 @@ Mycroft.Delegate {
                 AudioPlayerControl {
                     id: shuffleButton
                     controlIcon: Qt.resolvedUrl("images/media-playlist-shuffle.svg")
-                    controlIconColor: sessionData.shuffleStatus === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
+                    controlIconColor: sessionData.canShuffle === false ? Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3) : Kirigami.Theme.highlightColor
                     horizontalMode: root.horizontalMode
 
                     KeyNavigation.left: nextButton
