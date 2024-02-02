@@ -72,6 +72,12 @@ Enabling OCP pipeline
 }
 ```
 
+
+The dataset used to train the classifiers can be found [here](https://github.com/NeonJarbas/OCP-dataset)
+
+Training code for classifiers used in the OCP pipeline can be found [here](https://github.com/OpenVoiceOS/ovos-classifiers/tree/dev/scripts/training/ocp)
+
+
 ### ocp_high
 
 Before regular intent stage, taking into account current OCP state  (media ready to play / playing)
@@ -125,9 +131,11 @@ print(ocp.match_medium("put on some metallica", "en-us"))
 
 ### ocp_fallback
 
-Uses keyword matching and requires at least 1 keyword
+Uses [keyword matching](https://en.wikipedia.org/wiki/Aho%E2%80%93Corasick_algorithm) and requires at least 1 keyword
 
 OCP skills can provide these keywords at runtime, additional keywords for things such as media_genre were collected via SPARQL queries to wikidata
+
+The list of bundled keywords can be found [here](https://github.com/OpenVoiceOS/ovos-core/blob/dev/ovos_core/intent_services/models/ocp_entities_v0.csv)
 
 ```python
 from ocp_nlp.intents import OCPPipelineMatcher
