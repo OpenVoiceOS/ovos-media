@@ -4,6 +4,7 @@ Media playback service for OpenVoiceOS
 
 * [Install](#install)
 * [Architecture](#architecture)
+* [Plugins](#plugins)
 * [MPRIS integration](#mpris-integration)
 * [Pipeline](#pipeline)
   - [ocp_high](#ocp-high)
@@ -53,6 +54,15 @@ enabling OCP pipeline
 ## Architecture
 
 ![imagem](https://github.com/NeonJarbas/ovos-media/assets/59943014/7dc1d635-4340-43db-a38d-294cfedab70f)
+
+## Plugins
+
+WIP
+
+- https://github.com/OpenVoiceOS/ovos-media-plugin-qt5
+- https://github.com/OpenVoiceOS/ovos-media-plugin-mplayer
+- https://github.com/OpenVoiceOS/ovos-media-plugin-vlc
+
 
 ## MPRIS integration
 
