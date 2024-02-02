@@ -61,13 +61,10 @@ Enabling OCP pipeline
     "pipeline": [
         "converse",
         "ocp_high",
-        "padatious_high",
-        "adapt",
+        "...",
         "common_qa",
         "ocp_medium",
-        "fallback_high",
-        "padatious_medium",
-        "fallback_medium",
+        "...",
         "ocp_fallback",
         "fallback_low"
     ]
