@@ -39,6 +39,7 @@ WIP
 - https://github.com/OpenVoiceOS/ovos-media-plugin-qt5
 - https://github.com/OpenVoiceOS/ovos-media-plugin-mplayer
 - https://github.com/OpenVoiceOS/ovos-media-plugin-vlc
+- https://github.com/OpenVoiceOS/ovos-media-plugin-chromecast
 
 
 ## MPRIS integration
