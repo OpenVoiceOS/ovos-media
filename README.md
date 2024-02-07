@@ -5,11 +5,13 @@ Media playback service for OpenVoiceOS
 * [Install](#install)
 * [Architecture](#architecture)
 * [Plugins](#plugins)
+  - [Media Plugins](#media-plugins)
+  - [OCP Plugins](#ocp-plugins)
 * [MPRIS integration](#mpris-integration)
 * [Pipeline](#pipeline)
-  - [ocp_high](#ocp-high)
-  - [ocp_mediun](#ocp-mediun)
-  - [ocp_fallback](#ocp-fallback)
+  - [ocp high](#ocp-high)
+  - [ocp medium](#ocp-medium)
+  - [ocp fallback](#ocp-fallback)
 * [Favorite Songs](#favorite-songs)
 * [Configuration](#configuration)
 
@@ -36,11 +38,24 @@ disabling old OCP
 
 WIP
 
-- https://github.com/OpenVoiceOS/ovos-media-plugin-qt5
-- https://github.com/OpenVoiceOS/ovos-media-plugin-mplayer
+### Media Plugins
+
+handle track playback
+
+- https://github.com/OpenVoiceOS/ovos-media-plugin-qt5  * WIP - recommended for embedded ovos-shell
+- https://github.com/OpenVoiceOS/ovos-media-plugin-mplayer  * recommended - handles more streams
 - https://github.com/OpenVoiceOS/ovos-media-plugin-vlc
 - https://github.com/OpenVoiceOS/ovos-media-plugin-chromecast
 
+### OCP Plugins
+
+handle extracting playable streams and metadata, skills might require specific plugins and will be ignored if plugins are missing
+
+- https://github.com/OpenVoiceOS/ovos-ocp-rss-plugin - rss feeds
+- https://github.com/OpenVoiceOS/ovos-ocp-bandcamp-plugin - bandcamp urls
+- https://github.com/OpenVoiceOS/ovos-ocp-youtube-plugin - youtube urls
+- https://github.com/OpenVoiceOS/ovos-ocp-m3u-plugin  - .pls and .m3u formats
+- https://github.com/OpenVoiceOS/ovos-ocp-news-plugin - dedicated news websites
 
 ## MPRIS integration
 
@@ -80,7 +95,7 @@ Training code for classifiers used in the OCP pipeline can be found [here](https
 
 Details on the classifiers can be found [here](https://github.com/OpenVoiceOS/ovos-core/tree/dev/ovos_core/intent_services/models)
 
-### ocp_high
+### ocp high
 
 Before regular intent stage, taking into account current OCP state  (media ready to play / playing)
 
@@ -109,7 +124,7 @@ print(ocp.match_high("play metallica", "en-us"))
 
 ```
 
-### ocp_mediun
+### ocp medium
 
 uses a binary classifier to detect if a query is about media playback
 
@@ -131,7 +146,7 @@ print(ocp.match_medium("put on some metallica", "en-us"))
 #   skill_id='ovos.common_play', utterance='put on some metallica')
 ```
 
-### ocp_fallback
+### ocp fallback
 
 Uses [keyword matching](https://en.wikipedia.org/wiki/Aho%E2%80%93Corasick_algorithm) and requires at least 1 keyword
 
