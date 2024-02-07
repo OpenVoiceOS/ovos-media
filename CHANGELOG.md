@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a14...HEAD)
+
+**Fixed bugs:**
+
+- handle malformed MPRIS xml [\#12](https://github.com/OpenVoiceOS/ovos-media/pull/12) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.1a14](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a14) (2024-02-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a13...V0.0.1a14)
+
 ## [V0.0.1a13](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a13) (2024-02-02)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a12...V0.0.1a13)
