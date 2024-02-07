@@ -3,13 +3,53 @@ import os.path
 from threading import Thread, Event
 from time import sleep
 
+
+def patch_dbus_next():
+    # Patch dbus_next to handle malformed XML
+    from dbus_next.errors import InvalidIntrospectionError
+    import dbus_next.introspection
+
+    def from_xml(element):
+        """Convert a :class:`xml.etree.ElementTree.Element` into a
+        :class:`Interface`.
+
+        The element must be valid DBus introspection XML for an ``interface``.
+
+        :param element: The parsed XML element.
+        :type element: :class:`xml.etree.ElementTree.Element`
+
+        :raises:
+            - :class:`InvalidIntrospectionError <dbus_next.InvalidIntrospectionError>` - If the XML tree is not valid introspection data.
+        """
+        name = element.attrib.get('name')
+        if not name:
+            raise InvalidIntrospectionError('interfaces must have a "name" attribute')
+
+        interface = dbus_next.introspection.Interface(name)
+
+        for child in element:
+            try:
+                if child.tag == 'method':
+                    interface.methods.append(dbus_next.introspection.Method.from_xml(child))
+                elif child.tag == 'signal':
+                    interface.signals.append(dbus_next.introspection.Signal.from_xml(child))
+                elif child.tag == 'property':
+                    interface.properties.append(dbus_next.introspection.Property.from_xml(child))
+            except:
+                continue
+        return interface
+
+    dbus_next.introspection.Interface.from_xml = from_xml
+
+
+patch_dbus_next()
+
 from dbus_next.aio import MessageBus as DbusMessageBus
 from dbus_next.constants import BusType
 from dbus_next.message import Message as DbusMessage, MessageType as DbusMessageType
 from dbus_next.service import ServiceInterface, method, dbus_property, PropertyAccess
-from ovos_bus_client.message import Message
 
-from ovos_media.gui import OCPGUIState
+from ovos_bus_client.message import Message
 from ovos_utils.log import LOG
 from ovos_utils.ocp import TrackState, PlaybackType, PlayerState, LoopState, MediaState
 
@@ -101,11 +141,11 @@ class MprisPlayerCtl(Thread):
 
             state = data.get("loop_state") or 0
             if state == 1:
-                self._ocp_player.loop_state =  data["loop_state"] = LoopState.REPEAT
+                self._ocp_player.loop_state = data["loop_state"] = LoopState.REPEAT
             elif state == 2:
-                self._ocp_player.loop_state =  data["loop_state"] = LoopState.REPEAT_TRACK
+                self._ocp_player.loop_state = data["loop_state"] = LoopState.REPEAT_TRACK
             else:
-                self._ocp_player.loop_state =  data["loop_state"] = LoopState.NONE
+                self._ocp_player.loop_state = data["loop_state"] = LoopState.NONE
 
             self._ocp_player.shuffle = data.get("shuffle") or self._ocp_player.shuffle
             self._ocp_player.playback_type = PlaybackType.MPRIS
@@ -395,12 +435,17 @@ class MprisPlayerCtl(Thread):
                         name in self.ignored_players:
                     continue
                 await self.handle_new_player({"name": name})
-                introspection = await self.dbus.introspect(
-                    name, '/org/mpris/MediaPlayer2')
-                self.players[name] = self.dbus.get_proxy_object(
-                    name, '/org/mpris/MediaPlayer2', introspection)
-                self._create_player_handler(name)
-                await self.query_player(name)
+
+                try:
+                    introspection = await self.dbus.introspect(
+                        name, '/org/mpris/MediaPlayer2')
+                    self.players[name] = self.dbus.get_proxy_object(
+                        name, '/org/mpris/MediaPlayer2', introspection)
+                    self._create_player_handler(name)
+                    await self.query_player(name)
+                except:
+                    LOG.exception(f"Failed to introspect player: {name}")
+
         return players
 
     def _create_player_handler(self, name):
@@ -559,7 +604,7 @@ class MprisPlayerCtl(Thread):
                 self.resume_event.clear()
 
             if self.shuffle_event.is_set():
-                if self.player_meta[self.main_player].get("shuffle",  self._ocp_player.shuffle):
+                if self.player_meta[self.main_player].get("shuffle", self._ocp_player.shuffle):
                     await self._shuffle_enable(self.main_player)
                 else:
                     await self._shuffle_disable(self.main_player)
