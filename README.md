@@ -40,22 +40,32 @@ WIP
 
 ### Media Plugins
 
-handle track playback
+these plugins handle the actual track playback. OCP virtual player delegates media playback to these plugins
 
-- https://github.com/OpenVoiceOS/ovos-media-plugin-qt5  * WIP - recommended for embedded ovos-shell
-- https://github.com/OpenVoiceOS/ovos-media-plugin-mplayer  * recommended - handles more streams
-- https://github.com/OpenVoiceOS/ovos-media-plugin-vlc
-- https://github.com/OpenVoiceOS/ovos-media-plugin-chromecast
+| plugin  | audio | video | remote | notes |
+|---------------------------------------------------------------------------------------------|----|---|----|-------------------------------------------|
+| [ovos-media-plugin-simple](https://github.com/OpenVoiceOS/ovos-media-plugin-simple)         | ✔️ | ❌ | ❌ | default for audio                         |
+| [ovos-media-plugin-qt5](https://github.com/OpenVoiceOS/ovos-media-plugin-qt5)               | ✔️ | ✔️ | ❌ | WIP - recommended for embedded ovos-shell |
+| [ovos-media-plugin-mplayer](https://github.com/OpenVoiceOS/ovos-media-plugin-mplayer)       | ✔️ | ✔️ | ❌ | recommended for video                     |
+| [ovos-media-plugin-vlc](https://github.com/OpenVoiceOS/ovos-media-plugin-vlc)               | ✔️ | ✔️ | ❌ |                                           |
+| [ovos-media-plugin-chromecast](https://github.com/OpenVoiceOS/ovos-media-plugin-chromecast) | ✔️ | ✔️ | ✔️ |                                           |
+
 
 ### OCP Plugins
 
 handle extracting playable streams and metadata, skills might require specific plugins and will be ignored if plugins are missing
 
-- https://github.com/OpenVoiceOS/ovos-ocp-rss-plugin - rss feeds
-- https://github.com/OpenVoiceOS/ovos-ocp-bandcamp-plugin - bandcamp urls
-- https://github.com/OpenVoiceOS/ovos-ocp-youtube-plugin - youtube urls
-- https://github.com/OpenVoiceOS/ovos-ocp-m3u-plugin  - .pls and .m3u formats
-- https://github.com/OpenVoiceOS/ovos-ocp-news-plugin - dedicated news websites
+these plugins are used when a `sei//` is requested explicitly by a skill, or when a url pattern matches
+
+| plugin  | descripton | Stream Extractor Ids | url pattern | 
+|-------------------------------------------------------------------------------------|--------------------------|-------------------------------------------------|-----------------------------------------------------|
+| [ovos-ocp-rss-plugin](https://github.com/OpenVoiceOS/ovos-ocp-rss-plugin)           | rss feeds                | `rss//`                                         |                                                     | 
+| [ovos-ocp-bandcamp-plugin](https://github.com/OpenVoiceOS/ovos-ocp-bandcamp-plugin) | bandcamp urls            | `bandcamp//`                                    | `"bandcamp." in url`                                |
+| [ovos-ocp-youtube-plugin](https://github.com/OpenVoiceOS/ovos-ocp-youtube-plugin)   | youtube urls             | `youtube//` , `ydl//`, `youtube.channel.live//` | `"youtube.com/" in url or "youtu.be/" in url`       |
+| [ovos-ocp-m3u-plugin](https://github.com/OpenVoiceOS/ovos-ocp-m3u-plugin)           | .pls and .m3u formats    |`m3u//` , `pls//`                                | `".pls" in uri or ".m3u" in uri`                    |
+| [ovos-ocp-news-plugin](https://github.com/OpenVoiceOS/ovos-ocp-news-plugin)         |  dedicated news websites |  `news//`                                       | `any([uri.startswith(url) for url in URL_MAPPINGS])`|
+
+
 
 ## MPRIS integration
 
