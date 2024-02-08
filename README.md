@@ -49,9 +49,7 @@ these plugins handle the actual track playback. OCP virtual player delegates med
 | [ovos-media-plugin-mplayer](https://github.com/OpenVoiceOS/ovos-media-plugin-mplayer)       | ✔️ | ✔️ | ❌ | ❌ | recommended for video                     |
 | [ovos-media-plugin-vlc](https://github.com/OpenVoiceOS/ovos-media-plugin-vlc)               | ✔️ | ✔️ | ❌ | ❌ |                                           |
 | [ovos-media-plugin-chromecast](https://github.com/OpenVoiceOS/ovos-media-plugin-chromecast) | ✔️ | ✔️ | ❌ | ✔️ | recommended extra: [cast_control](https://github.com/alexdelorenzo/cast_control) for MPRIS interface   |
-| [neon-media-plugin-xdg](https://github.com/NeonGeckoCom/ovos-media-plugin-xdg)              | ✔️ | ✔️ | ✔️ | ❌ | for desktop usage only |
-
-
+| [ovos-media-plugin-xdg](https://github.com/NeonGeckoCom/ovos-media-plugin-xdg)              | ✔️ | ✔️ | ✔️ | ❌ | xdg-open is for use inside a desktop session only |
 
 
 ### OCP Plugins
