@@ -42,13 +42,16 @@ WIP
 
 these plugins handle the actual track playback. OCP virtual player delegates media playback to these plugins
 
-| plugin  | audio | video | remote | notes |
-|---------------------------------------------------------------------------------------------|----|---|----|-------------------------------------------|
-| [ovos-media-plugin-simple](https://github.com/OpenVoiceOS/ovos-media-plugin-simple)         | ✔️ | ❌ | ❌ | default for audio                         |
-| [ovos-media-plugin-qt5](https://github.com/OpenVoiceOS/ovos-media-plugin-qt5)               | ✔️ | ✔️ | ❌ | WIP - recommended for embedded ovos-shell |
-| [ovos-media-plugin-mplayer](https://github.com/OpenVoiceOS/ovos-media-plugin-mplayer)       | ✔️ | ✔️ | ❌ | recommended for video                     |
-| [ovos-media-plugin-vlc](https://github.com/OpenVoiceOS/ovos-media-plugin-vlc)               | ✔️ | ✔️ | ❌ |                                           |
-| [ovos-media-plugin-chromecast](https://github.com/OpenVoiceOS/ovos-media-plugin-chromecast) | ✔️ | ✔️ | ✔️ | recommended extra: [cast_control](https://github.com/alexdelorenzo/cast_control) for MPRIS interface   |
+| plugin  | audio | video | web | remote | notes |
+|---------------------------------------------------------------------------------------------|----|----|---|----|-------------------------------------------|
+| [ovos-media-plugin-simple](https://github.com/OpenVoiceOS/ovos-media-plugin-simple)         | ✔️ | ❌ | ❌ | ❌ | default for audio                         |
+| [ovos-media-plugin-qt5](https://github.com/OpenVoiceOS/ovos-media-plugin-qt5)               | ✔️ | ✔️ | ✔️ | ❌ | WIP - recommended for embedded ovos-shell |
+| [ovos-media-plugin-mplayer](https://github.com/OpenVoiceOS/ovos-media-plugin-mplayer)       | ✔️ | ✔️ | ❌ | ❌ | recommended for video                     |
+| [ovos-media-plugin-vlc](https://github.com/OpenVoiceOS/ovos-media-plugin-vlc)               | ✔️ | ✔️ | ❌ | ❌ |                                           |
+| [ovos-media-plugin-chromecast](https://github.com/OpenVoiceOS/ovos-media-plugin-chromecast) | ✔️ | ✔️ | ❌ | ✔️ | recommended extra: [cast_control](https://github.com/alexdelorenzo/cast_control) for MPRIS interface   |
+| [neon-media-plugin-xdg](https://github.com/NeonGeckoCom/ovos-media-plugin-xdg)              | ✔️ | ✔️ | ✔️ | ❌ | for desktop usage only |
+
+
 
 
 ### OCP Plugins
