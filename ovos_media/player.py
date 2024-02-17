@@ -353,8 +353,9 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
         # Define things referenced in `bind`
         self.now_playing: NowPlaying = None
-        self.playlist: Playlist = Playlist("Search Results",
-                                           skill_id="")  # TODO icon
+        # self.playlist: Playlist = Playlist("Search Results",
+        #                                    skill_id="")  # TODO icon
+        self.playlist: Playlist = Playlist("Search Results")
         self.media: OCPMediaCatalog = None
         self.audio_service = None
         self.video_service = None
