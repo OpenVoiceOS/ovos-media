@@ -53,6 +53,8 @@ def get_version():
         version += f"a{alpha}"
     return version
 
+with open("README.md", "r") as f:
+    long_description = f.read()
 
 setup(
     name="ovos-media",
@@ -60,6 +62,8 @@ setup(
     license="Apache-2.0",
     url="https://github.com/OpenVoiceOS/ovos-media",
     description="ovos-core audio daemon client",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     include_package_data=True,
     packages=find_packages(include=['ovos*']),
     install_requires=required('requirements/requirements.txt'),
