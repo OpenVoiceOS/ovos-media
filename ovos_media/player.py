@@ -396,6 +396,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.add_event('ovos.common_play.media.state', self.handle_player_media_update)
         self.add_event('ovos.common_play.play', self.handle_play_request)
         self.add_event('ovos.common_play.pause', self.handle_pause_request)
+        self.add_event('ovos.common_play.play_pause', self.handle_pause_toggle_request)
         self.add_event('ovos.common_play.resume', self.handle_resume_request)
         self.add_event('ovos.common_play.stop', self.handle_stop_request)
         self.add_event('ovos.common_play.next', self.handle_next_request)
@@ -1061,6 +1062,12 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         # if mpris, wait for its status report instead to avoid flickering
         if not self.mpris:
             self.gui.update_buttons()  # update icon
+            
+    def handle_pause_toggle_request(self, message):
+        if self.state == PlayerState.PAUSED:
+            self.handle_pause_request(message)
+        else:        
+            self.handle_resume_request(message)
 
     def handle_seek_request(self, message):
         # from bus api
