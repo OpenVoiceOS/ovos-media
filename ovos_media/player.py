@@ -342,7 +342,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
     def __init__(self, bus=None, config=None, resources_dir=None, skill_id=OCP_ID, **kwargs):
         resources_dir = resources_dir or join(dirname(__file__), "res")
-        self.ocp_config = config or Configuration().get("OCP", {})
+        self.ocp_config = config or Configuration().get("media", {})
 
         self.state: PlayerState = PlayerState.STOPPED
         self.loop_state: LoopState = LoopState.NONE
@@ -381,7 +381,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.register_bus_handlers()
         # mpris settings
         manage_players = self.ocp_config.get("manage_external_players", False)
-        if self.ocp_config.get('disable_mpris'):
+        if self.ocp_config.get('enable_mpris', False):
             LOG.info("MPRIS integration is disabled")
             self.mpris = None
         else:

@@ -210,6 +210,11 @@ under mycroft.conf
   // playback handlers might be local applications or even remote devices
   "media": {
 
+    // enable MPRIS integration
+    "enable_mpris": false,
+    // have MPRIS control external players
+    "manage_external_players": false,
+    
     // order of preference to try playback handlers
     // if unavailable or unable to handle a uri, the next in list is used
     // NB: users may request specific handlers in the utterance
