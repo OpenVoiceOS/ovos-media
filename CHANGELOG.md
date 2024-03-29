@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a18...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a19...HEAD)
+
+**Fixed bugs:**
+
+- fix: switch case [\#20](https://github.com/OpenVoiceOS/ovos-media/pull/20) ([mikejgray](https://github.com/mikejgray))
+
+## [V0.0.1a19](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a19) (2024-03-29)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a18...V0.0.1a19)
 
 **Merged pull requests:**
 
