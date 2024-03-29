@@ -381,7 +381,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.register_bus_handlers()
         # mpris settings
         manage_players = self.ocp_config.get("manage_external_players", False)
-        if self.ocp_config.get('enable_mpris', False):
+        if self.ocp_config.get('enable_mpris', False) is False:
             LOG.info("MPRIS integration is disabled")
             self.mpris = None
         else:
