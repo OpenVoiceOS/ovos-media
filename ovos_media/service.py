@@ -10,23 +10,23 @@ from ovos_media.gui import OCPGUIState
 
 
 def on_ready():
-    LOG.info('Audio service is ready.')
+    LOG.info('Media service is ready.')
 
 
 def on_alive():
-    LOG.info('Audio service is alive.')
+    LOG.info('Media service is alive.')
 
 
 def on_started():
-    LOG.info('Audio service started.')
+    LOG.info('Media service started.')
 
 
 def on_error(e='Unknown'):
-    LOG.error(f'Audio service failed to launch ({e}).')
+    LOG.error(f'Media service failed to launch ({e}).')
 
 
 def on_stopping():
-    LOG.info('Audio service is shutting down...')
+    LOG.info('Media service is shutting down...')
 
 
 # TODO
