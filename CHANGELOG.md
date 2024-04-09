@@ -1,8 +1,8 @@
 # Changelog
 
-## [Unreleased](https://github.com/OpenVoiceOS/ovos-media/tree/HEAD)
+## [V0.0.1a20](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a20) (2024-03-29)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a19...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a19...V0.0.1a20)
 
 **Fixed bugs:**
 
