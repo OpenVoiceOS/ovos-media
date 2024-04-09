@@ -1,5 +1,9 @@
 # Changelog
 
+## [V0.0.1a21](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a21) (2024-04-09)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a20...V0.0.1a21)
+
 ## [V0.0.1a20](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a20) (2024-03-29)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a19...V0.0.1a20)
