@@ -4,7 +4,9 @@ from os.path import join, dirname
 from threading import Timer
 
 from ovos_bus_client.apis.gui import GUIInterface
-from ovos_utils.ocp import *
+from ovos_utils.log import LOG
+from ovos_utils.ocp import (MediaType, PlaybackType, MediaEntry, Playlist,
+                            LoopState, PlayerState, OCP_ID)
 
 
 class OCPGUIState(str, enum.Enum):

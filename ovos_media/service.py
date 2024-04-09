@@ -79,7 +79,7 @@ class MediaService(Thread):
 
     def handle_search_end(self, message):
         """remove search spinner"""
-        self.ocp.gui.remove_search_spinner()
+        pass
 
     def run(self):
         self.status.set_ready()
