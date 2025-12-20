@@ -1,5 +1,5 @@
 ovos-utils~=0.0, >=0.1.0a13
 ovos-bus-client~=0.0, >=0.0.9a11
-ovos-config~=0.0,>=0.0.12
+ovos-config~=2.1,>=2.1.1
 ovos-plugin-manager~=2.1, >=2.1
 dbus_next
