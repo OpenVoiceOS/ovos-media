@@ -45,7 +45,7 @@ jobs:
           maxIssues: 50
         id: changelog
       - name: Commit to dev
-        uses: stefanzweifel/git-auto-commit-action@v4
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: Increment Version
           branch: dev
