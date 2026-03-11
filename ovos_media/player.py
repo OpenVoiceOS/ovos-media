@@ -415,6 +415,14 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.add_event('ovos.common_play.unduck', self.handle_unduck_request)
         self.add_event('ovos.common_play.cork', self.handle_cork_request)
         self.add_event('ovos.common_play.uncork', self.handle_uncork_request)
+        # legacy recognizer_loop ducking — same semantics as the ocp equivalents
+        self.add_event('recognizer_loop:audio_output_start', self.handle_duck_request)
+        self.add_event('recognizer_loop:audio_output_end', self.handle_unduck_request)
+        self.add_event('recognizer_loop:record_begin', self.handle_cork_request)
+        self.add_event('recognizer_loop:record_end', self.handle_record_end)
+        self.add_event('ovos.utterance.handled', self.handle_utterance_handled)
+        # global stop
+        self.add_event('mycroft.stop', self.handle_mycroft_stop)
         self.add_event('ovos.common_play.shuffle.toggle', self.handle_shuffle_toggle_request)
         self.add_event('ovos.common_play.shuffle.set', self.handle_set_shuffle)
         self.add_event('ovos.common_play.shuffle.unset', self.handle_unset_shuffle)
@@ -553,8 +561,9 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             raise TypeError(f"Expected MediaState and got: {state}")
         if state == self.media_state:
             return
+        self.media_state = state
         self.bus.emit(Message("ovos.common_play.media.state",
-                              {"state": self.media_state}))
+                              {"state": state}))
 
     def set_player_state(self, state: PlayerState):
         """
@@ -566,14 +575,15 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             raise TypeError(f"Expected PlayerState and got: {state}")
         if state == self.state:
             return
+        self.state = state
         self.bus.emit(Message("ovos.common_play.player.state",
-                              {"state": self.state}))
+                              {"state": state}))
         state2str = {PlayerState.PLAYING: "Playing",
                      PlayerState.PAUSED: "Paused",
                      PlayerState.STOPPED: "Stopped"}
         if self.mpris:
-            self.mpris.update_props({"CanPause": self.state == PlayerState.PLAYING,
-                                     "CanPlay": self.state == PlayerState.PAUSED,
+            self.mpris.update_props({"CanPause": state == PlayerState.PLAYING,
+                                     "CanPlay": state == PlayerState.PAUSED,
                                      "PlaybackStatus": state2str[state]})
         self.handle_status(Message("ovos.common_play.status"))  # report full status to ovos-core
 
@@ -1213,6 +1223,50 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             elif self.playback_type in [PlaybackType.AUDIO]:
                 self.audio_service.restore_volume()
             self._paused_on_duck = False
+
+    def handle_record_end(self, message):
+        """
+        Handle 'recognizer_loop:record_end'.
+
+        Mirror ovos-audio behaviour: wait up to 8 seconds for a 'speak'
+        message.  If none arrives, resume (uncork) immediately.  This prevents
+        the media from staying paused when the user's utterance is not
+        recognised or triggers no speech response.
+
+        @param message: Message associated with event
+        """
+        if not self._paused_on_duck:
+            return
+        speak_detected = self.bus.wait_for_message('speak', timeout=8.0)
+        if not speak_detected:
+            self.handle_uncork_request(message)
+
+    def handle_utterance_handled(self, message):
+        """
+        Handle 'ovos.utterance.handled'.
+
+        Restore volume/resume if the player was ducked and speech has finished.
+        Mirrors the ovos-audio ``_restore_volume_on_handled`` behaviour.
+
+        @param message: Message associated with event
+        """
+        if self._paused_on_duck and self.state == PlayerState.PAUSED:
+            # The intent has been handled; if no more TTS is queued the volume
+            # will not be restored by audio_output_end — do it here.
+            self.handle_unduck_request(message)
+
+    def handle_mycroft_stop(self, message):
+        """
+        Handle global 'mycroft.stop' — stop any active playback and emit
+        a 'mycroft.stop.handled' acknowledgement.
+
+        @param message: Message associated with event
+        """
+        if self.state != PlayerState.STOPPED:
+            self.stop()
+            self.reset()
+            self.bus.emit(message.forward("mycroft.stop.handled",
+                                          {"by": "ovos-media"}))
 
     # track data
     def handle_track_length_request(self, message):
