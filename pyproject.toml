@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ovos-media"
+dynamic = ["version"]
+description = "ovos-media — OCP-native audio/video/web media service for OpenVoiceOS"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+
+dependencies = [
+    "ovos-utils~=0.0, >=0.1.0a13",
+    "ovos-bus-client~=1.3, >=1.3.7",
+    "ovos-config~=2.1,>=2.1.1",
+    "ovos-plugin-manager~=2.1, >=2.1",
+    "ovos-workshop>=0.0.15",
+    "json-database>=0.9.0",
+    "dbus_next",
+]
+
+[project.urls]
+Homepage = "https://github.com/OpenVoiceOS/ovos-media"
+Repository = "https://github.com/OpenVoiceOS/ovos-media"
+
+[project.optional-dependencies]
+extras = [
+    "ovos-ocp-youtube-plugin",
+    "ovos-ocp-m3u-plugin",
+    "ovos-ocp-rss-plugin",
+    "ovos-ocp-files-plugin",
+    "ovos-ocp-news-plugin",
+]
+
+[project.scripts]
+ovos-media = "ovos_media.__main__:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["ovos_media*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "ovos_media.version.__version__"}

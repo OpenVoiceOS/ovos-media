@@ -109,10 +109,16 @@ class OCPGUIInterface(GUIInterface):
         # options below control the web player
         # javascript can be executed on page load and page behaviour modified
         # default values provide crude protection against ads and popups
-        # TODO default permissive or restrictive?
+        gui_cfg = self.player.ocp_config.get("gui", {})
         self["javascript"] = self.player.now_playing.javascript
-        self["javascriptCanOpenWindows"] = False  # TODO allow to be defined per track
-        self["allowUrlChange"] = False  # TODO allow to be defined per track
+        self["javascriptCanOpenWindows"] = self.player.now_playing.infocard.get(
+            "javascript_can_open_windows",
+            gui_cfg.get("javascript_can_open_windows", False)
+        )
+        self["allowUrlChange"] = self.player.now_playing.infocard.get(
+            "allow_url_change",
+            gui_cfg.get("allow_url_change", False)
+        )
 
     def update_search_results(self):
         self["searchModel"] = {

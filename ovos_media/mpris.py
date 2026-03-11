@@ -90,12 +90,11 @@ class MprisPlayerCtl(Thread):
         self.players = {}
         self.player_meta = {}
         self._player_fails = {}
-        self.manage_players = True  # manage_players
-        # TODO from ovos_media.conf
-        self.ignored_players = [
+        self.manage_players = config.get("manage_external_players", True)
+        self.ignored_players = config.get("ignored_players", [
             "org.mpris.MediaPlayer2.OCP",
             "org.mpris.MediaPlayer2.plasma-browser-integration"  # browsers already show up as individual players
-        ]
+        ])
 
         self.start()
 
@@ -227,8 +226,9 @@ class MprisPlayerCtl(Thread):
             self._update_ocp()
 
     async def _set_main_player(self, name):
+        old_main = self.main_player
         self.main_player = name
-        if name != self.main_player:
+        if name != old_main:
             LOG.info(f"Active MPRIS player: {name}")
         # if there are multiple external players playing, stop the
         # previous ones!
@@ -623,14 +623,15 @@ class MprisPlayerCtl(Thread):
 
             # scan for new external players
             await self.scan_players()
-            sleep(1)  # TODO configurable time between checks
+            poll_interval = self.config.get("mpris_poll_interval", 1)
+            sleep(poll_interval)
 
             # sync player meta, not all players send all events properly...
             # eg, firefox videos do not send events if they autoplay, only if
             # you click the play button
             for player in list(self.players.keys()):
                 await self.query_player(player)
-            sleep(1)  # TODO configurable time between checks
+            sleep(poll_interval)
 
     def run(self):
         count = 0
@@ -773,8 +774,12 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @LoopStatus.setter
     def LoopStatus_setter(self, val: 's'):
-        # TODO translate state
-        self._ocp_player.loop_state = val
+        if val == "Track":
+            self._ocp_player.loop_state = LoopState.REPEAT_TRACK
+        elif val == "Playlist":
+            self._ocp_player.loop_state = LoopState.REPEAT
+        else:
+            self._ocp_player.loop_state = LoopState.NONE
 
     @dbus_property()
     def Shuffle(self) -> 'b':
@@ -801,7 +806,9 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def Position(self) -> 'd':
-        return 1  # TODO from ocp_player
+        if self._ocp_player.now_playing:
+            return self._ocp_player.now_playing.position * 1e6
+        return 0
 
     @dbus_property(access=PropertyAccess.READ)
     def CanPlay(self) -> 'b':
@@ -837,7 +844,7 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @method()
     def Stop(self):
-        self._ocp_player.pause()
+        self._ocp_player.stop()
 
     @method()
     def Play(self):

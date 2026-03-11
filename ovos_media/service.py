@@ -79,7 +79,7 @@ class MediaService(Thread):
 
     def handle_search_end(self, message):
         """remove search spinner"""
-        pass
+        LOG.warning("handle_search_end: spinner dismissal not yet implemented")
 
     def run(self):
         self.status.set_ready()

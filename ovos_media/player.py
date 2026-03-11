@@ -19,7 +19,7 @@ from ovos_utils.messagebus import Message
 from ovos_utils.ocp import MediaType, Playlist
 from ovos_utils.ocp import OCP_ID, PlayerState, LoopState, PlaybackType, PlaybackMode, TrackState, MediaState, \
     MediaEntry
-from ovos_workshop import OVOSAbstractApplication
+from ovos_workshop.app import OVOSAbstractApplication
 from ovos_workshop.decorators.ocp import ocp_search
 from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 
@@ -619,6 +619,30 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             )
         self.handle_status(Message("ovos.common_play.status"))  # report full status to ovos-core
 
+    def _resolve_preferred_service(self, media_service):
+        """Resolve preferred backend from config and return the matching service instance.
+
+        Reads ``preferred_audio_services`` / ``preferred_video_services`` /
+        ``preferred_web_services`` (or the generic ``preferred_audio_services``
+        fallback) from ``ocp_config`` and returns the first loaded backend whose
+        name or aliases match, or ``None`` if no preference is configured.
+
+        Args:
+            media_service: AudioService / VideoService / WebService instance
+
+        Returns:
+            MediaBackend | None
+        """
+        preferred_names = media_service.get_preferred_players() or \
+                          self.ocp_config.get("preferred_audio_services", [])
+        if not preferred_names:
+            return None
+        for name in preferred_names:
+            for backend in media_service.services:
+                if backend.name == name or name in getattr(backend, "aliases", []):
+                    return backend
+        return None
+
     # stream handling
     def validate_stream(self) -> bool:
         """
@@ -733,8 +757,8 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
         if self.playback_type == PlaybackType.AUDIO:
             LOG.debug("Requesting playback: PlaybackType.AUDIO")
-            # TODO - get preferred service and pass to self.play
-            self.audio_service.play(self.now_playing.uri)
+            preferred = self._resolve_preferred_service(self.audio_service)
+            self.audio_service.play(self.now_playing.uri, preferred_service=preferred)
 
         elif self.playback_type == PlaybackType.SKILL:
             # skill wants to handle playback
@@ -746,13 +770,13 @@ class OCPMediaPlayer(OVOSAbstractApplication):
 
         elif self.playback_type == PlaybackType.VIDEO:
             LOG.debug("Requesting playback: PlaybackType.VIDEO")
-            # TODO - get preferred service and pass to self.play
-            self.video_service.play(self.now_playing.uri)
+            preferred = self._resolve_preferred_service(self.video_service)
+            self.video_service.play(self.now_playing.uri, preferred_service=preferred)
 
         elif self.playback_type == PlaybackType.WEBVIEW:
             LOG.debug("Requesting playback: PlaybackType.WEBVIEW")
-            # TODO - get preferred service and pass to self.play
-            self.web_service.play(self.now_playing.uri)
+            preferred = self._resolve_preferred_service(self.web_service)
+            self.web_service.play(self.now_playing.uri, preferred_service=preferred)
 
         else:
             raise ValueError("invalid playback request")

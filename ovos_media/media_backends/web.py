@@ -2,7 +2,7 @@ from ovos_plugin_manager.ocp import find_ocp_web_plugins
 
 from ovos_bus_client.message import Message
 from ovos_utils.ocp import MediaState, TrackState
-from .base import BaseMediaService
+from ovos_media.media_backends.base import BaseMediaService
 
 
 class WebService(BaseMediaService):
