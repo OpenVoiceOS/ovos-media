@@ -78,13 +78,11 @@ class TestMediaServiceHandlers(unittest.TestCase):
             state="loading",
         )
 
-    def test_handle_search_end_does_not_raise(self):
+    def test_handle_search_end_calls_update_gui(self):
         svc = self._make_service()
-        # Should not raise — may log a warning
-        try:
-            svc.handle_search_end(MagicMock())
-        except Exception as e:
-            self.fail(f"handle_search_end raised {e}")
+        svc.ocp = MagicMock()
+        svc.handle_search_end(MagicMock())
+        svc.ocp._update_gui.assert_called_once()
 
 
 if __name__ == "__main__":

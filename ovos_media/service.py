@@ -82,9 +82,9 @@ class MediaService(Thread):
             state="loading",
         )
 
-    def handle_search_end(self, message):
-        """remove search spinner"""
-        LOG.warning("handle_search_end: spinner dismissal not yet implemented")
+    def handle_search_end(self, message: "Message") -> None:
+        """Dismiss the search spinner and refresh the player GUI."""
+        self.ocp._update_gui()
 
     def run(self):
         self.status.set_ready()
