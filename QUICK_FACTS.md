@@ -6,7 +6,7 @@ OCP-native audio/video/web media service for OpenVoiceOS.
 | Feature | Details |
 |---------|---------|
 | Package Name | `ovos-media` |
-| Version | `0.0.1a22` (pre-release; targeting `0.0.1` stable) |
+| Version | `0.0.1` (pre-release; targeting `0.0.1` stable) |
 | License | Apache-2.0 |
 | Repository | [https://github.com/OpenVoiceOS/ovos-media](https://github.com/OpenVoiceOS/ovos-media) |
 | Python Support | >=3.10 |

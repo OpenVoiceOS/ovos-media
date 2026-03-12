@@ -19,7 +19,7 @@ def _make_player():
     with patch("ovos_media.player.AudioService"), \
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
-         patch("ovos_media.player.MprisPlayerCtl"), \
+         patch("ovos_media.player.OcpMprisExporter"), \
          patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OVOSAbstractApplication.__init__", return_value=None):

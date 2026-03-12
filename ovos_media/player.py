@@ -10,7 +10,7 @@ from ovos_config import Configuration
 from ovos_config.meta import get_xdg_base
 from ovos_gui_api_client import GUIInterface
 from ovos_media.media_backends import AudioService, VideoService, WebService
-from ovos_media.mpris import MprisPlayerCtl
+from ovos_media.mpris import OcpMprisExporter
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.gui import is_gui_connected, is_gui_running
@@ -361,7 +361,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.video_service = None
         self.web_service = None
         self.current: MediaBackend = None
-        self.mpris: MprisPlayerCtl = None
+        self.mpris: OcpMprisExporter = None
 
         self._paused_on_duck = False
         super().__init__(skill_id=skill_id, bus=bus, resources_dir=resources_dir, **kwargs)
@@ -385,7 +385,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
             LOG.info("MPRIS integration is disabled")
             self.mpris = None
         else:
-            self.mpris = MprisPlayerCtl(self, manage_players=manage_players)
+            self.mpris = OcpMprisExporter(self, manage_players=manage_players)
 
         self._last_search_results: list = []
         self.gui = GUIInterface("ovos.common_play", bus=self.bus)
@@ -840,8 +840,10 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         shuffle settings.
         """
         if self.playback_type in [PlaybackType.MPRIS]:
-            if self.mpris:
+            if self.mpris and self.mpris.manage_players:
                 self.mpris.play_next()
+            else:
+                LOG.warning("MPRIS external player control is disabled; install ovos-media-plugin-mpris to enable it")
             return
         elif self.playback_type in [PlaybackType.SKILL]:
             LOG.debug(f"Defer playing next track to skill")
@@ -880,8 +882,10 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         If there is no previous track, do nothing.
         """
         if self.playback_type in [PlaybackType.MPRIS]:
-            if self.mpris:
+            if self.mpris and self.mpris.manage_players:
                 self.mpris.play_prev()
+            else:
+                LOG.warning("MPRIS external player control is disabled; install ovos-media-plugin-mpris to enable it")
             return
         elif self.playback_type in [PlaybackType.SKILL,
                                     PlaybackType.UNDEFINED]:
@@ -914,7 +918,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         if self.playback_type in [PlaybackType.SKILL,
                                   PlaybackType.UNDEFINED]:
             self.bus.emit(Message(f'ovos.common_play.{self.active_skill}.pause'))
-        if self.playback_type in [PlaybackType.MPRIS] and self.mpris:
+        if self.playback_type in [PlaybackType.MPRIS] and self.mpris and self.mpris.manage_players:
             self.mpris.pause()
         self.set_player_state(PlayerState.PAUSED)
         self._paused_on_duck = False
@@ -936,7 +940,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         if self.playback_type in [PlaybackType.VIDEO]:
             self.video_service.resume()
 
-        if self.playback_type in [PlaybackType.MPRIS] and self.mpris:
+        if self.playback_type in [PlaybackType.MPRIS] and self.mpris and self.mpris.manage_players:
             self.mpris.resume()
 
         self.set_player_state(PlayerState.PLAYING)

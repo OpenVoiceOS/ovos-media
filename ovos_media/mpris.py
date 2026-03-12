@@ -54,14 +54,20 @@ from ovos_utils.log import LOG
 from ovos_utils.ocp import TrackState, PlaybackType, PlayerState, LoopState, MediaState
 
 
-class MprisPlayerCtl(Thread):
-    """ detects other media players in the system and integrates with them
-    - stop internal playback when an external player starts
-    - display metadata from external media player
-    - provide control over the external player
-    - provide intents for external player
-    - advertises OCP over mpris so external applications can control it
-        eg, KDE connect will allow controlling OCP via the phone
+class OcpMprisExporter(Thread):
+    """Exposes OCP as an MPRIS MediaPlayer2 on the D-Bus session bus.
+
+    Role A (always active when ``enable_mpris: true``):
+    - Registers ``org.mpris.MediaPlayer2.OCP`` on the session bus.
+    - Keeps Metadata, PlaybackStatus, Position, LoopStatus, Shuffle, Volume in sync.
+    - Accepts control signals from external MPRIS clients (KDE Connect, playerctl,
+      GNOME Shell media widget).
+
+    Role B (external player management, opt-in via ``manage_external_players: true``):
+    - Polls D-Bus for external MPRIS players (Spotify, VLC, Firefox …).
+    - Auto-pauses OCP when an external player becomes active.
+    - Proxies OCP's skip/pause/shuffle/repeat to external players.
+    - Will be extracted to ``ovos-media-plugin-mpris`` in a future release.
     """
 
     def __init__(self, player, config=None, daemonic=True, manage_players=False):
@@ -90,7 +96,7 @@ class MprisPlayerCtl(Thread):
         self.players = {}
         self.player_meta = {}
         self._player_fails = {}
-        self.manage_players = config.get("manage_external_players", True)
+        self.manage_players = config.get("manage_external_players", False)
         self.ignored_players = config.get("ignored_players", [
             "org.mpris.MediaPlayer2.OCP",
             "org.mpris.MediaPlayer2.plasma-browser-integration"  # browsers already show up as individual players
@@ -172,11 +178,7 @@ class MprisPlayerCtl(Thread):
                 data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
 
             self._ocp_player.set_now_playing(data)
-            self._ocp_player.gui.prepare_gui_data()
-            if data["state"] == "Playing":
-                # move GUI to player page
-                if render:
-                    self._ocp_player.gui.render_player()
+            self._ocp_player._update_gui()
 
     async def handle_new_player(self, data):
         if data['name'] not in self._player_fails:
@@ -186,7 +188,7 @@ class MprisPlayerCtl(Thread):
         LOG.info(f"MPRIS Player Shuffle: {shuffle}")
         if self.manage_players:
             self._ocp_player.shuffle = shuffle
-            self._ocp_player.gui.update_buttons()
+            self._ocp_player._update_gui()
 
     async def handle_player_loop_state(self, state):
         LOG.info(f"MPRIS Player Repeat: {state}")
@@ -197,7 +199,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.loop_state = LoopState.REPEAT_TRACK
             else:
                 self._ocp_player.loop_state = LoopState.NONE
-            self._ocp_player.gui.update_buttons()
+            self._ocp_player._update_gui()
 
     async def handle_player_state(self, state):
         LOG.info(f"MPRIS Player State: {state}")
@@ -210,7 +212,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.set_player_state(PlayerState.PLAYING)
             else:
                 self._ocp_player.set_player_state(PlayerState.STOPPED)
-            self._ocp_player.gui.update_buttons()
+            self._ocp_player._update_gui()
 
     async def handle_lost_player(self, name):
         LOG.info(f"Lost MPRIS Player: {name}")
@@ -578,9 +580,13 @@ class MprisPlayerCtl(Thread):
         while not self.shutdown_event.is_set():
 
             if not self.dbus:
-                self.dbus = await DbusMessageBus(
-                    bus_type=self.dbus_type).connect()
-                await self.export_ocp()
+                try:
+                    self.dbus = await DbusMessageBus(
+                        bus_type=self.dbus_type).connect()
+                    await self.export_ocp()
+                except Exception as e:
+                    LOG.warning(f"MPRIS unavailable: could not connect to D-Bus session bus: {e}")
+                    return
 
             # ocp requests to manipulate external players
             if self.stop_event.is_set():
@@ -621,17 +627,21 @@ class MprisPlayerCtl(Thread):
                     await self._repeat_disable(self.main_player)
                 self.repeat_event.clear()
 
-            # scan for new external players
-            await self.scan_players()
-            poll_interval = self.config.get("mpris_poll_interval", 1)
-            sleep(poll_interval)
+            # scan for new external players (Role B — only when manage_external_players is enabled)
+            if self.manage_players:
+                await self.scan_players()
+                poll_interval = self.config.get("mpris_poll_interval", 1)
+                sleep(poll_interval)
 
-            # sync player meta, not all players send all events properly...
-            # eg, firefox videos do not send events if they autoplay, only if
-            # you click the play button
-            for player in list(self.players.keys()):
-                await self.query_player(player)
-            sleep(poll_interval)
+                # sync player meta, not all players send all events properly...
+                # eg, firefox videos do not send events if they autoplay, only if
+                # you click the play button
+                for player in list(self.players.keys()):
+                    await self.query_player(player)
+                sleep(poll_interval)
+            else:
+                poll_interval = self.config.get("mpris_poll_interval", 1)
+                sleep(poll_interval)
 
     def run(self):
         count = 0
@@ -676,6 +686,10 @@ class MprisPlayerCtl(Thread):
         while self.loop.is_running():
             sleep(0.2)
         self.loop.close()
+
+
+# Backward-compatibility alias — remove after ovos-media-plugin-mpris is released
+MprisPlayerCtl = OcpMprisExporter
 
 
 class _MediaPlayer2Interface(ServiceInterface):
