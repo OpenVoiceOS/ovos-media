@@ -18,17 +18,17 @@ _See PLAN.md for full rationale and architecture._
 - [x] Update `test/unittests/test_player.py` and `test_player_state.py` for new mock targets
 - [x] Update `docs/index.md` — removed OCPGUIInterface section, added GUIInterface + show_media_player docs
 - [x] Update `FAQ.md` — added Q: "How does ovos-media update the display?" and Q: "Who calls show_video_player/show_url?"
-- [ ] Switch import to `from ovos_gui_api_client import GUIInterface` once `ovos-gui-api-client>=0.1.0` is published to PyPI
-- [ ] Add `ovos-gui-api-client>=0.1.0,<1.0.0` to `pyproject.toml` dependencies once PyPI package exists
+- [x] Switch import to `from ovos_gui_api_client import GUIInterface` (co-published with ovos-media)
+- [x] Add `ovos-gui-api-client>=0.1.0,<1.0.0` to `pyproject.toml` dependencies
 
 ### Upstream: ovos-gui-api-client
-- [ ] Add `show_media_player(now_playing, playlist, search_results, state)` method to `GUIInterface`
-- [ ] Add `PageTemplates.SYSTEM_media_player` constant
-- [ ] Write all `ocp_*` session keys (see `GUI_DESIGN.md §4.3a`)
-- [ ] Add `handle_show_media_player` to `AbstractGUIPlugin` in `ovos-plugin-manager` (default no-op)
-- [ ] Add `"SYSTEM_media_player": "handle_show_media_player"` to `_TEMPLATE_HANDLERS`
-- [ ] Implement `handle_show_media_player` in `ovos-legacy-mycroft-gui-plugin` (maps to OCP QML screen)
-- [ ] Implement `handle_show_media_player` in `ovos-gui-plugin-pyhtmx` (multi-view HTML page)
+- [x] Add `show_media_player(now_playing, playlist, search_results, state)` method to `GUIInterface`
+- [x] Add `PageTemplates.SYSTEM_media_player` constant
+- [x] Write all `ocp_*` session keys (see `GUI_DESIGN.md §4.3a`)
+- [x] Add `handle_show_media_player` to `AbstractGUIPlugin` in `ovos-plugin-manager` (default no-op)
+- [x] Add `"SYSTEM_media_player": "handle_show_media_player"` to `_TEMPLATE_HANDLERS`
+- [x] Implement `handle_show_media_player` in `ovos-legacy-mycroft-gui-plugin` (maps to OCP QML screen)
+- [x] Implement `handle_show_media_player` in `ovos-gui-plugin-pyhtmx` (multi-view HTML page)
 
 ### Version bump
 - [ ] Change `version.py` from `0.0.1a22` to `0.0.1`

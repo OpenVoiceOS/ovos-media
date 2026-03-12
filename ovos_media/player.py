@@ -8,7 +8,7 @@ from json_database import JsonStorageXDG
 
 from ovos_config import Configuration
 from ovos_config.meta import get_xdg_base
-from ovos_bus_client.apis.gui import GUIInterface
+from ovos_gui_api_client import GUIInterface
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import MprisPlayerCtl
 from ovos_plugin_manager.ocp import load_stream_extractors
