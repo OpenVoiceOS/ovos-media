@@ -159,7 +159,10 @@ class BaseMediaService:
                 self.bus.emit(Message("ovos.common_play.track.state",
                                       {"state": TrackState.PLAYING_WEBVIEW}))
             else:
-                pass  # ???
+                LOG.warning(
+                    f"handle_media_state_change: unknown namespace '{self.namespace}' "
+                    f"— cannot determine TrackState for LOADED_MEDIA event"
+                )
 
     def wait_for_load(self, timeout=3 * 60):
         """Wait for services to be loaded.

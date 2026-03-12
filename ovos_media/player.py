@@ -1062,12 +1062,18 @@ class OCPMediaPlayer:
         LOG.info(f"MediaState changed: {repr(self.media_state)} -> {repr(state)}")
         self.media_state = state
         if state == MediaState.END_OF_MEDIA:
+            # handle_playback_ended manages its own _update_gui() call
             self.handle_playback_ended(message)
         elif state == MediaState.INVALID_MEDIA:
             self.handle_invalid_media(message)
             if self.ocp_config.get("autoplay", True):
                 self.play_next()
-        self._update_gui()
+            # play_next → play → set_player_state → _update_gui; call explicitly
+            # only if autoplay is disabled (no play() fired)
+            else:
+                self._update_gui()
+        else:
+            self._update_gui()
 
     def handle_invalid_media(self, message):
         self.gui.show_media_player(
