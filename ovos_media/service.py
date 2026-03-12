@@ -7,8 +7,6 @@ from ovos_utils.process_utils import ProcessStatus, StatusCallbackMap
 from ovos_config.config import Configuration
 from ovos_media.legacy_api import LegacyAudioServiceCompat
 from ovos_media.player import OCPMediaPlayer
-from ovos_media.gui import OCPGUIState
-
 
 def on_ready():
     LOG.info('Media service is ready.')
@@ -66,7 +64,7 @@ class MediaService(Thread):
         self.legacy_compat = LegacyAudioServiceCompat(self.ocp, self.bus)
 
     def handle_home(self, message):
-        self.ocp.gui.manage_display(OCPGUIState.HOME)
+        self.ocp._update_gui()
 
     def handle_ping(self, message):
         """
@@ -77,7 +75,12 @@ class MediaService(Thread):
 
     def handle_search_start(self, message):
         """when OCP pipeline triggers, show search animation"""
-        self.ocp.gui.manage_display(OCPGUIState.SPINNER)
+        self.ocp.gui.show_media_player(
+            now_playing=None,
+            playlist=[],
+            search_results=[],
+            state="loading",
+        )
 
     def handle_search_end(self, message):
         """remove search spinner"""

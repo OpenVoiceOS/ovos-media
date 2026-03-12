@@ -61,19 +61,22 @@ class TestMediaServiceHandlers(unittest.TestCase):
         msg.reply.assert_called_once_with("ovos.common_play.pong")
         svc.bus.emit.assert_called_with("pong_msg")
 
-    def test_handle_home_calls_manage_display(self):
+    def test_handle_home_calls_update_gui(self):
         svc = self._make_service()
-        from ovos_media.gui import OCPGUIState
         svc.ocp = MagicMock()
         svc.handle_home(MagicMock())
-        svc.ocp.gui.manage_display.assert_called_once_with(OCPGUIState.HOME)
+        svc.ocp._update_gui.assert_called_once()
 
-    def test_handle_search_start_shows_spinner(self):
+    def test_handle_search_start_shows_loading(self):
         svc = self._make_service()
-        from ovos_media.gui import OCPGUIState
         svc.ocp = MagicMock()
         svc.handle_search_start(MagicMock())
-        svc.ocp.gui.manage_display.assert_called_once_with(OCPGUIState.SPINNER)
+        svc.ocp.gui.show_media_player.assert_called_once_with(
+            now_playing=None,
+            playlist=[],
+            search_results=[],
+            state="loading",
+        )
 
     def test_handle_search_end_does_not_raise(self):
         svc = self._make_service()

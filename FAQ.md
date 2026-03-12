@@ -75,7 +75,22 @@ Global fallback (config):
   }
 }
 ```
-Resolved in `OCPGUIInterface.update_current_track` — `ovos_media/gui.py`.
+These values are passed in the `now_playing` dict to `show_media_player()` — `OCPMediaPlayer._update_gui` — `ovos_media/player.py`.
+
+## How does ovos-media update the display?
+
+`OCPMediaPlayer._update_gui()` — `ovos_media/player.py` — calls
+`self.gui.show_media_player(now_playing, playlist, search_results, state)` after every
+playback state change (play, pause, resume, stop, track change, shuffle/repeat toggle).
+The `state` parameter is one of: `"playing"`, `"paused"`, `"stopped"`, `"loading"`, `"error"`.
+`self.gui` is a `GUIInterface("ovos.common_play")` instance from `ovos_bus_client.apis.gui`.
+
+## Who calls show_video_player / show_url?
+
+Individual backend plugins call those in their own GUI namespaces — NOT `ovos-media` itself.
+`ovos-media` only calls `show_media_player()`. Video and web rendering is delegated to
+backend plugins (e.g. `ovos-video-plugin-*`, `ovos-web-plugin-*`) which manage their own
+QML pages via a separate `GUIInterface` with the backend's own skill_id namespace.
 
 ## Where do I report bugs?
 Open an issue on the GitHub repository targeting the `dev` branch.

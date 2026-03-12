@@ -71,12 +71,16 @@ addressed.  The following table summarises parity status:
 | GUI integration | NO | YES | ✅ |
 | Video / web playback types | NO | YES | ✅ |
 
+## Fixed Issues (2026-03-12) — GUI Decoupling
+
+- `[MAJOR]` **gui**: `OCPGUIInterface` coupled media service directly to QML page management — now resolved. `ovos_media/gui.py` deleted; `OCPMediaPlayer` uses `GUIInterface.show_media_player()` — `ovos_media/player.py`
+
 ## Test Coverage
 - `test/unittests/test_legacy_api.py` — 22 tests — `LegacyAudioServiceCompat`
 - `test/unittests/test_player_state.py` — 13 tests — state machine, ducking, mycroft.stop
 - `test/unittests/test_mpris.py` — 7 tests — MPRIS interface correctness
 - `test/unittests/test_player.py` — 8 tests — preferred service resolution
 - `test/unittests/test_service.py` — 4 tests — MediaService lifecycle
-- `test/unittests/test_gui.py` — 28 tests — GUI state routing
+- `test/unittests/test_gui.py` — 22 tests — `show_media_player` state contract
 - `test/unittests/test_media_backends.py` — 13 tests — backend loading and selection
-Total: **105 tests passing**
+Total: **89 tests passing**

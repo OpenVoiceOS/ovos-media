@@ -1,6 +1,42 @@
 
 # Maintenance Report — `ovos-media`
 
+## [2026-03-12] — GUI decoupling: replace OCPGUIInterface with show_media_player()
+
+### Changes
+
+#### Refactor
+- **`ovos_media/gui.py`** — Deleted entirely. `OCPGUIInterface` and `OCPGUIState` are removed.
+- **`ovos_media/player.py`** — Import changed from `from ovos_media.gui import OCPGUIInterface, OCPGUIState` to `from ovos_bus_client.apis.gui import GUIInterface`.
+- **`ovos_media/player.py:390`** — `self.gui = OCPGUIInterface(); self.gui.bind(self)` replaced with `self.gui = GUIInterface("ovos.common_play", bus=self.bus)` and `self._last_search_results: list = []` initialised.
+- **`ovos_media/player.py`** — Added `OCPMediaPlayer._update_gui()` method that calls `self.gui.show_media_player(now_playing, playlist, search_results, state)`.
+- **`ovos_media/player.py`** — All `self.gui.manage_display(...)`, `self.gui.update_buttons()`, `self.gui.update_ocp_cards()` calls replaced with `self._update_gui()` or `self.gui.show_media_player(state="loading"/"error")`.
+- **`ovos_media/service.py`** — Removed `from ovos_media.gui import OCPGUIState` import; `handle_home` now calls `self.ocp._update_gui()`; `handle_search_start` calls `self.ocp.gui.show_media_player(state="loading")`.
+
+#### Tests
+- **`test/unittests/test_gui.py`** — Fully rewritten. Tests now assert `show_media_player` is called with correct `state=` values on play/pause/stop/error/loading, and that `_update_gui()` is invoked by shuffle/repeat handlers.
+- **`test/unittests/test_player.py`** — Updated patch target from `OCPGUIInterface` to `GUIInterface`; added `_last_search_results` and `playlist.as_list()` to mock setup.
+- **`test/unittests/test_player_state.py`** — Same patch update; mock setup enriched.
+- **`test/unittests/test_service.py`** — `test_handle_home_calls_manage_display` and `test_handle_search_start_shows_spinner` updated to match new API.
+
+### Rationale
+Decouples `ovos-media` from QML page management. `OCPMediaPlayer` now communicates intent
+("show media player in state X") to GUI adapters via `show_media_player()`. Individual backend
+plugins own their own rendering pages. This is a prerequisite for multi-GUI-backend support.
+
+### Verification
+```
+uv run pytest test/ -v --tb=short
+# 89 passed
+```
+
+### AI Transparency Report
+- **AI Model**: claude-sonnet-4-6
+- **Actions Taken**: Deleted `gui.py`; rewrote GUI integration in `player.py` and `service.py`; rewrote `test_gui.py`; updated 3 other test files; updated docs.
+- **Oversight**: Human review and test run required before merging to `dev`.
+
+---
+
 ## [2026-03-11] — Pre-release bug-fix and CI hardening
 
 ### Changes

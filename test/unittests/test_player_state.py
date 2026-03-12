@@ -20,7 +20,7 @@ def _make_player():
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
          patch("ovos_media.player.MprisPlayerCtl"), \
-         patch("ovos_media.player.OCPGUIInterface"), \
+         patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OVOSAbstractApplication.__init__", return_value=None):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
@@ -31,10 +31,12 @@ def _make_player():
         p.shuffle = False
         p.track_history = {}
         p._paused_on_duck = False
+        p._last_search_results = []
         p.now_playing = MagicMock()
         p.now_playing.playback = PlaybackType.AUDIO
         p.now_playing.skill_id = "test.skill"
         p.playlist = MagicMock()
+        p.playlist.as_list.return_value = []
         p.media = MagicMock()
         p.audio_service = MagicMock()
         p.video_service = MagicMock()

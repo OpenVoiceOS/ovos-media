@@ -18,6 +18,14 @@
 | Known issues | [`../AUDIT.md`](../AUDIT.md) |
 | Improvement proposals | [`../SUGGESTIONS.md`](../SUGGESTIONS.md) |
 
+## GUI Integration
+
+GUI rendering is handled via `GUIInterface("ovos.common_play")` from `ovos_bus_client.apis.gui`.
+`OCPMediaPlayer._update_gui()` — `ovos_media/player.py` — calls `gui.show_media_player()` with
+`now_playing`, `playlist`, `search_results`, and `state` on every playback state change.
+Individual backend plugins (audio, video, web) handle their own rendering in separate GUI namespaces.
+The `ovos_media/gui.py` file and `OCPGUIInterface` class have been removed.
+
 ## Documentation
 
 - [01 History And Architecture](01-history-and-architecture.md)
