@@ -445,7 +445,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         }
         np = self.now_playing
         self.gui.show_media_player(
-            now_playing=np.as_dict() if np and np.uri else None,
+            now_playing=np.as_dict if np and np.uri else None,
             playlist=self.playlist.as_list() if self.playlist else [],
             search_results=self._last_search_results or [],
             state=state_map.get(self.state, "stopped"),

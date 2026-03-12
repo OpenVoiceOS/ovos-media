@@ -259,5 +259,702 @@ class TestWebServiceNamespace(unittest.TestCase):
         self.assertEqual(svc.get_preferred_players(), ["browser"])
 
 
+class _FullFakeBackend:
+    """Full stub matching the interface used by BaseMediaService."""
+
+    def __init__(self, uris=None, name="fake"):
+        self.uris = uris or []
+        self.name = name
+        self.aliases = [name]
+        self._track_start_callback = None
+        self.loaded_uri = None
+        self.paused = False
+        self.resumed = False
+        self.stopped = False
+        self.ocp_paused = False
+        self.ocp_resumed = False
+        self.ocp_stopped = False
+        self.volume_lowered = False
+        self.volume_restored = False
+        self.seek_forward_seconds = None
+        self.seek_backward_seconds = None
+        self.track_position = None
+
+    def supported_uris(self):
+        return self.uris
+
+    def set_track_start_callback(self, cb):
+        self._track_start_callback = cb
+
+    def load_track(self, uri):
+        self.loaded_uri = uri
+
+    def play(self, repeat=False):
+        pass
+
+    def stop(self):
+        self.stopped = True
+        return True
+
+    def pause(self):
+        self.paused = True
+
+    def resume(self):
+        self.resumed = True
+
+    def ocp_pause(self):
+        self.ocp_paused = True
+
+    def ocp_resume(self):
+        self.ocp_resumed = True
+
+    def ocp_stop(self):
+        self.ocp_stopped = True
+
+    def lower_volume(self):
+        self.volume_lowered = True
+
+    def restore_volume(self):
+        self.volume_restored = True
+
+    def seek_forward(self, seconds):
+        self.seek_forward_seconds = seconds
+
+    def seek_backward(self, seconds):
+        self.seek_backward_seconds = seconds
+
+    def get_track_length(self):
+        return 120000
+
+    def get_track_position(self):
+        return 5000
+
+    def set_track_position(self, milliseconds):
+        self.track_position = milliseconds
+
+    def track_info(self):
+        return {"title": "Test Track"}
+
+    def shutdown(self):
+        pass
+
+
+def _make_base_svc(namespace="audio", config=None, services=None, validate_source=False):
+    """Build a BaseMediaService with manual state, bypassing __init__."""
+    from ovos_media.media_backends.base import BaseMediaService
+    from ovos_utils.process_utils import MonotonicEvent
+    import threading
+
+    bus = FakeBus()
+    svc = BaseMediaService.__new__(BaseMediaService)
+    svc.bus = bus
+    svc.namespace = namespace
+    svc.config = config or {}
+    svc.plugin_loader = lambda: {}
+    svc.default = None
+    svc.services = services or []
+    svc.current = None
+    svc.play_start_time = 0
+    svc.volume_is_low = False
+    svc.validate_source = validate_source
+    svc.service_lock = threading.Lock()
+    svc._loaded = MonotonicEvent()
+    svc._loaded.set()
+    return svc, bus
+
+
+class TestBaseMediaServiceInit(unittest.TestCase):
+    """Tests for BaseMediaService.__init__ with autoload=False."""
+
+    def test_init_sets_attributes(self):
+        from ovos_media.media_backends.base import BaseMediaService
+        bus = FakeBus()
+        with patch("ovos_media.media_backends.base.Configuration", return_value={"media": {"key": "val"}}):
+            svc = BaseMediaService(bus, namespace="audio",
+                                   plugin_loader=lambda: {},
+                                   config={"key": "val"},
+                                   autoload=False,
+                                   validate_source=False)
+        self.assertIs(svc.bus, bus)
+        self.assertEqual(svc.namespace, "audio")
+        self.assertEqual(svc.services, [])
+        self.assertIsNone(svc.current)
+        self.assertFalse(svc.volume_is_low)
+        self.assertFalse(svc.validate_source)
+
+    def test_init_with_autoload_calls_load_services(self):
+        from ovos_media.media_backends.base import BaseMediaService
+        bus = FakeBus()
+        with patch("ovos_media.media_backends.base.Configuration", return_value={"media": {}}):
+            with patch.object(BaseMediaService, "load_services", return_value=None) as mock_load:
+                svc = BaseMediaService(bus, namespace="audio",
+                                       plugin_loader=lambda: {},
+                                       autoload=True,
+                                       validate_source=False)
+                mock_load.assert_called_once()
+
+    def test_init_uses_config_argument(self):
+        from ovos_media.media_backends.base import BaseMediaService
+        bus = FakeBus()
+        cfg = {"audio_players": {}}
+        with patch("ovos_media.media_backends.base.Configuration", return_value={"media": {}}):
+            svc = BaseMediaService(bus, namespace="audio",
+                                   plugin_loader=lambda: {},
+                                   config=cfg,
+                                   autoload=False)
+        self.assertIs(svc.config, cfg)
+
+
+class TestAvailableBackends(unittest.TestCase):
+
+    def test_returns_dict_with_backend_info(self):
+        from ovos_plugin_manager.templates.media import RemoteAudioPlayerBackend
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http", "https"], name="vlc")
+        svc.services = [b]
+        result = svc.available_backends()
+        self.assertIn("vlc", result)
+        self.assertEqual(result["vlc"]["supported_uris"], ["http", "https"])
+        self.assertFalse(result["vlc"]["remote"])
+
+    def test_empty_services_returns_empty_dict(self):
+        svc, bus = _make_base_svc()
+        self.assertEqual(svc.available_backends(), {})
+
+    def test_remote_backend_flagged(self):
+        from ovos_plugin_manager.templates.media import RemoteAudioPlayerBackend
+
+        class _RemoteStub(RemoteAudioPlayerBackend):
+            def __init__(self):
+                self.name = "remote-player"
+                self.aliases = ["remote-player"]
+                self.config = {}
+                self.bus = MagicMock()
+
+            def supported_uris(self):
+                return ["http"]
+
+            def play(self, *a, **kw): pass
+            def pause(self): pass
+            def resume(self): pass
+            def stop(self): pass
+            def lower_volume(self): pass
+            def restore_volume(self): pass
+            def get_track_length(self): return 0
+            def get_track_position(self): return 0
+            def set_track_position(self, pos): pass
+
+        svc, bus = _make_base_svc()
+        r = _RemoteStub()
+        svc.services = [r]
+        result = svc.available_backends()
+        self.assertTrue(result["remote-player"]["remote"])
+
+
+class TestTrackStart(unittest.TestCase):
+
+    def test_track_start_with_track_emits_playing_track(self):
+        svc, bus = _make_base_svc(namespace="audio")
+        emitted = []
+        bus.on("ovos.audio.playing_track", lambda m: emitted.append(m))
+        svc.track_start("my_track.mp3")
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].data["track"], "my_track.mp3")
+
+    def test_track_start_none_emits_queue_end(self):
+        svc, bus = _make_base_svc(namespace="audio")
+        emitted = []
+        bus.on("ovos.audio.queue_end", lambda m: emitted.append(m))
+        svc.track_start(None)
+        self.assertEqual(len(emitted), 1)
+
+
+class TestPlay(unittest.TestCase):
+
+    def test_play_uses_preferred_service_when_uri_supported(self):
+        b1 = _FullFakeBackend(uris=["http"], name="vlc")
+        b2 = _FullFakeBackend(uris=["library"], name="mass")
+        svc, bus = _make_base_svc(services=[b1, b2])
+
+        svc.play("http://example.com/track.mp3", preferred_service=b1)
+        self.assertEqual(svc.current, b1)
+        self.assertEqual(b1.loaded_uri, "http://example.com/track.mp3")
+
+    def test_play_skips_preferred_service_if_uri_not_supported(self):
+        b1 = _FullFakeBackend(uris=["http"], name="vlc")
+        b2 = _FullFakeBackend(uris=["library"], name="mass")
+        svc, bus = _make_base_svc(services=[b1, b2])
+
+        # preferred=b1 but URI is library:// — should fall through to b2
+        svc.play("library://track/1", preferred_service=b1)
+        self.assertEqual(svc.current, b2)
+        self.assertEqual(b2.loaded_uri, "library://track/1")
+
+    def test_play_uses_current_service_when_uri_supported(self):
+        b1 = _FullFakeBackend(uris=["http"], name="vlc")
+        svc, bus = _make_base_svc(services=[b1])
+        svc.current = b1
+
+        svc.play("http://example.com/song.mp3")
+        self.assertEqual(svc.current, b1)
+        self.assertEqual(b1.loaded_uri, "http://example.com/song.mp3")
+
+    def test_play_falls_back_to_first_matching_service(self):
+        b1 = _FullFakeBackend(uris=["library"], name="mass")
+        b2 = _FullFakeBackend(uris=["http"], name="vlc")
+        svc, bus = _make_base_svc(services=[b1, b2])
+        svc.current = None
+
+        svc.play("http://example.com/track.mp3")
+        self.assertEqual(svc.current, b2)
+
+    def test_play_returns_early_when_no_service_matches(self):
+        b1 = _FullFakeBackend(uris=["library"], name="mass")
+        svc, bus = _make_base_svc(services=[b1])
+
+        svc.play("xyz://unknown")
+        # current must remain None — nothing was loaded
+        self.assertIsNone(svc.current)
+        self.assertIsNone(b1.loaded_uri)
+
+
+class TestPauseResume(unittest.TestCase):
+
+    def test_pause_calls_current_pause_and_ocp_pause(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.pause()
+        self.assertTrue(b.paused)
+        self.assertTrue(b.ocp_paused)
+
+    def test_pause_no_current_does_nothing(self):
+        svc, bus = _make_base_svc()
+        # must not raise
+        svc.pause()
+
+    def test_resume_calls_current_resume_and_ocp_resume(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.resume()
+        self.assertTrue(b.resumed)
+        self.assertTrue(b.ocp_resumed)
+
+    def test_resume_no_current_does_nothing(self):
+        svc, bus = _make_base_svc()
+        svc.resume()
+
+
+class TestStop(unittest.TestCase):
+
+    def test_stop_calls_ocp_stop_and_clears_current(self):
+        import time as _time
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.play_start_time = _time.monotonic() - 5  # > 1 second ago
+        svc.stop()
+        self.assertTrue(b.stopped)
+        self.assertIsNone(svc.current)
+
+    def test_stop_too_soon_after_play_is_ignored(self):
+        import time as _time
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.play_start_time = _time.monotonic()  # just now
+        svc.stop()
+        # current should NOT be cleared because it was within 1 second
+        self.assertEqual(svc.current, b)
+        self.assertFalse(b.stopped)
+
+    def test_stop_emits_mycroft_stop_handled(self):
+        import time as _time
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.play_start_time = _time.monotonic() - 5
+        emitted = []
+        bus.on("mycroft.stop.handled", lambda m: emitted.append(m))
+        svc.stop()
+        self.assertEqual(len(emitted), 1)
+
+
+class TestVolumeHandlers(unittest.TestCase):
+
+    def test_lower_volume_when_current_and_not_low(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.volume_is_low = False
+        svc.lower_volume()
+        self.assertTrue(b.volume_lowered)
+        self.assertTrue(svc.volume_is_low)
+
+    def test_lower_volume_not_called_when_already_low(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.volume_is_low = True
+        svc.lower_volume()
+        self.assertFalse(b.volume_lowered)
+
+    def test_lower_volume_no_current_does_nothing(self):
+        svc, bus = _make_base_svc()
+        svc.volume_is_low = False
+        svc.lower_volume()
+
+    def test_restore_volume_when_low(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.volume_is_low = True
+        svc.restore_volume()
+        self.assertTrue(b.volume_restored)
+        self.assertFalse(svc.volume_is_low)
+
+    def test_restore_volume_not_called_when_not_low(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.volume_is_low = False
+        svc.restore_volume()
+        self.assertFalse(b.volume_restored)
+
+
+class TestHandleMediaStateChange(unittest.TestCase):
+
+    def _msg(self, state):
+        from ovos_bus_client.message import Message
+        return Message("ovos.common_play.media.state", {"state": state})
+
+    def test_audio_namespace_emits_playing_audio(self):
+        from ovos_utils.ocp import MediaState, TrackState
+        from ovos_bus_client.message import Message
+
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].data["state"], TrackState.PLAYING_AUDIO)
+
+    def test_video_namespace_emits_playing_video(self):
+        from ovos_utils.ocp import MediaState, TrackState
+
+        svc, bus = _make_base_svc(namespace="video")
+        b = _FullFakeBackend(uris=["http"], name="mpv")
+        svc.current = b
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
+        self.assertEqual(emitted[0].data["state"], TrackState.PLAYING_VIDEO)
+
+    def test_web_namespace_emits_playing_webview(self):
+        from ovos_utils.ocp import MediaState, TrackState
+
+        svc, bus = _make_base_svc(namespace="web")
+        b = _FullFakeBackend(uris=["https"], name="browser")
+        svc.current = b
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
+        self.assertEqual(emitted[0].data["state"], TrackState.PLAYING_WEBVIEW)
+
+    def test_no_current_does_not_emit(self):
+        from ovos_utils.ocp import MediaState
+
+        svc, bus = _make_base_svc(namespace="audio")
+        svc.current = None
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
+        self.assertEqual(len(emitted), 0)
+
+    def test_non_loaded_state_does_not_emit(self):
+        from ovos_utils.ocp import MediaState
+
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        svc.handle_media_state_change(self._msg(MediaState.NO_MEDIA))
+        self.assertEqual(len(emitted), 0)
+
+
+class TestIsMessageForService(unittest.TestCase):
+
+    def test_none_message_returns_true(self):
+        svc, bus = _make_base_svc(validate_source=True)
+        self.assertTrue(svc._is_message_for_service(None))
+
+    def test_validate_source_false_always_returns_true(self):
+        from ovos_bus_client.message import Message
+        svc, bus = _make_base_svc(validate_source=False)
+        msg = Message("test", {}, {"destination": ["somewhere-else"]})
+        self.assertTrue(svc._is_message_for_service(msg))
+
+    def test_validate_source_true_uses_validate_message_context(self):
+        from ovos_bus_client.message import Message
+        svc, bus = _make_base_svc(validate_source=True)
+        msg = Message("test", {}, {})
+        # No destination in context → broadcast → validate_message_context returns True
+        self.assertTrue(svc._is_message_for_service(msg))
+
+
+class TestBusEventHandlers(unittest.TestCase):
+    """Tests for handle_track_info, handle_list_backends, position/seek handlers."""
+
+    def _make_msg(self, msg_type, data=None, context=None):
+        from ovos_bus_client.message import Message
+        return Message(msg_type, data or {}, context or {})
+
+    def test_handle_track_info_with_current(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        msg = self._make_msg("ovos.audio.service.track_info")
+        replies = []
+        bus.on(msg.msg_type + ".response", lambda m: replies.append(m))
+        # Emit response via mock bus
+        svc.handle_track_info(msg)
+        # The emit goes to bus.emit(message.response(...)); FakeBus should deliver it
+        # but we also verify it doesn't raise and that track_info was called
+        # We'll check via direct mock
+        mock_bus = MagicMock()
+        svc.bus = mock_bus
+        svc.handle_track_info(msg)
+        mock_bus.emit.assert_called_once()
+
+    def test_handle_track_info_no_current(self):
+        svc, bus = _make_base_svc()
+        svc.current = None
+        mock_bus = MagicMock()
+        svc.bus = mock_bus
+        msg = self._make_msg("ovos.audio.service.track_info")
+        svc.handle_track_info(msg)
+        mock_bus.emit.assert_called_once()
+        emitted_msg = mock_bus.emit.call_args[0][0]
+        self.assertEqual(emitted_msg.data, {})
+
+    def test_handle_list_backends(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.services = [b]
+        mock_bus = MagicMock()
+        svc.bus = mock_bus
+        msg = self._make_msg("ovos.audio.service.list_backends")
+        svc.handle_list_backends(msg)
+        mock_bus.emit.assert_called_once()
+
+    def test_handle_get_track_length_with_current(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        mock_bus = MagicMock()
+        svc.bus = mock_bus
+        msg = self._make_msg("ovos.audio.service.get_track_length")
+        svc.handle_get_track_length(msg)
+        mock_bus.emit.assert_called_once()
+        emitted_msg = mock_bus.emit.call_args[0][0]
+        self.assertEqual(emitted_msg.data["length"], 120000)
+
+    def test_handle_get_track_length_no_current(self):
+        svc, bus = _make_base_svc()
+        svc.current = None
+        mock_bus = MagicMock()
+        svc.bus = mock_bus
+        msg = self._make_msg("ovos.audio.service.get_track_length")
+        svc.handle_get_track_length(msg)
+        emitted_msg = mock_bus.emit.call_args[0][0]
+        self.assertIsNone(emitted_msg.data["length"])
+
+    def test_handle_get_track_position_with_current(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        mock_bus = MagicMock()
+        svc.bus = mock_bus
+        msg = self._make_msg("ovos.audio.service.get_track_position")
+        svc.handle_get_track_position(msg)
+        emitted_msg = mock_bus.emit.call_args[0][0]
+        self.assertEqual(emitted_msg.data["position"], 5000)
+
+    def test_handle_get_track_position_no_current(self):
+        svc, bus = _make_base_svc()
+        svc.current = None
+        mock_bus = MagicMock()
+        svc.bus = mock_bus
+        msg = self._make_msg("ovos.audio.service.get_track_position")
+        svc.handle_get_track_position(msg)
+        emitted_msg = mock_bus.emit.call_args[0][0]
+        self.assertIsNone(emitted_msg.data["position"])
+
+    def test_handle_set_track_position(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        msg = self._make_msg("ovos.audio.service.set_track_position", {"position": 30000})
+        svc.handle_set_track_position(msg)
+        self.assertEqual(b.track_position, 30000)
+
+    def test_handle_set_track_position_no_position_key(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        msg = self._make_msg("ovos.audio.service.set_track_position", {})
+        svc.handle_set_track_position(msg)
+        self.assertIsNone(b.track_position)
+
+    def test_handle_seek_forward(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        msg = self._make_msg("ovos.audio.service.seek_forward", {"seconds": 30})
+        svc.handle_seek_forward(msg)
+        self.assertEqual(b.seek_forward_seconds, 30)
+
+    def test_handle_seek_forward_default_seconds(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        msg = self._make_msg("ovos.audio.service.seek_forward", {})
+        svc.handle_seek_forward(msg)
+        self.assertEqual(b.seek_forward_seconds, 1)
+
+    def test_handle_seek_backward(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        msg = self._make_msg("ovos.audio.service.seek_backward", {"seconds": 15})
+        svc.handle_seek_backward(msg)
+        self.assertEqual(b.seek_backward_seconds, 15)
+
+    def test_handle_seek_backward_default_seconds(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        msg = self._make_msg("ovos.audio.service.seek_backward", {})
+        svc.handle_seek_backward(msg)
+        self.assertEqual(b.seek_backward_seconds, 1)
+
+
+class TestHandlePlay(unittest.TestCase):
+    """Tests for the handle_play bus event handler."""
+
+    def _make_msg(self, tracks, utterance=""):
+        from ovos_bus_client.message import Message
+        return Message("ovos.audio.service.play",
+                       {"tracks": tracks, "utterance": utterance})
+
+    def test_handle_play_selects_alias_matched_service(self):
+        b1 = _FullFakeBackend(uris=["http"], name="vlc")
+        b1.aliases = ["vlc", "video lan"]
+        b2 = _FullFakeBackend(uris=["http"], name="mass")
+        b2.aliases = ["mass"]
+        svc, bus = _make_base_svc(services=[b1, b2])
+
+        msg = self._make_msg("http://example.com/song.mp3", utterance="play using vlc")
+        with patch("ovos_media.media_backends.base.time") as mock_time:
+            mock_time.monotonic.return_value = 100.0
+            mock_time.sleep = lambda *a: None
+            svc.handle_play(msg)
+        self.assertEqual(svc.current, b1)
+
+    def test_handle_play_no_alias_match_uses_any_supporting_service(self):
+        b1 = _FullFakeBackend(uris=["library"], name="mass")
+        b1.aliases = ["mass"]
+        b2 = _FullFakeBackend(uris=["http"], name="vlc")
+        b2.aliases = ["vlc"]
+        svc, bus = _make_base_svc(services=[b1, b2])
+
+        msg = self._make_msg("http://example.com/song.mp3", utterance="")
+        with patch("ovos_media.media_backends.base.time") as mock_time:
+            mock_time.monotonic.return_value = 100.0
+            mock_time.sleep = lambda *a: None
+            svc.handle_play(msg)
+        self.assertEqual(svc.current, b2)
+
+
+class TestShutdownAndListeners(unittest.TestCase):
+
+    def test_shutdown_calls_shutdown_on_all_services(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        b_mock = MagicMock(wraps=b)
+        b_mock.name = "vlc"
+        svc.services = [b_mock]
+        svc.load_services = MagicMock()  # prevent re-registration
+        # Register listeners first (needed by remove_listeners)
+        bus.on(f"ovos.audio.service.play", svc.handle_play)
+        bus.on(f"ovos.audio.service.pause", svc.pause)
+        bus.on(f"ovos.audio.service.resume", svc.resume)
+        bus.on(f"ovos.audio.service.stop", svc.stop)
+        bus.on(f"ovos.audio.service.track_info", svc.handle_track_info)
+        bus.on(f"ovos.audio.service.get_track_position", svc.handle_get_track_position)
+        bus.on(f"ovos.audio.service.set_track_position", svc.handle_set_track_position)
+        bus.on(f"ovos.audio.service.get_track_length", svc.handle_get_track_length)
+        bus.on(f"ovos.audio.service.seek_forward", svc.handle_seek_forward)
+        bus.on(f"ovos.audio.service.seek_backward", svc.handle_seek_backward)
+
+        svc.shutdown()
+        b_mock.shutdown.assert_called_once()
+
+    def test_shutdown_continues_after_service_error(self):
+        svc, bus = _make_base_svc()
+        b_bad = MagicMock()
+        b_bad.name = "bad"
+        b_bad.shutdown.side_effect = RuntimeError("boom")
+        svc.services = [b_bad]
+        svc.remove_listeners = MagicMock()
+        # must not raise
+        svc.shutdown()
+
+    def test_load_services_registers_bus_events(self):
+        plugins = {"fake-audio": _FullFakeBackend}
+        config = {
+            "audio_players": {
+                "myfake": {"module": "fake-audio", "uris": ["http"]}
+            }
+        }
+        svc, bus = _make_base_svc(config=config)
+        svc.plugin_loader = lambda: plugins
+
+        mock_bus = MagicMock()
+        svc.bus = mock_bus
+        svc.load_services()
+
+        # Check that bus.on was called for each registered event
+        registered_events = [c[0][0] for c in mock_bus.on.call_args_list]
+        self.assertIn("ovos.audio.service.play", registered_events)
+        self.assertIn("ovos.audio.service.pause", registered_events)
+        self.assertIn("ovos.audio.service.stop", registered_events)
+        self.assertIn("ovos.audio.service.duck", registered_events)
+        self.assertIn("ovos.audio.service.unduck", registered_events)
+
+
+class TestPluginLoadingExceptionHandling(unittest.TestCase):
+
+    def test_broken_plugin_is_skipped_gracefully(self):
+        def broken_plugin(cfg, bus):
+            raise RuntimeError("plugin init failed")
+
+        plugins = {"broken-audio": broken_plugin}
+        config = {
+            "audio_players": {
+                "broken": {"module": "broken-audio"}
+            }
+        }
+        svc, bus = _make_base_svc(config=config)
+        svc.plugin_loader = lambda: plugins
+        # must not raise
+        svc.load_services()
+        self.assertEqual(svc.services, [])
+
+
 if __name__ == "__main__":
     unittest.main()
