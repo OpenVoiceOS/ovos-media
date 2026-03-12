@@ -446,7 +446,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         np = self.now_playing
         self.gui.show_media_player(
             now_playing=np.as_dict if np and np.uri else None,
-            playlist=self.playlist.as_list() if self.playlist else [],
+            playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
             search_results=self._last_search_results or [],
             state=state_map.get(self.state, "stopped"),
         )
@@ -718,7 +718,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
         self.bus.emit(Message("mycroft.audio.play_sound", {"uri": "snd/error.mp3"}))
         self.gui.show_media_player(
             now_playing=None,
-            playlist=self.playlist.as_list() if self.playlist else [],
+            playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
             search_results=self._last_search_results or [],
             state="error",
         )
@@ -1078,7 +1078,7 @@ class OCPMediaPlayer(OVOSAbstractApplication):
     def handle_invalid_media(self, message):
         self.gui.show_media_player(
             now_playing=None,
-            playlist=self.playlist.as_list() if self.playlist else [],
+            playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
             search_results=self._last_search_results or [],
             state="error",
         )

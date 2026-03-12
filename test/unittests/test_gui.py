@@ -33,7 +33,7 @@ def _make_player():
         p.now_playing = MagicMock()
         p.now_playing.uri = "http://example.com/track.mp3"
         p.playlist = MagicMock()
-        p.playlist.as_list.return_value = []
+        p.playlist.entries = []
         p.media = MagicMock()
         p.audio_service = MagicMock()
         p.video_service = MagicMock()
@@ -74,9 +74,11 @@ class TestUpdateGuiCallsShowMediaPlayer(unittest.TestCase):
         self.assertEqual(kwargs["state"], "stopped")
 
     def test_update_gui_passes_playlist(self):
-        """_update_gui() passes playlist from self.playlist.as_list()."""
+        """_update_gui() passes playlist from self.playlist.entries as dicts."""
         p = _make_player()
-        p.playlist.as_list.return_value = [{"title": "Track A"}]
+        entry = MagicMock()
+        entry.as_dict = {"title": "Track A"}
+        p.playlist.entries = [entry]
         p._update_gui()
         kwargs = p.gui.show_media_player.call_args[1]
         self.assertEqual(kwargs["playlist"], [{"title": "Track A"}])

@@ -76,7 +76,7 @@ class OcpMprisExporter(Thread):
         self.config = config or {}
         self.loop = asyncio.get_event_loop()
 
-        self.setDaemon(daemonic)
+        self.daemon = daemonic
         self.shutdown_event = Event()
         self.stop_event = Event()
         self.pause_event = Event()
