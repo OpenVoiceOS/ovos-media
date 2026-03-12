@@ -12,7 +12,8 @@ while `ovos-audio` continues to run for TTS output.
 
 | Document | Description |
 |---|---|
-| [Getting Started](getting-started.md) | Install, run, migrate from ovos-audio |
+| [Migration Guide](MIGRATION_GUIDE.md) | **What changed from old OCP** — architecture, bus messages, config, features, step-by-step migration |
+| [Getting Started](getting-started.md) | Install, run, configure ovos-media |
 | [Configuration](configuration.md) | Full `mycroft.conf` reference for the `media` section |
 | [Architecture](architecture.md) | Service layers, bus events, state machine, GUI integration |
 | [Backend Plugins](backends.md) | Audio/video/web backends, plugin discovery, writing a custom backend |
