@@ -71,10 +71,10 @@ class OcpMprisExporter(Thread):
     """
 
     def __init__(self, player, config=None, daemonic=True, manage_players=False):
-        super(MprisPlayerCtl, self).__init__()
+        super().__init__()
         self.dbus = None
         self.config = config or {}
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.new_event_loop()
 
         self.daemon = daemonic
         self.shutdown_event = Event()
@@ -779,11 +779,10 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @dbus_property()
     def LoopStatus(self) -> 's':
-        # TODO validate strings
         if self._ocp_player.loop_state == LoopState.REPEAT_TRACK:
-            return "RepeatTrack"
+            return "Track"  # MPRIS 2.2 spec: "None", "Track", or "Playlist"
         if self._ocp_player.loop_state == LoopState.REPEAT:
-            return "Repeat"
+            return "Playlist"
         return "None"
 
     @LoopStatus.setter

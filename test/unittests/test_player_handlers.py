@@ -58,7 +58,7 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
          patch("ovos_media.player.OcpMprisExporter"), \
          patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
-         patch("ovos_media.player.OVOSAbstractApplication.__init__", return_value=None):
+         patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
         p.ocp_config = {}
         p.state = PlayerState.STOPPED
@@ -93,7 +93,7 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
         p.web_service = MagicMock()
         p.current = None
         p.mpris = None
-        p._bus = FakeBus()
+        p.bus = FakeBus()
         p.gui = MagicMock()
     return p
 
@@ -171,27 +171,27 @@ class TestHandleResumeRequest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestHandlePauseToggleRequest(unittest.TestCase):
-    """handle_pause_toggle_request: PAUSED -> pause again; else -> resume."""
+    """handle_pause_toggle_request: PAUSED -> resume; else -> pause."""
 
-    def test_toggle_when_paused_calls_pause(self):
-        """When state==PAUSED the toggle should call pause (handle_pause_request)."""
+    def test_toggle_when_paused_calls_resume(self):
+        """When state==PAUSED the toggle should call resume (handle_resume_request)."""
         p = _make_player(PlaybackType.AUDIO)
         p.state = PlayerState.PAUSED
         p.handle_pause_request = MagicMock()
         p.handle_resume_request = MagicMock()
         p.handle_pause_toggle_request(Message("ovos.common_play.play_pause"))
-        p.handle_pause_request.assert_called_once()
-        p.handle_resume_request.assert_not_called()
+        p.handle_resume_request.assert_called_once()
+        p.handle_pause_request.assert_not_called()
 
-    def test_toggle_when_playing_calls_resume(self):
-        """When state==PLAYING the toggle should call resume."""
+    def test_toggle_when_playing_calls_pause(self):
+        """When state==PLAYING the toggle should call pause."""
         p = _make_player(PlaybackType.AUDIO)
         p.state = PlayerState.PLAYING
         p.handle_pause_request = MagicMock()
         p.handle_resume_request = MagicMock()
         p.handle_pause_toggle_request(Message("ovos.common_play.play_pause"))
-        p.handle_resume_request.assert_called_once()
-        p.handle_pause_request.assert_not_called()
+        p.handle_pause_request.assert_called_once()
+        p.handle_resume_request.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +206,7 @@ class TestHandleStopRequest(unittest.TestCase):
         p.state = PlayerState.PLAYING
         p.handle_status = MagicMock()
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.handle_stop_request(Message("ovos.common_play.stop"))
         types = [m.msg_type for m in emitted]
         self.assertIn("ovos.common_play.search.stop", types)
@@ -425,7 +425,7 @@ class TestHandleTrackInfoRequest(unittest.TestCase):
     def test_track_info_response_contains_now_playing_dict(self):
         p = _make_player()
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         msg = Message("ovos.common_play.track_info")
         p.handle_track_info_request(msg)
         self.assertTrue(len(emitted) >= 1)
@@ -446,7 +446,7 @@ class TestHandleTrackLengthPositionRequests(unittest.TestCase):
         p.now_playing.length = 200000
         p.audio_service.get_track_length.return_value = 300000
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         msg = Message("ovos.common_play.get_track_length")
         p.handle_track_length_request(msg)
         resp = emitted[0]
@@ -458,7 +458,7 @@ class TestHandleTrackLengthPositionRequests(unittest.TestCase):
         p.now_playing.length = 150000
         p.audio_service.get_track_length.return_value = None
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         msg = Message("ovos.common_play.get_track_length")
         p.handle_track_length_request(msg)
         resp = emitted[0]
@@ -469,7 +469,7 @@ class TestHandleTrackLengthPositionRequests(unittest.TestCase):
         p.now_playing.position = 5000
         p.audio_service.get_track_position.return_value = 8000
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         msg = Message("ovos.common_play.get_track_position")
         p.handle_track_position_request(msg)
         resp = emitted[0]
@@ -487,45 +487,49 @@ class TestHandleTrackLengthPositionRequests(unittest.TestCase):
 # handle_player_state_update (bus event handler)
 # ---------------------------------------------------------------------------
 
-class TestHandlePlayerStateUpdate(unittest.TestCase):
-    """handle_player_state_update parses state from the message and updates self.state."""
+class TestSetPlayerState(unittest.TestCase):
+    """set_player_state is the single authoritative writer of self.state.
 
-    def test_updates_state_from_int(self):
+    The old handle_player_state_update bus handler has been removed —
+    OCPMediaPlayer no longer self-subscribes to its own emitted event.
+    """
+
+    def test_updates_state_to_playing(self):
         p = _make_player()
         p._update_gui = MagicMock()
-        msg = Message("ovos.common_play.player.state",
-                      {"state": int(PlayerState.PLAYING)})
-        p.handle_player_state_update(msg)
+        p.handle_status = MagicMock()
+        p.state = PlayerState.STOPPED
+        p.set_player_state(PlayerState.PLAYING)
         self.assertEqual(p.state, PlayerState.PLAYING)
 
-    def test_updates_state_from_enum(self):
+    def test_updates_state_to_paused(self):
         p = _make_player()
         p._update_gui = MagicMock()
-        msg = Message("ovos.common_play.player.state",
-                      {"state": PlayerState.PAUSED})
-        p.handle_player_state_update(msg)
+        p.handle_status = MagicMock()
+        p.state = PlayerState.PLAYING
+        p.set_player_state(PlayerState.PAUSED)
         self.assertEqual(p.state, PlayerState.PAUSED)
 
-    def test_raises_on_missing_state(self):
+    def test_raises_on_invalid_type(self):
         p = _make_player()
-        msg = Message("ovos.common_play.player.state", {})
-        with self.assertRaises(ValueError):
-            p.handle_player_state_update(msg)
-
-    def test_raises_on_invalid_state_type(self):
-        p = _make_player()
-        msg = Message("ovos.common_play.player.state", {"state": "playing"})
-        with self.assertRaises(ValueError):
-            p.handle_player_state_update(msg)
+        with self.assertRaises(TypeError):
+            p.set_player_state("playing")
 
     def test_noop_when_same_state(self):
         p = _make_player()
         p._update_gui = MagicMock()
+        p.handle_status = MagicMock()
         p.state = PlayerState.STOPPED
-        msg = Message("ovos.common_play.player.state",
-                      {"state": PlayerState.STOPPED})
-        p.handle_player_state_update(msg)
+        p.set_player_state(PlayerState.STOPPED)
         p._update_gui.assert_not_called()
+
+    def test_calls_update_gui_on_change(self):
+        p = _make_player()
+        p._update_gui = MagicMock()
+        p.handle_status = MagicMock()
+        p.state = PlayerState.STOPPED
+        p.set_player_state(PlayerState.PLAYING)
+        p._update_gui.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -585,16 +589,16 @@ class TestSetMediaState(unittest.TestCase):
     def test_emits_bus_event_on_change(self):
         p = _make_player()
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.set_media_state(MediaState.LOADED_MEDIA)
         types = [m.msg_type for m in emitted]
         self.assertIn("ovos.common_play.media.state", types)
 
     def test_noop_when_same_state(self):
         p = _make_player()
-        p._bus.emit = MagicMock()
+        p.bus.emit = MagicMock()
         p.set_media_state(MediaState.NO_MEDIA)
-        p._bus.emit.assert_not_called()
+        p.bus.emit.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -638,7 +642,7 @@ class TestHandleLikeUnlike(unittest.TestCase):
     def test_like_stores_track(self):
         p = _make_player()
         p._update_gui = MagicMock()
-        p._bus.emit = MagicMock()
+        p.bus.emit = MagicMock()
         uri = "http://example.com/song.mp3"
         msg = Message("ovos.common_play.like", {"uri": uri, "title": "Song", "artist": "Artist", "image": ""})
         p.handle_like(msg)
@@ -727,7 +731,7 @@ class TestStopVariousPlaybackTypes(unittest.TestCase):
         p.state = PlayerState.PLAYING
         p.handle_status = MagicMock()
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.stop()
         skill_stop_msgs = [m for m in emitted
                            if m.msg_type == f"ovos.common_play.{p.now_playing.skill_id}.stop"]

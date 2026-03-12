@@ -20,7 +20,7 @@ def _make_player():
          patch("ovos_media.player.OcpMprisExporter"), \
          patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
-         patch("ovos_media.player.OVOSAbstractApplication.__init__", return_value=None):
+         patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
         p.ocp_config = {}
         p.state = PlayerState.STOPPED
@@ -39,7 +39,7 @@ def _make_player():
         p.web_service = MagicMock()
         p.current = None
         p.mpris = None
-        p._bus = FakeBus()
+        p.bus = FakeBus()
         p.gui = MagicMock()
     return p
 
@@ -49,14 +49,14 @@ class TestPlayerStateTransitions(unittest.TestCase):
 
     def test_set_player_state_rejects_invalid_type(self):
         p = _make_player()
-        p._bus.emit = MagicMock()
+        p.bus.emit = MagicMock()
         with self.assertRaises(TypeError):
             p.set_player_state("playing")
 
     def test_set_player_state_emits_bus_message_on_change(self):
         p = _make_player()
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         # state starts at STOPPED; changing to PLAYING should emit
         p.set_player_state(PlayerState.PLAYING)
         msg_types = [m.msg_type for m in emitted]
@@ -64,10 +64,10 @@ class TestPlayerStateTransitions(unittest.TestCase):
 
     def test_set_player_state_noop_when_same_state(self):
         p = _make_player()
-        p._bus.emit = MagicMock()
+        p.bus.emit = MagicMock()
         # state already STOPPED — should be a no-op
         p.set_player_state(PlayerState.STOPPED)
-        p._bus.emit.assert_not_called()
+        p.bus.emit.assert_not_called()
 
 
 class TestResolvePreferredService(unittest.TestCase):

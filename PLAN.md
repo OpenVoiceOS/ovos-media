@@ -1,219 +1,292 @@
 # ovos-media — Strategic Plan
 
-_Last updated: 2026-03-11_
+_Last updated: 2026-03-12_
 
 ---
 
 ## 1. Current State
 
-`ovos-media` is at `0.0.1a22` (pre-release). Critical bugs have been fixed (see `MAINTENANCE_REPORT.md`).
-The codebase is functional but three major architectural concerns must be resolved before `0.0.1`:
+`ovos-media` is at `0.0.1a22` (pre-release).
 
-1. **GUI coupling** — `ovos_media/gui.py` contains a custom `OCPGUIInterface` that directly manages display state, JavaScript policies, and QML pages. The new GUI system (`GUI_DESIGN.md`) renders this approach obsolete and incompatible.
-2. **MPRIS monolith** — `MprisPlayerCtl` mixes two concerns: exposing OCP over D-Bus (Role A) and managing external MPRIS players (Role B).
-3. **Incomplete test coverage** — key paths still untested.
+**Completed work:**
+- Phase 1 critical bugs (pyproject.toml, MPRIS Property fixes, relative imports) ✅
+- GUI decoupling (`OCPGUIInterface` deleted, `GUIInterface.show_media_player()` in place) ✅
+- MPRIS refactor (`OcpMprisExporter` Role A, `ovos-media-plugin-mpris` scaffolded for Role B) ✅
+- CI workflows complete (all using `@dev` refs) ✅
+- Test coverage 72% ✅
+
+**Blocking the 0.0.1 release:**
+A detailed architectural review (2026-03-12) identified 8 correctness/design problems that must be fixed before the stable release. See section 2 below.
+
+**What is correct and should stay:**
+- Bus-first design — all state changes flow through MessageBus events
+- `NowPlaying` as a bus subscriber (reactive, not pushed)
+- Three-backend split: `AudioService`, `VideoService`, `WebService`
+- `OcpMprisExporter` Role A / `ovos-media-plugin-mpris` Role B separation
+- `OCPMediaCatalog(OVOSCommonPlaybackSkill)` — embedded OCP skill (stays as-is)
 
 ---
 
-## 2. GUI Decoupling (Highest Priority)
+## 2. Architectural Redesign — Problems and Solutions
 
-### Problem
+### Problem 1: OCPMediaPlayer inherits OVOSAbstractApplication (CRITICAL)
 
-`ovos_media/gui.py` today:
-- Defines `OCPGUIInterface` with hardcoded display states (`HOME`, `PLAYER`, `SPINNER`, `PLAYBACK_ERROR`)
-- Calls `self.gui.show_page("OVOSMediaPlayer.qml")` directly — tight QML coupling
-- Hardcodes JavaScript policy flags (`javascript_policy`, `javascript_can_open_windows`, `allow_url_change`)
-- Bundles display logic that belongs to GUI adapter plugins, not to the media service
+**Root cause:** `OCPMediaPlayer(OVOSAbstractApplication)` in `player.py:~120`.
 
-The new GUI system (`ovos-gui-api-client`, `GUI_DESIGN.md`) explicitly states:
-> `show_audio_player()` is called by the OCP audio service, not by individual media skills.
-> Skills must not call `show_page()` directly.
+`OVOSAbstractApplication` is an `OVOSSkill` subclass. It drags in:
+- Intent/skill lifecycle machinery (`skill_id`, `intent_service`, `skill_manager_connected`)
+- `__del__` that assumes `self.skill_id` exists → `AttributeError` in every test teardown
+- `add_event`/`remove_event` abstractions designed for skill message handlers (not a service)
+- Config loading meant for skills, not a system daemon
 
-### Solution
+`OCPMediaPlayer` is a **media service daemon**, not a skill. The correct base is no base — or a minimal bus-connected class.
 
-Delete `ovos_media/gui.py` and replace with a single call to the new `GUIInterface.show_media_player()` template (defined in `GUI_DESIGN.md §4.3a`).
-
-`ovos-media` makes **one kind of GUI call** only:
-
+**Fix:**
 ```python
-self.gui.show_media_player(
-    now_playing=np.as_dict(),   # current track metadata
-    playlist=self.playlist.as_list(),
-    search_results=self._last_search_results,
-    state="playing" | "paused" | "stopped" | "loading" | "error",
-)
-```
-
-This template gives adapters everything they need to render the full OCP player chrome: artwork, scrubbar, playback controls, queue, search results — exactly what the current QML `OVOSMediaPlayer` shows.
-
-**Individual backend plugins handle their own rendering:**
-- `VideoService` (or a video backend plugin) may call `gui.show_video_player()` on its own `GUIInterface` namespace for full-screen video overlay
-- `WebService` (or a web backend plugin) may call `gui.show_url()` on its own namespace
-- `ovos-media` is not involved in those calls
-
-### Dependency change
-
-```toml
-# pyproject.toml — add:
-"ovos-gui-api-client>=0.1.0,<1.0.0"
-
-# remove or demote if only used for GUI:
-# ovos-workshop
-```
-
-`ovos-gui-api-client` is the standalone package that provides `GUIInterface` (see `GUI_DESIGN.md §4`).
-
-### What disappears
-
-- `ovos_media/gui.py` — entire file deleted
-- `OCPGUIInterface` class — replaced by `GUIInterface` from `ovos-gui-api-client`
-- All `show_page()` / `remove_page()` / QML references
-- JavaScript policy flags — adapters decide policy; `ovos-media` only pushes URIs as data
-- `PlaybackState.HOME/SPINNER/PLAYBACK_ERROR` internal display states — expressed via `state=` parameter
-
-### What stays in `player.py`
-
-`OCPMediaPlayer` calls `_update_gui()` after every state or track change:
-
-```python
-# player.py (after refactor)
-from ovos_gui_api_client import GUIInterface
-
 class OCPMediaPlayer:
-    def __init__(self, ...):
-        self.gui = GUIInterface("ovos.common_play", bus=self.bus)
+    def __init__(self, bus: MessageBusClient, config: dict | None = None) -> None:
+        self.bus = bus
+        self.config = config or {}
+        # ... register handlers manually
+        bus.on("ovos.common_play.play", self.handle_play_request)
+        # etc.
+```
 
-    def _update_gui(self) -> None:
-        """Push current OCP state to GUI adapters via show_media_player."""
-        np = self.now_playing
-        state_map = {
-            PlayerState.PLAYING: "playing",
-            PlayerState.PAUSED:  "paused",
-            PlayerState.STOPPED: "stopped",
-        }
-        self.gui.show_media_player(
-            now_playing=np.as_dict() if np else None,
-            playlist=self.playlist.as_list(),
-            search_results=self._last_search_results or [],
-            state=state_map.get(self.state, "stopped"),
-        )
+`OCPMediaCatalog(OVOSCommonPlaybackSkill)` stays — it IS a skill and should inherit from it.
+
+**Impact:** Resolves all `AttributeError: 'OCPMediaPlayer' object has no attribute 'skill_id'` test failures.
+
+---
+
+### Problem 2: handle_pause_toggle_request logic inverted (CRITICAL)
+
+**Location:** `player.py` — `handle_pause_toggle_request`.
+
+**Current bug:**
+```python
+if self.state == PlayerState.PAUSED:
+    self.handle_pause_request(msg)   # BUG: pauses again when already paused
+else:
+    self.handle_resume_request(msg)
+```
+
+**Fix:**
+```python
+if self.state == PlayerState.PAUSED:
+    self.handle_resume_request(msg)
+else:
+    self.handle_pause_request(msg)
 ```
 
 ---
 
-## 3. MPRIS Architecture
+### Problem 3: set_player_state dual-write pattern (HIGH)
 
-### Problem
+**Location:** `player.py` — `set_player_state` + `handle_player_state_update`.
 
-`MprisPlayerCtl` (`ovos_media/mpris.py`) combines two independent concerns in one class:
+**Current pattern:**
+```python
+def set_player_state(self, state):
+    self.state = state
+    self.bus.emit(Message("ovos.common_play.player.state", {"state": state}))  # emits
 
-**Role A — OCP as MPRIS player (D-Bus server)**
-- Registers `org.mpris.MediaPlayer2.OCP` on the session bus
-- Exposes OCP state: Position, PlaybackStatus, Metadata, LoopStatus, Shuffle, Volume
-- Receives control signals from external apps (KDE Connect, playerctl, GNOME Shell widget)
-- Tightly coupled to `OCPMediaPlayer` — must stay in `ovos-media`
+def handle_player_state_update(self, msg):   # also subscribed to same event
+    self.state = msg.data["state"]           # writes self.state twice
+```
 
-**Role B — External MPRIS player manager (D-Bus client)**
-- Polls D-Bus every N seconds for new players (Spotify, VLC, Firefox…)
-- Auto-pauses OCP when an external player becomes active
-- Proxies OCP's skip/pause/shuffle/repeat to external players
-- Routes `PlaybackType.MPRIS` tracks to the correct external player
-- **No reason to live in core** — this is a pluggable backend
+`set_player_state` writes `self.state` → emits event → `handle_player_state_update` picks up own event → writes `self.state` again. Fragile self-subscribe anti-pattern; if subscription lags, state desync occurs.
 
-### Proposed split
+**Fix:** Make `OCPMediaPlayer` the single writer of `self.state`. Emit the event but do not subscribe to it internally. External consumers (MPRIS, GUI clients) subscribe; `OCPMediaPlayer` does not.
 
-#### Keep in `ovos-media`: `OcpMprisExporter`
-- Thin D-Bus server class, Role A only
-- No polling thread, no external player detection
-- Always active when `enable_mpris: true`
-
-#### Extract to `ovos-media-plugin-mpris` (new repo): `MprisMediaPlugin`
-- Implements `BaseMediaService` (entry point: `opm.media.audio`)
-- Polls D-Bus for external players, registers them as selectable backends
-- Implements `manage_external_players` auto-pause logic
-- Handles `PlaybackType.MPRIS` track routing
-- Optional install — `pip install ovos-media-plugin-mpris`
-
-#### `player.py` change
-Route `PlaybackType.MPRIS` through the normal `AudioService` dispatch instead of the special-cased `mpris.*` path.
-
-### Why this is the right separation
-
-| Concern | `OcpMprisExporter` | `MprisMediaPlugin` |
-|---|---|---|
-| D-Bus server | Yes | No |
-| D-Bus polling | No | Yes |
-| OCP state sync | Yes | No |
-| External player control | No | Yes |
-| Config: `enable_mpris` | Yes | N/A |
-| Config: `manage_external_players` | No | Yes |
-| Required for MPRIS-as-sink | Yes | No |
-| Required for playing MPRIS streams | No | Yes |
+```python
+def set_player_state(self, state: PlayerState) -> None:
+    self.state = state          # single write
+    self._update_gui()
+    self.bus.emit(Message("ovos.common_play.player.state", {"state": state.value}))
+    # remove: handle_player_state_update subscription
+```
 
 ---
 
-## 4. Roadmap to 0.0.1 Stable
+### Problem 4: Dual playlist with O(n²) dedup (HIGH)
 
-### Phase 1 — Critical bug fixes (done ✅)
-- [x] Missing pyproject.toml dependencies
-- [x] MPRIS Position returns microseconds
-- [x] MPRIS LoopStatus maps to enum
-- [x] MPRIS Stop() calls stop()
-- [x] _set_main_player logic
-- [x] manage_players reads config
-- [x] Preferred service selection in player.py
-- [x] Relative imports removed
-- [x] CI workflows added (all using @dev refs)
+**Location:** `player.py` — `play_next()` crosses between `self.playlist` and `self.media.search_playlist`.
 
-### Phase 2 — GUI decoupling (next, blocking 0.0.1)
-- [ ] Add `ovos-gui-api-client` dependency to `pyproject.toml`
-- [ ] Delete `ovos_media/gui.py`
-- [ ] Replace `OCPGUIInterface` usage in `player.py` with `GUIInterface` + typed template calls
-- [ ] Remove any `show_page()` / QML references from the codebase
-- [ ] Update tests (mock `GUIInterface` instead of `OCPGUIInterface`)
-- [ ] Update docs
+**Current problem:**
+- `self.playlist` — user's explicit queue
+- `self.media.search_playlist` — auto-populated from search results
+- `play_next()` has to check both, deduplicate, and maintain position — O(n²) scan
+- No clear priority rules when both are non-empty
 
-### Phase 3 — MPRIS refactor
-- [ ] Extract `OcpMprisExporter` from `MprisPlayerCtl` (Role A only)
-- [ ] Create `ovos-media-plugin-mpris` repo (Role B as a `BaseMediaService` plugin)
-- [ ] Update `player.py` to route `PlaybackType.MPRIS` through `AudioService`
-- [ ] Remove `MprisPlayerCtl` monolith
-- [ ] Update config schema and docs
+**Fix:** Introduce a single `Queue` abstraction that merges on enqueue, not on consume:
+```python
+class Queue:
+    """Ordered, deduplicated media queue. User entries take priority over search results."""
+    def next(self) -> MediaEntry | None: ...
+    def enqueue(self, entries: list[MediaEntry], source: str = "search") -> None: ...
+```
+`self.playlist` and `self.media.search_playlist` feeds into `Queue` at search/play time. `play_next()` simply calls `queue.next()`.
 
-### Phase 4 — Test coverage
-- [ ] Unit tests for `OcpMprisExporter` (mock D-Bus)
-- [ ] Unit tests for GUI calls (mock `GUIInterface`)
-- [ ] Coverage ≥ 80% on all modules
+---
 
-### Phase 5 — Stable release
-- [ ] Bump version to `0.0.1` in `version.py`
+### Problem 5: sleep() in bus handlers (HIGH)
+
+**Locations:**
+- `media_backends/base.py` `handle_play`: `time.sleep(0.5)` — blocks the MessageBus event loop for 500ms
+- `player.py` `on_invalid_stream`: `time.sleep(3)` — blocks for 3 seconds on every failed stream
+
+**Fix:** Replace with `threading.Timer` or `self.bus.emit_later()`:
+```python
+# instead of time.sleep(0.5); self.play(...)
+threading.Timer(0.5, self.play, args=[uri, service]).start()
+
+# instead of time.sleep(3); self.play_next()
+threading.Timer(3.0, self.play_next).start()
+```
+
+---
+
+### Problem 6: Dead handle_track_state_change (MEDIUM)
+
+**Location:** `player.py` — `NowPlaying.handle_track_state_change`, all branches are `pass`.
+
+This handler subscribes to `ovos.common_play.track.state` but does nothing with it. State changes from backends are silently dropped.
+
+**Fix:** Implement the handler:
+```python
+def handle_track_state_change(self, msg: Message) -> None:
+    state = TrackState(msg.data["state"])
+    self.state = state
+    if state in (TrackState.PLAYING_AUDIO, TrackState.PLAYING_VIDEO, TrackState.PLAYING_WEBVIEW):
+        self._player.set_player_state(PlayerState.PLAYING)
+    elif state == TrackState.PAUSED_AUDIO:
+        self._player.set_player_state(PlayerState.PAUSED)
+    elif state in (TrackState.END_OF_MEDIA, TrackState.ERROR):
+        self._player.play_next()
+```
+
+---
+
+### Problem 7: No position→GUI forwarding (MEDIUM)
+
+**Location:** `player.py` — `handle_sync_seekbar` updates `self.now_playing.position` but never calls `_update_gui()`.
+
+Result: scrubbar in GUI adapter never moves during playback.
+
+**Fix:**
+```python
+def handle_sync_seekbar(self, msg: Message) -> None:
+    pos = msg.data.get("position", 0)
+    self.now_playing.position = pos
+    self._update_gui()   # add this line
+```
+
+---
+
+### Problem 8: Silent backend load failure (MEDIUM)
+
+**Location:** `media_backends/base.py` — when zero backends load, service silently continues.
+
+**Fix:**
+```python
+if not self._loaded_backends:
+    LOG.error("No media backends loaded — all playback will fail. "
+              "Install at least one: ovos-vlc-plugin, ovos-mplayer-plugin, etc.")
+    self.bus.emit(Message("ovos.common_play.media.state",
+                          {"state": MediaState.NO_MEDIA}))
+```
+
+---
+
+### Problem 9: MPRIS super() wrong class name (LOW)
+
+**Location:** `mpris.py:74`
+
+```python
+super(MprisPlayerCtl, self).__init__()   # MprisPlayerCtl was renamed to OcpMprisExporter
+```
+
+**Fix:** `super().__init__()` (no explicit class name needed in Python 3)
+
+---
+
+### Problem 10: MPRIS asyncio.get_event_loop() deprecated (LOW)
+
+**Location:** `mpris.py:77`
+
+```python
+self.loop = asyncio.get_event_loop()   # deprecated, returns running loop or creates new
+```
+
+**Fix:** `self.loop = asyncio.new_event_loop()`
+
+---
+
+### Problem 11: MPRIS LoopStatus getter returns wrong string (LOW)
+
+**Location:** `mpris.py` — `LoopStatus` getter returns `"RepeatTrack"` but MPRIS spec requires `"Track"`.
+
+**Fix:** Return `"Track"` for `LoopState.REPEAT_TRACK`.
+
+---
+
+## 3. Roadmap to 0.0.1 Stable
+
+### Phase A — OCPMediaPlayer base class redesign (CRITICAL, 1 file)
+Remove `OVOSAbstractApplication` inheritance from `OCPMediaPlayer`. Plain class with `bus` parameter.
+- [ ] Rewrite `OCPMediaPlayer.__init__` to take `bus: MessageBusClient`
+- [ ] Register all event handlers via `bus.on(...)` directly
+- [ ] Update `MediaService` to instantiate `OCPMediaPlayer(bus=self.bus)`
+- [ ] Update all tests — remove patches on `OVOSAbstractApplication.__init__`
+- [ ] Verify: `uv run pytest test/ -v` — no `AttributeError: skill_id` in teardown
+
+### Phase B — Logic bug fixes (HIGH, 2 fixes)
+- [ ] Fix `handle_pause_toggle_request` (inverted condition)
+- [ ] Fix `set_player_state` dual-write (remove self-subscription)
+
+### Phase C — Correctness fixes (MEDIUM, 4 fixes)
+- [ ] Fix `handle_track_state_change` dead code
+- [ ] Fix `handle_sync_seekbar` missing `_update_gui()` call
+- [ ] Fix `sleep()` in `handle_play` and `on_invalid_stream` → `threading.Timer`
+- [ ] Fix backend load failure → emit error state
+
+### Phase D — MPRIS cleanup (LOW, 3 one-liners)
+- [ ] Fix `super()` call in `mpris.py:74`
+- [ ] Fix `asyncio.get_event_loop()` in `mpris.py:77`
+- [ ] Fix `LoopStatus` getter → `"Track"` not `"RepeatTrack"`
+
+### Phase E — Queue abstraction (MEDIUM, design work)
+- [ ] Design `Queue` class with `next()`, `enqueue()`, `clear()`
+- [ ] Replace dual-playlist O(n²) dedup in `play_next()`
+- [ ] Update tests
+
+### Phase F — Version bump and release
+- [ ] Change `version.py` from `0.0.1a22` to `0.0.1`
+- [ ] Update `QUICK_FACTS.md`
 - [ ] Tag `v0.0.1` on `master`
-- [ ] PyPI stable publish via `publish_stable.yml`
-- [ ] Update workspace `DOCUMENTATION_INDEX.md`
 
 ---
 
-## 5. Open Questions
+## 4. Open Questions
 
-1. **GUIInterface skill_id**: OCP should register as `"ovos.common_play"` — confirm this is the correct namespace vs `"ovos-media"`.
+1. **GUIInterface skill_id**: OCP registers as `"ovos.common_play"` — confirmed.
 
-2. **D-Bus on headless servers**: `OcpMprisExporter` should degrade gracefully (LOG.warning, not crash) when D-Bus session bus is unavailable.
+2. **D-Bus on headless servers**: `OcpMprisExporter` should degrade gracefully when D-Bus is unavailable.
 
-3. **Position live updates**: `show_audio_player()` sets position once. For scrubbar live update, `player.py` needs to call `_update_gui()` periodically (or on `NowPlaying.position` change). Evaluate whether the GUI adapter pulls position from D-Bus (MPRIS) or OCP pushes it via template updates.
+3. **Position live updates**: `show_media_player()` sets position once per call. Live scrubbar needs periodic `_update_gui()` calls during playback (every 1s). Config key: `media.gui_update_interval`.
 
-4. **MprisMediaPlugin competing with AudioService**: If both a local VLC plugin and the MPRIS plugin are available for the same URI, `preferred_audio_services` config governs priority.
+4. **Queue priority**: When both user-queued items and auto-search results exist, user queue takes strict priority. Search results fill in after user queue is exhausted.
 
-5. **HiveMind remote GUI**: Satellites that connect to a hub could share the hub's `GUIInterface`. No action for 0.0.1, but the decoupled architecture enables this.
+5. **HiveMind remote GUI**: Satellites could share hub's `GUIInterface`. Not in scope for 0.0.1.
 
 ---
 
-## 6. Key Files
+## 5. Key Files
 
 | File | Status | Action |
 |---|---|---|
-| `ovos_media/gui.py` | Architectural mismatch | Delete entirely |
-| `ovos_media/player.py` | Needs GUI call updates | Replace OCPGUIInterface with GUIInterface |
-| `ovos_media/mpris.py` | Monolith | Split → OcpMprisExporter + new plugin repo |
-| `ovos_media/media_backends/base.py` | Stable | No changes needed |
-| `pyproject.toml` | Needs dep update | Add ovos-gui-api-client, remove ovos-workshop if unused |
-| `.github/workflows/` | Complete | All present with @dev refs |
+| `ovos_media/player.py` | Wrong base class + 6 bugs | Phase A–E |
+| `ovos_media/mpris.py` | 3 minor fixes | Phase D |
+| `ovos_media/media_backends/base.py` | Silent failure | Phase C |
+| `ovos_media/service.py` | Needs `OCPMediaPlayer` API update | Phase A |
+| `test/unittests/` | Tests assume skill base class | Phase A |

@@ -851,6 +851,16 @@ class TestHandlePlay(unittest.TestCase):
         return Message("ovos.audio.service.play",
                        {"tracks": tracks, "utterance": utterance})
 
+    def _sync_timer(self):
+        """Return a threading.Timer replacement that fires synchronously."""
+        class _SyncTimer:
+            def __init__(self, delay, fn, args=()):
+                self._fn = fn
+                self._args = args
+            def start(self):
+                self._fn(*self._args)
+        return _SyncTimer
+
     def test_handle_play_selects_alias_matched_service(self):
         b1 = _FullFakeBackend(uris=["http"], name="vlc")
         b1.aliases = ["vlc", "video lan"]
@@ -859,9 +869,9 @@ class TestHandlePlay(unittest.TestCase):
         svc, bus = _make_base_svc(services=[b1, b2])
 
         msg = self._make_msg("http://example.com/song.mp3", utterance="play using vlc")
-        with patch("ovos_media.media_backends.base.time") as mock_time:
+        with patch("ovos_media.media_backends.base.time") as mock_time, \
+             patch("ovos_media.media_backends.base.threading.Timer", self._sync_timer()):
             mock_time.monotonic.return_value = 100.0
-            mock_time.sleep = lambda *a: None
             svc.handle_play(msg)
         self.assertEqual(svc.current, b1)
 
@@ -873,9 +883,9 @@ class TestHandlePlay(unittest.TestCase):
         svc, bus = _make_base_svc(services=[b1, b2])
 
         msg = self._make_msg("http://example.com/song.mp3", utterance="")
-        with patch("ovos_media.media_backends.base.time") as mock_time:
+        with patch("ovos_media.media_backends.base.time") as mock_time, \
+             patch("ovos_media.media_backends.base.threading.Timer", self._sync_timer()):
             mock_time.monotonic.return_value = 100.0
-            mock_time.sleep = lambda *a: None
             svc.handle_play(msg)
         self.assertEqual(svc.current, b2)
 

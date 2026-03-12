@@ -61,7 +61,7 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
          patch("ovos_media.player.OcpMprisExporter"), \
          patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
-         patch("ovos_media.player.OVOSAbstractApplication.__init__", return_value=None):
+         patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
         p.ocp_config = {}
         p.state = PlayerState.STOPPED
@@ -96,7 +96,7 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
         p.web_service = MagicMock()
         p.current = None
         p.mpris = None
-        p._bus = FakeBus()
+        p.bus = FakeBus()
         p.gui = MagicMock()
     return p
 
@@ -302,7 +302,7 @@ class TestStopSkillAndMprisTakeover(unittest.TestCase):
     def test_stop_skill_emits_message(self):
         p = _make_player()
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.stop_skill()
         types = [m.msg_type for m in emitted]
         self.assertIn(f"ovos.common_play.{p.active_skill}.stop", types)
@@ -481,7 +481,7 @@ class TestPlayNext(unittest.TestCase):
     def test_play_next_skill_emits_bus_message(self):
         p = _make_player(PlaybackType.SKILL)
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.play_next()
         skill_next = [m for m in emitted
                       if "next" in m.msg_type]
@@ -542,7 +542,7 @@ class TestPlayPrev(unittest.TestCase):
     def test_play_prev_skill_emits_bus_message(self):
         p = _make_player(PlaybackType.SKILL)
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.play_prev()
         prev_msgs = [m for m in emitted if "prev" in m.msg_type]
         self.assertTrue(len(prev_msgs) >= 1)
@@ -571,7 +571,7 @@ class TestPlayPrev(unittest.TestCase):
     def test_play_prev_undefined_emits_bus(self):
         p = _make_player(PlaybackType.UNDEFINED)
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.play_prev()
         prev_msgs = [m for m in emitted if "prev" in m.msg_type]
         self.assertTrue(len(prev_msgs) >= 1)

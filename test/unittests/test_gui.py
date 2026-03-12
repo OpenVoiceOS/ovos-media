@@ -20,7 +20,7 @@ def _make_player():
          patch("ovos_media.player.OcpMprisExporter"), \
          patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
-         patch("ovos_media.player.OVOSAbstractApplication.__init__", return_value=None):
+         patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
         p.ocp_config = {}
         p.state = PlayerState.STOPPED
@@ -40,7 +40,7 @@ def _make_player():
         p.web_service = MagicMock()
         p.current = None
         p.mpris = None
-        p._bus = FakeBus()
+        p.bus = FakeBus()
         p.gui = MagicMock()
     return p
 

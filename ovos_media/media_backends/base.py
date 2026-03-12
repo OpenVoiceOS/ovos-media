@@ -1,4 +1,5 @@
 import abc
+import threading
 import time
 from threading import Lock
 from typing import Callable
@@ -104,6 +105,14 @@ class BaseMediaService:
 
         # Sort services so local services are checked first
         self.services = local + remote
+
+        if not self.services:
+            LOG.error(
+                f"No {self.namespace} backends loaded — all {self.namespace} playback will fail. "
+                f"Install at least one backend plugin (e.g. ovos-vlc-plugin, ovos-mplayer-plugin)."
+            )
+            self.bus.emit(Message("ovos.common_play.media.state",
+                                  {"state": MediaState.NO_MEDIA}))
 
         # Register end of track callback
         for s in self.services:
@@ -317,8 +326,8 @@ class BaseMediaService:
                 preferred_service = None
 
             try:
-                self.play(tracks, preferred_service)
-                time.sleep(0.5)
+                # Use a timer to avoid blocking the bus event loop
+                threading.Timer(0.5, self.play, args=[tracks, preferred_service]).start()
             except Exception as e:
                 LOG.exception(e)
 

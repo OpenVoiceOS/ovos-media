@@ -22,7 +22,7 @@ def _make_player():
          patch("ovos_media.player.OcpMprisExporter"), \
          patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
-         patch("ovos_media.player.OVOSAbstractApplication.__init__", return_value=None):
+         patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
         p.ocp_config = {}
         p.state = PlayerState.STOPPED
@@ -43,7 +43,7 @@ def _make_player():
         p.web_service = MagicMock()
         p.current = None
         p.mpris = None
-        p._bus = FakeBus()
+        p.bus = FakeBus()
         p.gui = MagicMock()
     return p
 
@@ -74,7 +74,7 @@ class TestSetPlayerStateStateAssignment(unittest.TestCase):
         p = _make_player()
         p.handle_status = MagicMock()
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.set_player_state(PlayerState.STOPPED)
         # no bus message should be emitted for a no-op transition
         player_state_msgs = [
@@ -91,7 +91,7 @@ class TestSetPlayerStateEmitsNewState(unittest.TestCase):
         p = _make_player()
         p.handle_status = MagicMock()
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.set_player_state(PlayerState.PLAYING)
         player_state_msgs = [
             m for m in emitted
@@ -112,7 +112,7 @@ class TestSetMediaStateStateAssignment(unittest.TestCase):
     def test_emits_new_media_state(self):
         p = _make_player()
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
         p.set_media_state(MediaState.LOADED_MEDIA)
         media_state_msgs = [
             m for m in emitted
@@ -171,7 +171,7 @@ class TestMycroftstopHandler(unittest.TestCase):
         p.reset = MagicMock()
 
         emitted = []
-        p._bus.emit = lambda m: emitted.append(m)
+        p.bus.emit = lambda m: emitted.append(m)
 
         from ovos_bus_client.message import Message
         p.handle_mycroft_stop(Message("mycroft.stop"))

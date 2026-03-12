@@ -57,10 +57,10 @@ class MediaService(Thread):
         self.status.set_alive()
         self.init_messagebus()
         self.ocp = OCPMediaPlayer(self.bus)
-        self.ocp.add_event('ovos.common_play.home', self.handle_home)
-        self.ocp.add_event("ovos.common_play.ping", self.handle_ping)
-        self.ocp.add_event("ovos.common_play.search.start", self.handle_search_start)
-        self.ocp.add_event("ovos.common_play.search.end", self.handle_search_end)
+        self.bus.on('ovos.common_play.home', self.handle_home)
+        self.bus.on("ovos.common_play.ping", self.handle_ping)
+        self.bus.on("ovos.common_play.search.start", self.handle_search_start)
+        self.bus.on("ovos.common_play.search.end", self.handle_search_end)
         self.legacy_compat = LegacyAudioServiceCompat(self.ocp, self.bus)
 
     def handle_home(self, message):

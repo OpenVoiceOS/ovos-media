@@ -308,14 +308,16 @@ class TestLoopStatusGetter(unittest.TestCase):
     """LoopStatus getter must return correct MPRIS strings."""
 
     def test_repeat_track(self):
+        """MPRIS 2.2 spec requires 'Track' (not 'RepeatTrack')."""
         iface, player = _make_interface()
         player.loop_state = LoopState.REPEAT_TRACK
-        self.assertEqual(iface.LoopStatus, "RepeatTrack")
+        self.assertEqual(iface.LoopStatus, "Track")
 
     def test_repeat(self):
+        """MPRIS 2.2 spec requires 'Playlist' for full-playlist repeat."""
         iface, player = _make_interface()
         player.loop_state = LoopState.REPEAT
-        self.assertEqual(iface.LoopStatus, "Repeat")
+        self.assertEqual(iface.LoopStatus, "Playlist")
 
     def test_none(self):
         iface, player = _make_interface()
