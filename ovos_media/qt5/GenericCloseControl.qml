@@ -52,7 +52,7 @@ Rectangle {
     MouseArea {
         anchors.fill: parent
         onClicked: {
-            Mycroft.MycroftController.sendRequest("homescreen.manager.show_active", {})
+            Mycroft.MycroftController.sendRequest("mycroft.device.show.idle", {})
         }
     }
 }
