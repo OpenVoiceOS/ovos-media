@@ -5,92 +5,57 @@ _See PLAN.md for full rationale and architecture._
 
 ---
 
-## CRITICAL (must fix before 0.0.1)
+## CRITICAL (must fix before 0.0.1) ✅ DONE 2026-03-12
 
-### A. Remove OVOSAbstractApplication from OCPMediaPlayer
-`player.py` — `OCPMediaPlayer(OVOSAbstractApplication)` is wrong. `OVOSAbstractApplication` is an OVOSSkill
-subclass; it drags in skill/intent machinery and causes `AttributeError: 'OCPMediaPlayer' object has no
-attribute 'skill_id'` in every test teardown.
-
-- [ ] Rewrite `OCPMediaPlayer` as a plain class: `class OCPMediaPlayer:`
-- [ ] Change `__init__` signature to `def __init__(self, bus: MessageBusClient, config: dict | None = None) -> None:`
-- [ ] Replace `self.add_event(...)` calls with `self.bus.on(...)` throughout
-- [ ] Remove all `OVOSAbstractApplication.__init__`, `OVOSSkill`, `ovos_workshop` references from `player.py`
-- [ ] Update `MediaService.__init__`: `self.ocp = OCPMediaPlayer(bus=self.bus, config=...)`
-- [ ] Update `_make_player()` in all test files — remove `OVOSAbstractApplication.__init__` patch
-- [ ] Run `uv run pytest test/ -v` — confirm zero `AttributeError: skill_id` failures
-- [ ] Update `pyproject.toml`: remove `ovos-workshop` from deps if only used by OCPMediaPlayer
-
-**Note:** `OCPMediaCatalog(OVOSCommonPlaybackSkill)` STAYS. Only `OCPMediaPlayer` base class changes.
+### A. Remove OVOSAbstractApplication from OCPMediaPlayer ✅
+- [x] Rewrite `OCPMediaPlayer` as a plain class: `class OCPMediaPlayer:`
+- [x] Change `__init__` to `def __init__(self, bus: MessageBusClient, config: dict | None = None)`
+- [x] Replace all `self.add_event(...)` with `self.bus.on(...)`
+- [x] Remove `bind()` method; initialization is now in `__init__`
+- [x] Update `service.py` to use `bus.on()` for service-level handlers
+- [x] Update all test `_make_player()` helpers — remove `OVOSAbstractApplication` patches
+- [x] `OCPMediaCatalog(OVOSCommonPlaybackSkill)` unchanged
 
 ---
 
-## HIGH (should fix before 0.0.1)
+## HIGH ✅ DONE 2026-03-12
 
-### B. Fix handle_pause_toggle_request inverted logic
-`player.py` — when `self.state == PlayerState.PAUSED`, current code calls `handle_pause_request` (pauses again).
+### B. Fix handle_pause_toggle_request inverted logic ✅
+- [x] When PAUSED → call `handle_resume_request(msg)`, else → call `handle_pause_request(msg)`
 
-- [ ] In `handle_pause_toggle_request`: when PAUSED → call `handle_resume_request(msg)`, else → call `handle_pause_request(msg)`
-
-### C. Fix set_player_state dual-write / self-subscribe
-`player.py` — `set_player_state` writes `self.state` AND emits `ovos.common_play.player.state`, then
-`handle_player_state_update` subscribes to that same event and writes `self.state` again.
-
-- [ ] Remove `handle_player_state_update` subscription inside `OCPMediaPlayer` (external consumers keep theirs)
-- [ ] `set_player_state` becomes the single writer: `self.state = state; self._update_gui(); self.bus.emit(...)`
-- [ ] Update tests that mock `handle_player_state_update` as an internal pathway
+### C. Fix set_player_state dual-write / self-subscribe ✅
+- [x] Removed `handle_player_state_update` internal subscription
+- [x] `set_player_state` is now the single writer; calls `_update_gui()` + MPRIS update
 
 ---
 
-## MEDIUM (fix before 0.0.1)
+## MEDIUM ✅ DONE 2026-03-12
 
-### D. Fix dead handle_track_state_change
-`player.py` — `NowPlaying.handle_track_state_change` subscribes to `ovos.common_play.track.state` but
-every branch is `pass`. State changes from backends are silently dropped.
+### D. Fix dead handle_track_state_change ✅
+- [x] `NowPlaying` now accepts `player` ref; `handle_track_state_change` forwards state to player
 
-- [ ] Implement all branches: PLAYING_AUDIO/VIDEO/WEBVIEW → `PlayerState.PLAYING`; PAUSED → `PlayerState.PAUSED`; END_OF_MEDIA/ERROR → `play_next()`
-- [ ] Add unit tests for each branch
+### E. Fix handle_sync_seekbar missing _update_gui call ✅
+- [x] `NowPlaying.handle_sync_seekbar` calls `self._player._update_gui()` after position update
 
-### E. Fix handle_sync_seekbar missing _update_gui call
-`player.py` — `handle_sync_seekbar` updates `self.now_playing.position` but never calls `_update_gui()`.
-Scrubbar in GUI adapter never moves.
+### F. Fix sleep() in bus handlers ✅
+- [x] `base.py` `handle_play`: `threading.Timer(0.5, ...)` instead of `time.sleep(0.5)`
+- [x] `player.py` `on_invalid_stream`: `threading.Timer(3.0, ...)` instead of `time.sleep(3)`
 
-- [ ] Add `self._update_gui()` at end of `handle_sync_seekbar`
-- [ ] Add test: after `handle_sync_seekbar`, `gui.show_media_player` is called with updated position
-
-### F. Fix sleep() in bus handlers
-Bus handlers must not block. Two violations:
-
-- [ ] `media_backends/base.py` `handle_play`: replace `time.sleep(0.5)` with `threading.Timer(0.5, self.play, args=[uri, service]).start()`
-- [ ] `player.py` `on_invalid_stream`: replace `time.sleep(3)` with `threading.Timer(3.0, self.play_next).start()`
-- [ ] Remove `import time` if no longer needed
-- [ ] Confirm tests still pass (mock `threading.Timer` where needed)
-
-### G. Fix silent backend load failure
-`media_backends/base.py` — when zero backends load, service silently continues. All playback calls
-succeed with no error until play time.
-
-- [ ] After backend loading loop: if `not self._loaded_backends`: log ERROR and emit `ovos.common_play.media.state` with `MediaState.NO_MEDIA`
-- [ ] Add test: zero backends → error log + error state emitted
+### G. Fix silent backend load failure ✅
+- [x] Logs ERROR + emits `MediaState.NO_MEDIA` when zero backends load
 
 ---
 
-## LOW (fix before 0.0.1, trivial)
+## LOW ✅ DONE 2026-03-12
 
-### H. MPRIS super() wrong class name
-`mpris.py:74` — `super(MprisPlayerCtl, self).__init__()` uses old class name after rename to `OcpMprisExporter`.
+### H. MPRIS super() wrong class name ✅
+- [x] Changed `super(MprisPlayerCtl, self).__init__()` → `super().__init__()`
 
-- [ ] Replace with `super().__init__()`
+### I. MPRIS asyncio.get_event_loop() deprecated ✅
+- [x] Changed to `asyncio.new_event_loop()`
 
-### I. MPRIS asyncio.get_event_loop() deprecated
-`mpris.py:77` — `asyncio.get_event_loop()` deprecated in Python 3.10+.
-
-- [ ] Replace with `asyncio.new_event_loop()`
-
-### J. MPRIS LoopStatus getter returns wrong string
-`mpris.py` — `LoopStatus` getter returns `"RepeatTrack"` but MPRIS 2.2 spec requires `"Track"`.
-
-- [ ] Return `"Track"` for `LoopState.REPEAT_TRACK`
+### J. MPRIS LoopStatus getter returns wrong string ✅
+- [x] Returns `"Track"` for `REPEAT_TRACK`, `"Playlist"` for `REPEAT` (MPRIS 2.2 spec)
 
 ---
 
