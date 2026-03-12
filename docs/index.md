@@ -1,48 +1,91 @@
+# `ovos-media` — Documentation
 
-# `ovos-media` — Documentation Index
+`ovos-media` is the OCP-native audio, video, and web media service for OpenVoiceOS.
+It handles all media playback and replaces the legacy media handling inside `ovos-audio`,
+while `ovos-audio` continues to run for TTS output.
 
-> ovos-core audio daemon client
+**Version**: 0.0.1 | **License**: Apache-2.0 | **Python**: >=3.10
 
-## Overview
+---
 
-`ovos-media` is part of the OpenVoiceOS platform. See the
-[repository](https://github.com/OpenVoiceOS/ovos-media) for source code and issue tracking.
+## User Guides
 
-## Quick Links
+| Document | Description |
+|---|---|
+| [Getting Started](getting-started.md) | Install, run, migrate from ovos-audio |
+| [Configuration](configuration.md) | Full `mycroft.conf` reference for the `media` section |
+| [Architecture](architecture.md) | Service layers, bus events, state machine, GUI integration |
+| [Backend Plugins](backends.md) | Audio/video/web backends, plugin discovery, writing a custom backend |
+| [MPRIS Integration](mpris.md) | D-Bus MPRIS support, external player control, `playerctl` usage |
+| [OCP Skills](ocp-skills.md) | OCP query flow, MediaEntry structure, testing with ovoscope |
 
-| Resource | Path |
-|----------|------|
-| Machine-readable facts | [`../QUICK_FACTS.md`](../QUICK_FACTS.md) |
-| Common questions | [`../FAQ.md`](../FAQ.md) |
-| Change log | [`../MAINTENANCE_REPORT.md`](../MAINTENANCE_REPORT.md) |
-| Known issues | [`../AUDIT.md`](../AUDIT.md) |
-| Improvement proposals | [`../SUGGESTIONS.md`](../SUGGESTIONS.md) |
+---
 
-## GUI Integration
+## Reference
 
-GUI rendering is handled via `GUIInterface("ovos.common_play")` from `ovos_bus_client.apis.gui`.
-`OCPMediaPlayer._update_gui()` — `ovos_media/player.py` — calls `gui.show_media_player()` with
-`now_playing`, `playlist`, `search_results`, and `state` on every playback state change.
-Individual backend plugins (audio, video, web) handle their own rendering in separate GUI namespaces.
-The `ovos_media/gui.py` file and `OCPGUIInterface` class have been removed.
+| Document | Description |
+|---|---|
+| [`../QUICK_FACTS.md`](../QUICK_FACTS.md) | Key classes, entry points, config keys, coverage table |
+| [`../FAQ.md`](../FAQ.md) | Common questions and answers |
+| [`../AUDIT.md`](../AUDIT.md) | Known issues, open bugs, security notes |
+| [`../MAINTENANCE_REPORT.md`](../MAINTENANCE_REPORT.md) | Date-stamped change log |
+| [`../SUGGESTIONS.md`](../SUGGESTIONS.md) | Proposed improvements |
+| [`../CHANGELOG.md`](../CHANGELOG.md) | Release changelog |
 
-## Documentation
+---
 
-- [01 History And Architecture](01-history-and-architecture.md)
-- [02 Current State](02-current-state.md)
-- [03 Music Assistant Integration](03-music-assistant-integration.md)
-- [04 Next Steps](04-next-steps.md)
-- [05 Ocp Pipeline](05-ocp-pipeline.md)
-- [06 Ovos Audio Migration](06-ovos-audio-migration.md)
-- [07 Ocp Pipeline Ml Classifier](07-ocp-pipeline-ml-classifier.md)
-- [08 Gui Decoupling Plan](08-gui-decoupling-plan.md)
-- [Readme](README.md)
+## Background Reading
 
-## Cross-References
+The following documents cover the history, design decisions, and integration context:
 
-- [OpenVoiceOS Workspace — AGENTS.md](../AGENTS.md)
-- [Package Inventory](../PACKAGE_INVENTORY.md)
+| Document | Description |
+|---|---|
+| [History and Architecture](01-history-and-architecture.md) | Origins from Mycroft, evolution to OCP |
+| [Current State](02-current-state.md) | Component inventory, what exists where |
+| [Music Assistant Integration](03-music-assistant-integration.md) | Integration with the Music Assistant server |
+| [OCP Pipeline](05-ocp-pipeline.md) | How the OCP intent pipeline works |
+| [Migration from ovos-audio](06-ovos-audio-migration.md) | Detailed migration guide and feature comparison |
+| [OCP Pipeline ML Classifier](07-ocp-pipeline-ml-classifier.md) | ML-based media type classification |
+| [GUI Decoupling Plan](08-gui-decoupling-plan.md) | How GUI rendering was decoupled from the service |
 
-> **Note**: This `docs/index.md` is a stub generated for compliance.
-> It should be enriched with architecture diagrams, API references,
-> and usage examples specific to `ovos-media`.
+---
+
+## Architecture in Brief
+
+```
+User utterance
+  ↓
+ovos-ocp-pipeline-plugin  (classifies as media query)
+  ↓
+OCP Skills                (search and return MediaEntry lists)
+  ↓
+MediaService              (ovos_media/service.py)
+  ↓
+OCPMediaPlayer            (ovos_media/player.py)  ←→  GUIInterface.show_media_player()
+  ↓                ↓                  ↓
+AudioService   VideoService      WebService        (ovos_media/media_backends/)
+  ↓
+OPM backend plugins       (e.g. ovos-audio-plugin-vlc)
+```
+
+`MediaService` — `ovos_media/service.py:33` — owns the bus connection and `OCPMediaPlayer`.
+`OCPMediaPlayer` — `ovos_media/player.py` — manages the playback state machine and dispatches to backends.
+`OcpMprisExporter` — `ovos_media/mpris.py:74` — runs in a background thread to expose OCP over D-Bus.
+
+---
+
+## Quick Config Example
+
+```json
+{
+  "enable_old_audioservice": false,
+  "disable_ocp": true,
+  "media": {
+    "preferred_audio_services": ["vlc"],
+    "enable_mpris": true,
+    "manage_external_players": false
+  }
+}
+```
+
+Full reference: [configuration.md](configuration.md).

@@ -109,3 +109,44 @@ Establishing the required file set mandated by `AGENTS.md` for all active worksp
 - **AI Model**: Claude Sonnet 4.6
 - **Actions Taken**: Generated boilerplate compliance scaffold.
 - **Oversight**: Files were stubs — human review required.
+
+---
+
+## [2026-03-12] — End-to-end integration tests + CI + docs overhaul
+
+### Changes
+
+#### Tests
+- **`test/end2end/test_media_service.py`** — 13 integration tests via `MediaServiceHarness` (FakeBus, in-process). Covers ping/pong, search start/end, home handler, OPM query, full lifecycle, bus handler registration.
+- **`MediaServiceHarness`** — Reusable harness class in `test/end2end/`. Mirrors ovoscope.audio pattern. Wires `ocp.add_event` to FakeBus so service-level handlers are exercised end-to-end without a real MessageBus connection.
+- Total: 291 unit + 13 integration = **304 tests passing**.
+
+#### CI
+- **`.github/workflows/ovoscope.yml`** — Added end-to-end test workflow using `gh-automations/ovoscope.yml@dev`, pointing at `test/end2end/`.
+
+#### Documentation
+- **`docs/index.md`** — Full rewrite with architecture overview, navigation table, bus event summary.
+- **`docs/getting-started.md`** — New: install, quick start, migration from ovos-audio, dependency list.
+- **`docs/configuration.md`** — New: complete `mycroft.conf` reference for the `media` section.
+- **`docs/architecture.md`** — New: three-layer architecture, bus events, state machine, GUI integration, plugin system.
+- **`docs/backends.md`** — New: plugin discovery, AudioService/VideoService/WebService, BaseMediaService API, writing custom backends, playback type routing.
+- **`docs/mpris.md`** — New: Role A/B explanation, D-Bus registration, LoopStatus mapping, playerctl examples, known limitations.
+- **`docs/ocp-skills.md`** — New: OCP query flow, MediaEntry structure, writing OCP skills, ovoscope OCPTest usage, NowPlaying.
+- **`QUICK_FACTS.md`** — Updated: removed stale `OCPGUIInterface` row; added `OcpMprisExporter`, `MprisPlayerCtl` alias, `LegacyAudioServiceCompat`; updated coverage table to 53%.
+- **`FAQ.md`** — Updated: added MPRIS config example, updated test count, added links to new docs pages.
+- **`AUDIT.md`** — Full rewrite: all fixed issues in table format with file:line citations; open issues; security notes; coverage status; documentation status.
+- **`SUGGESTIONS.md`** — Replaced generic stubs with actionable proposals.
+
+### Rationale
+Full user-facing documentation pass for the 0.0.1 release. Docs now cover installation, migration, configuration, architecture, backend plugins, MPRIS, and OCP skill integration.
+
+### Verification
+```bash
+uv run pytest test/ -v --cov=ovos_media --cov-report=term-missing
+# 291 passed (unit) + 13 passed (end2end) = 304 total
+```
+
+### AI Transparency Report
+- **AI Model**: Claude Sonnet 4.6
+- **Actions Taken**: Wrote 6 new docs pages; rewrote index, FAQ, QUICK_FACTS, AUDIT; wrote MediaServiceHarness + 13 end2end tests; added ovoscope.yml CI workflow.
+- **Oversight**: Human review required before merging.
