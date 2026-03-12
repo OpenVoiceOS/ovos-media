@@ -495,40 +495,51 @@ class TestPlayNext(unittest.TestCase):
         p.play.assert_called_once()
 
     def test_play_next_no_more_tracks_returns_without_play(self):
+        """play_next does nothing when now_playing is the last entry in the queue."""
         p = _make_player(PlaybackType.AUDIO)
+        track_a = MediaEntry(uri="http://example.com/a.mp3", title="A", playback=PlaybackType.AUDIO)
+        p.playlist.entries = [track_a]
+        p.media.search_playlist.entries = []
+        p.now_playing.uri = track_a.uri  # at the only/last track
         p.loop_state = LoopState.NONE
         p.shuffle = False
-        p.playlist.is_last_track = True
-        p.media.search_playlist.is_last_track = True
         p.ocp_config = {"merge_search": False}
         p.play = MagicMock()
         p.play_next()
         p.play.assert_not_called()
 
     def test_play_next_advances_playlist(self):
+        """play_next picks the entry after now_playing in the merged queue."""
         p = _make_player(PlaybackType.AUDIO)
+        track_a = MediaEntry(uri="http://example.com/a.mp3", title="A", playback=PlaybackType.AUDIO)
+        track_b = MediaEntry(uri="http://example.com/b.mp3", title="B", playback=PlaybackType.AUDIO)
+        p.playlist.entries = [track_a, track_b]
+        p.media.search_playlist.entries = []
+        p.now_playing.uri = track_a.uri
         p.loop_state = LoopState.NONE
         p.shuffle = False
-        p.playlist.is_last_track = False
+        p.ocp_config = {"merge_search": False}
         p.play = MagicMock()
         p.set_now_playing = MagicMock()
-        mock_track = MagicMock()
-        p.playlist.current_track = mock_track
         p.play_next()
-        p.playlist.next_track.assert_called_once()
-        p.set_now_playing.assert_called_once_with(mock_track)
+        p.set_now_playing.assert_called_once_with(track_b)
+        p.play.assert_called_once()
 
     def test_play_next_loop_repeat_wraps_to_start(self):
+        """play_next with REPEAT restarts from the first queue entry."""
         p = _make_player(PlaybackType.AUDIO)
+        track_a = MediaEntry(uri="http://example.com/a.mp3", title="A", playback=PlaybackType.AUDIO)
+        track_b = MediaEntry(uri="http://example.com/b.mp3", title="B", playback=PlaybackType.AUDIO)
+        p.playlist.entries = [track_a, track_b]
+        p.media.search_playlist.entries = []
+        p.now_playing.uri = track_b.uri  # at end of queue
         p.loop_state = LoopState.REPEAT
         p.shuffle = False
-        p.playlist.is_last_track = True
-        p.media.search_playlist.is_last_track = True
         p.ocp_config = {"merge_search": False}
-        p.playlist.__len__ = MagicMock(return_value=3)
         p.play = MagicMock()
+        p.set_now_playing = MagicMock()
         p.play_next()
-        p.playlist.set_position.assert_called_once_with(0)
+        p.set_now_playing.assert_called_once_with(track_a)
         p.play.assert_called_once()
 
 
@@ -548,22 +559,30 @@ class TestPlayPrev(unittest.TestCase):
         self.assertTrue(len(prev_msgs) >= 1)
 
     def test_play_prev_goes_to_previous_track(self):
+        """play_prev picks the entry before now_playing in the merged queue."""
         p = _make_player(PlaybackType.AUDIO)
+        track_a = MediaEntry(uri="http://example.com/a.mp3", title="A", playback=PlaybackType.AUDIO)
+        track_b = MediaEntry(uri="http://example.com/b.mp3", title="B", playback=PlaybackType.AUDIO)
+        p.playlist.entries = [track_a, track_b]
+        p.media.search_playlist.entries = []
+        p.now_playing.uri = track_b.uri  # currently on second track
         p.shuffle = False
-        p.playlist.is_first_track = False
+        p.ocp_config = {"merge_search": False}
         p.play = MagicMock()
         p.set_now_playing = MagicMock()
-        mock_track = MagicMock()
-        p.playlist.current_track = mock_track
         p.play_prev()
-        p.playlist.prev_track.assert_called_once()
-        p.set_now_playing.assert_called_once_with(mock_track)
+        p.set_now_playing.assert_called_once_with(track_a)
         p.play.assert_called_once()
 
     def test_play_prev_noop_at_first_track(self):
+        """play_prev does nothing when now_playing is the first entry."""
         p = _make_player(PlaybackType.AUDIO)
+        track_a = MediaEntry(uri="http://example.com/a.mp3", title="A", playback=PlaybackType.AUDIO)
+        p.playlist.entries = [track_a]
+        p.media.search_playlist.entries = []
+        p.now_playing.uri = track_a.uri  # at the first (only) track
         p.shuffle = False
-        p.playlist.is_first_track = True
+        p.ocp_config = {"merge_search": False}
         p.play = MagicMock()
         p.play_prev()
         p.play.assert_not_called()

@@ -529,15 +529,43 @@ class OCPMediaPlayer:
         """
         return self.media.search_playlist.entries
 
+    def _merged_queue(self) -> List[MediaEntry]:
+        """Return the merged, deduplicated playback queue.
+
+        User-playlist entries come first (strict priority).  Search results
+        are appended afterwards, skipping any URI already present in the user
+        playlist.  Deduplication is O(n) via a URI set — no O(n²) scanning.
+
+        If ``merge_search`` is disabled in config only the user playlist is
+        returned.
+        """
+        user_entries = list(self.playlist.entries)
+        if not self.ocp_config.get("merge_search", True):
+            return user_entries
+        seen: set = {e.uri for e in user_entries}
+        extra = [e for e in self.media.search_playlist.entries if e.uri not in seen]
+        return user_entries + extra
+
+    def _queue_index(self, queue: List[MediaEntry]) -> int:
+        """Return the index of ``now_playing`` in *queue*, or -1 if not found."""
+        uri = self.now_playing.uri if self.now_playing else None
+        if not uri:
+            return -1
+        for i, entry in enumerate(queue):
+            if entry.uri == uri:
+                return i
+        return -1
+
     @property
     def can_prev(self) -> bool:
         """
         Return true if there is a previous track in the queue to skip to
         """
-        if self.playback_type != PlaybackType.MPRIS and \
-                self.playlist.is_first_track:
-            return False
-        return True
+        if self.playback_type == PlaybackType.MPRIS:
+            return True
+        queue = self._merged_queue()
+        idx = self._queue_index(queue)
+        return idx > 0
 
     @property
     def can_next(self) -> bool:
@@ -548,12 +576,9 @@ class OCPMediaPlayer:
                 self.shuffle or \
                 self.playback_type == PlaybackType.MPRIS:
             return True
-        elif self.ocp_config.get("merge_search", True) and \
-                not self.media.search_playlist.is_last_track:
-            return True
-        elif not self.playlist.is_last_track:
-            return True
-        return False
+        queue = self._merged_queue()
+        idx = self._queue_index(queue)
+        return idx >= 0 and idx + 1 < len(queue)
 
     # state
     def set_media_state(self, state: MediaState):
@@ -808,23 +833,30 @@ class OCPMediaPlayer:
 
     def play_shuffle(self):
         """
-        Go to a random position in the playlist and set that MediaEntry as
-        'now_playing` (does NOT call 'play').
+        Go to a random position in the merged queue and set that MediaEntry as
+        ``now_playing`` (does NOT call ``play``).
+
+        Uses ``_merged_queue()`` so the shuffle pool respects the same
+        deduplication and ``merge_search`` config as ``play_next``.
         """
-        LOG.debug("Shuffle == True")
-        if len(self.playlist) > 1 and not self.playlist.is_last_track:
-            # TODO: does the 'last track' matter in this case?
-            self.playlist.set_position(random.randint(0, len(self.playlist)))
-            self.set_now_playing(self.playlist.current_track)
-        else:
-            self.media.search_playlist.next_track()
-            self.set_now_playing(self.media.search_playlist.current_track)
+        queue = self._merged_queue()
+        if len(queue) < 2:
+            LOG.debug("Shuffle: queue too small, replaying current track")
+            return
+        current_uri = self.now_playing.uri if self.now_playing else None
+        candidates = [e for e in queue if e.uri != current_uri]
+        if not candidates:
+            return
+        pick = random.choice(candidates)
+        LOG.debug(f"Shuffle pick: {pick.title!r}")
+        self.set_now_playing(pick)
 
     def play_next(self):
         """
-        Play the next track in the playlist or search results.
-        End playback if there is no next track, accounting for repeat and
-        shuffle settings.
+        Play the next track in the merged queue (user playlist + search results).
+
+        Uses ``_merged_queue()`` for O(n) deduplication — no O(n²) scanning.
+        Respects repeat, shuffle, loop state, and ``merge_search`` config.
         """
         if self.playback_type in [PlaybackType.MPRIS]:
             if self.mpris and self.mpris.manage_players:
@@ -839,33 +871,32 @@ class OCPMediaPlayer:
 
         if self.loop_state == LoopState.REPEAT_TRACK:
             LOG.debug("Repeating single track")
-        elif self.shuffle:
+            self.play()
+            return
+
+        if self.shuffle:
             LOG.debug("Shuffling")
             self.play_shuffle()
-        elif not self.playlist.is_last_track:
-            self.playlist.next_track()
-            self.set_now_playing(self.playlist.current_track)
-            LOG.info(f"Next track index: {self.playlist.position}")
-        elif not self.media.search_playlist.is_last_track and \
-                self.ocp_config.get("merge_search", True):
-            while self.media.search_playlist.current_track in self.playlist:
-                # Don't play media already played from the playlist
-                self.media.search_playlist.next_track()
-            self.set_now_playing(self.media.search_playlist.current_track)
-            LOG.info(f"Next search index: "
-                     f"{self.media.search_playlist.position}")
+            return
+
+        queue = self._merged_queue()
+        idx = self._queue_index(queue)
+
+        if idx >= 0 and idx + 1 < len(queue):
+            next_track = queue[idx + 1]
+            LOG.info(f"Next track: {next_track.title!r} (queue index {idx + 1}/{len(queue) - 1})")
+            self.set_now_playing(next_track)
+        elif self.loop_state == LoopState.REPEAT and queue:
+            LOG.info("End of queue, repeat == True — restarting from beginning")
+            self.set_now_playing(queue[0])
         else:
-            if self.loop_state == LoopState.REPEAT and len(self.playlist):
-                LOG.info("end of playlist, repeat == True")
-                self.playlist.set_position(0)
-            else:
-                LOG.info("requested next, but there aren't any more tracks")
-                return
+            LOG.info("Requested next, but there are no more tracks in the queue")
+            return
         self.play()
 
     def play_prev(self):
         """
-        Play the previous track in the playlist.
+        Play the previous track in the merged queue.
         If there is no previous track, do nothing.
         """
         if self.playback_type in [PlaybackType.MPRIS]:
@@ -881,15 +912,19 @@ class OCPMediaPlayer:
             return
 
         if self.shuffle:
-            # TODO: Should skipping back get a random track instead of previous?
             self.play_shuffle()
-        elif not self.playlist.is_first_track:
-            self.playlist.prev_track()
-            self.set_now_playing(self.playlist.current_track)
-            LOG.debug(f"Previous track index: {self.playlist.position}")
+            return
+
+        queue = self._merged_queue()
+        idx = self._queue_index(queue)
+
+        if idx > 0:
+            prev_track = queue[idx - 1]
+            LOG.debug(f"Previous track: {prev_track.title!r} (queue index {idx - 1}/{len(queue) - 1})")
+            self.set_now_playing(prev_track)
             self.play()
         else:
-            LOG.debug("requested previous, but already in 1st track")
+            LOG.debug("Requested previous, but already at the first track")
 
     def pause(self):
         """
