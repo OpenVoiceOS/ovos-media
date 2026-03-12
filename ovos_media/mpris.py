@@ -628,20 +628,19 @@ class OcpMprisExporter(Thread):
                 self.repeat_event.clear()
 
             # scan for new external players (Role B — only when manage_external_players is enabled)
+            poll_interval = self.config.get("mpris_poll_interval", 1)
             if self.manage_players:
                 await self.scan_players()
-                poll_interval = self.config.get("mpris_poll_interval", 1)
-                sleep(poll_interval)
+                await asyncio.sleep(poll_interval)
 
                 # sync player meta, not all players send all events properly...
                 # eg, firefox videos do not send events if they autoplay, only if
                 # you click the play button
                 for player in list(self.players.keys()):
                     await self.query_player(player)
-                sleep(poll_interval)
+                await asyncio.sleep(poll_interval)
             else:
-                poll_interval = self.config.get("mpris_poll_interval", 1)
-                sleep(poll_interval)
+                await asyncio.sleep(poll_interval)
 
     def run(self):
         count = 0
@@ -679,13 +678,15 @@ class OcpMprisExporter(Thread):
     def toggle_repeat(self):
         self.repeat_event.set()
 
-    def shutdown(self):
+    def shutdown(self) -> None:
+        """Stop the MPRIS event loop and release resources."""
         self.stop()
         self.shutdown_event.set()
-        self.loop.stop()
-        while self.loop.is_running():
-            sleep(0.2)
-        self.loop.close()
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        # Wait for the loop to finish from the outside (this runs on a different thread)
+        self.join(timeout=5)
+        if not self.loop.is_running():
+            self.loop.close()
 
 
 # Backward-compatibility alias — remove after ovos-media-plugin-mpris is released

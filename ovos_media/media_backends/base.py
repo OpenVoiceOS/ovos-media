@@ -434,3 +434,6 @@ class BaseMediaService:
         self.bus.remove(f'ovos.{self.namespace}.service.get_track_length', self.handle_get_track_length)
         self.bus.remove(f'ovos.{self.namespace}.service.seek_forward', self.handle_seek_forward)
         self.bus.remove(f'ovos.{self.namespace}.service.seek_backward', self.handle_seek_backward)
+        self.bus.remove(f'ovos.{self.namespace}.service.list_backends', self.handle_list_backends)
+        self.bus.remove(f'ovos.{self.namespace}.service.duck', self.lower_volume)
+        self.bus.remove(f'ovos.{self.namespace}.service.unduck', self.restore_volume)

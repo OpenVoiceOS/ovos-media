@@ -126,10 +126,15 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         if skill_id in self.featured_skills:
             self.featured_skills.pop(skill_id)
 
-    def get_featured_skills(self, adult=False):
-        # trigger a presence announcement from all loaded ocp skills
+    def get_featured_skills(self, adult: bool = False) -> list:
+        """Emit a skills-get broadcast and return the currently registered featured skills.
+
+        The 200 ms wait allows in-process skill announcements to arrive before
+        the list is read.  A threading.Event is used instead of time.sleep so
+        the call can be interrupted by a shutdown signal in future work.
+        """
         self.bus.emit(Message("ovos.common_play.skills.get"))
-        time.sleep(0.2)
+        threading.Event().wait(timeout=0.2)  # non-blocking sleep equivalent
         skills = list(self.featured_skills.values())
         if adult:
             return skills
@@ -1092,6 +1097,9 @@ class OCPMediaPlayer:
             self.loop_state = LoopState.REPEAT
 
         media = message.data.get("media")
+        if not media:
+            LOG.warning("handle_play_request: message.data missing 'media' — ignoring")
+            return
         playlist = message.data.get("playlist") or [media]
         disambiguation = message.data.get("disambiguation") or playlist
 

@@ -3,7 +3,7 @@
 Evidence-based record of known issues, technical debt, and security considerations.
 All citations use `ClassName.method — path/to/file.py:LINE` format.
 
-Last updated: 2026-03-12
+Last updated: 2026-03-12 (rev 2 — post-Queue + async audit)
 
 ---
 
@@ -15,7 +15,7 @@ Last updated: 2026-03-12
 | **Test count** | 428 passed, 0 failed |
 | **Overall coverage** | **72%** |
 | **CI status** | All 428 tests pass locally; CI workflows present |
-| **Open blockers** | 0 critical; 4 major; 5 minor (see Open Issues below) |
+| **Open blockers** | 0 critical; 2 major; 5 minor (see Open Issues below) |
 
 ---
 
@@ -47,6 +47,16 @@ Last updated: 2026-03-12
 | Severity | Issue | Fix |
 |---|---|---|
 | MAJOR | `OCPGUIInterface` (`ovos_media/gui.py`) coupled media service directly to QML page management | `gui.py` deleted; `OCPMediaPlayer` now calls `GUIInterface.show_media_player()` — `ovos_media/player.py:447` |
+
+### [2026-03-12] Async / Safety Audit Fixes
+
+| Severity | Issue | Fix |
+|---|---|---|
+| CRITICAL | `time.sleep()` inside `async def event_loop()` — blocked entire asyncio loop, froze D-Bus | Changed to `await asyncio.sleep()` — `ovos_media/mpris.py:634,641,644` |
+| CRITICAL | Busy-wait `while loop.is_running(): sleep(0.2)` in `shutdown()` — deadlock risk | Replaced with `loop.call_soon_threadsafe(loop.stop)` + `self.join(timeout=5)` — `ovos_media/mpris.py:682-689` |
+| HIGH | `handle_play_request` passed `[None]` to `play_media()` when `message.data["media"]` absent | Early-return guard added — `ovos_media/player.py:1094-1097` |
+| HIGH | `remove_listeners()` missing 3 deregistrations: `list_backends`, `duck`, `unduck` | All three added — `ovos_media/media_backends/base.py:437-439` |
+| MEDIUM | `get_featured_skills()` used `time.sleep(0.2)` blocking the calling thread | Changed to `threading.Event().wait(timeout=0.2)` — `ovos_media/player.py:132` |
 
 ### [2026-03-12] MPRIS Refactor
 
@@ -85,9 +95,7 @@ Last updated: 2026-03-12
 
 | Severity | Location | Issue |
 |---|---|---|
-| MAJOR | `OcpMprisExporter.__init__` — `ovos_media/mpris.py:74` | Constructor calls `super(MprisPlayerCtl, self).__init__()` using the old class name instead of `super(OcpMprisExporter, self).__init__()`. This works only because of the alias at line 692 but will silently break if the alias is ever removed. |
-| MAJOR | `OcpMprisExporter.__init__` — `ovos_media/mpris.py:77` | `asyncio.get_event_loop()` is deprecated in Python 3.10+ when called outside an async context; raises `DeprecationWarning` on 3.10 and will raise `RuntimeError` in future Python releases. Should use `asyncio.new_event_loop()`. |
-| MAJOR | `BaseMediaService.get_preferred_players` — `ovos_media/media_backends/base.py:130-131` | Stub: always returns `[]`. No logic implemented. Backend preference selection is therefore non-functional. |
+| MAJOR | `BaseMediaService.get_preferred_players` — `ovos_media/media_backends/base.py:139` | Stub: always returns `[]`. No logic implemented. Backend preference selection is therefore non-functional. |
 | MAJOR | `BaseMediaService.handle_media_state_change` — `ovos_media/media_backends/base.py:153` | Bare `pass` for unknown `namespace` values with only a `# ???` comment. Silently ignores state changes for custom namespace backends. |
 
 ### Minor Priority
@@ -127,14 +135,12 @@ Last updated: 2026-03-12
 
 | Item | Description | Effort |
 |---|---|---|
-| Fix `super()` call in `OcpMprisExporter` | `mpris.py:74` uses old class name `MprisPlayerCtl` | Trivial |
-| Replace `asyncio.get_event_loop()` | `mpris.py:77` — deprecated in 3.10+, raises `RuntimeError` in future Python | Low |
-| Implement `BaseMediaService.get_preferred_players` | `base.py:130` — stub always returns `[]`; backend selection is non-functional | Medium |
-| Fix MPRIS `LoopStatus` return value | `mpris.py:784` — returns `"RepeatTrack"` but MPRIS spec requires `"Track"` | Trivial |
+| Implement `BaseMediaService.get_preferred_players` | `base.py:139` — stub always returns `[]`; backend selection is non-functional | Medium |
 | Fix `version.py` coverage | `version.py` at 0% — import it in at least one test | Trivial |
 | Raise overall coverage to ≥ 75% | Current: 72%. `player.py` (65%) and `mpris.py` (68%) are main gaps | Medium |
 | Fix deprecated import in test file | `test_media_backends.py:191` — `ovos_utils.messagebus.Message` → `ovos_bus_client.message.Message` | Trivial |
 | Add `publish-alpha.yml` workflow | No automatic alpha release on `dev` pushes | Low |
+| Implement `BaseMediaService.handle_media_state_change` unknown-namespace branch | `base.py:153` — bare `pass` silently drops state for custom backends | Low |
 
 ---
 

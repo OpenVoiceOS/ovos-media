@@ -581,11 +581,12 @@ class TestShutdown(unittest.TestCase):
                      "repeat_event", "shutdown_event"):
             setattr(ctl, attr, MagicMock())
 
-        ctl.shutdown()
+        with patch.object(ctl, "join"):  # Thread not started in unit test; avoid RuntimeError
+            ctl.shutdown()
 
         ctl.stop_event.set.assert_called()   # stop() is called first
         ctl.shutdown_event.set.assert_called_once()
-        mock_loop.stop.assert_called_once()
+        mock_loop.call_soon_threadsafe.assert_called_once_with(mock_loop.stop)
 
 
 if __name__ == "__main__":
