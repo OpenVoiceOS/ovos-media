@@ -1,6 +1,47 @@
 
 # Maintenance Report — `ovos-media`
 
+## [2026-03-12] — Coverage boost: 78% → 83% with comprehensive unit tests
+
+### Changes
+
+#### Tests Added
+- **`test/unittests/test_service_coverage.py`** (8 tests) — Module-level status callbacks (on_ready, on_alive, on_started, on_error, on_stopping) and MediaService bus initialization when bus=None. **service.py coverage: 89% → 100%**.
+- **`test/unittests/test_legacy_api_coverage.py`** (10 tests) — LegacyAudioServiceCompat handlers: handle_queue (STOPPED path), handle_track_info, handle_list_backends, handle_get_track_position, handle_get_track_length with wait_for_response mocking. **legacy_api.py coverage: 87% → 100%**.
+- **`test/unittests/test_player_coverage2.py`** (31 tests) — OCPMediaPlayer playback paths: SKILL, VIDEO, WEBVIEW types; MPRIS integration; shuffle/repeat toggles; volume control (unduck VIDEO, utterance_handled); play_shuffle; edge cases (no media, invalid stream). **player.py coverage: 79% → 87%**.
+- **`test/unittests/test_base_coverage.py`** (24 tests) — BaseMediaService handlers: media state changes (unknown namespace, video, web); pause/resume/stop with and without current; volume control (lower/restore); track info; seeking. **base.py coverage: 90% → 91%**.
+
+#### Coverage Summary
+```
+TOTAL coverage: 78% → 83%
+
+Module breakdown:
+  legacy_api.py:  87% → 100% (+13 percentage points)
+  service.py:     89% → 100% (+11 percentage points)
+  player.py:      79% → 87%  (+8 percentage points)
+  base.py:        90% → 91%  (+1 percentage point)
+  mpris.py:       69% (no new tests; requires D-Bus mocking)
+```
+
+### Test Methodology
+- Used `FakeBus` for synchronous message bus testing (no network needed).
+- Mocked external dependencies: AudioService, VideoService, WebService, OcpMprisExporter, GUIInterface, Configuration, OCPMediaCatalog.
+- Tested both success paths and edge cases (e.g., wait_for_response timeout, no current service, already-low volume).
+- Verified state transitions, flag updates (_paused_on_duck), and bus message emission.
+
+### Verification
+```
+uv run pytest test/ -q --cov=ovos_media --cov-report=term-missing
+# 528 passed, 83% coverage
+```
+
+### AI Transparency Report
+- **AI Model**: claude-haiku-4-5-20251001
+- **Actions Taken**: Designed and wrote 73 new comprehensive unit tests targeting uncovered lines in service.py, legacy_api.py, player.py, and base.py. Fixed test failures related to missing TrackState.PAUSED_AUDIO enum and MagicMock infocard handling. Committed with test results verified.
+- **Oversight**: All tests pass locally; coverage verified with pytest-cov.
+
+---
+
 ## [2026-03-12] — GUI decoupling: replace OCPGUIInterface with show_media_player()
 
 ### Changes
