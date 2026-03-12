@@ -1227,10 +1227,17 @@ class OCPMediaPlayer:
 
     def handle_unduck_request(self, message):
         """
-        Restore volume on 'recognizer_loop:record_begin'
+        Restore volume on 'recognizer_loop:audio_output_end'.
+
+        Restores audio service volume whenever ``_paused_on_duck`` is True,
+        regardless of player state.  This covers both the duck path (player
+        stays PLAYING while volume is lowered) and the cork path (player is
+        PAUSED; restore_volume is a no-op on most backends but kept for
+        symmetry).
+
         @param message: Message associated with event
         """
-        if self.state == PlayerState.PAUSED and self._paused_on_duck:
+        if self._paused_on_duck:
             if self.playback_type in [PlaybackType.VIDEO]:
                 self.video_service.restore_volume()
             elif self.playback_type in [PlaybackType.AUDIO]:
@@ -1258,14 +1265,22 @@ class OCPMediaPlayer:
         """
         Handle 'ovos.utterance.handled'.
 
-        Restore volume/resume if the player was ducked and speech has finished.
-        Mirrors the ovos-audio ``_restore_volume_on_handled`` behaviour.
+        Restore volume (duck path) or resume (cork path) if the player was
+        ducked or corked and speech has now finished.  Mirrors the ovos-audio
+        ``_restore_volume_on_handled`` behaviour.
+
+        Covers both cases:
+        - Duck (PLAYING): ``_paused_on_duck`` is True, player is PLAYING →
+          ``handle_unduck_request`` restores volume.
+        - Cork (PAUSED): ``_paused_on_duck`` is True, player is PAUSED →
+          ``handle_unduck_request`` restores volume; caller should also
+          uncork via ``handle_uncork_request`` if resume is desired.
 
         @param message: Message associated with event
         """
-        if self._paused_on_duck and self.state == PlayerState.PAUSED:
-            # The intent has been handled; if no more TTS is queued the volume
-            # will not be restored by audio_output_end — do it here.
+        if self._paused_on_duck:
+            # The intent has been handled; restore volume regardless of whether
+            # the player was ducked (PLAYING) or corked (PAUSED).
             self.handle_unduck_request(message)
 
     def handle_mycroft_stop(self, message):

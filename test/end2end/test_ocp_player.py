@@ -197,17 +197,11 @@ class TestDuckUnduck(unittest.TestCase):
     / ``ovos.common_play.unduck``).
 
     Key behavioural invariant: ducking does NOT pause the player.  The audio
-    backend continues playing at a lower volume.
+    backend continues playing at a lower volume and ``restore_volume`` is called
+    when TTS finishes, regardless of player state.
 
-    Design note — ``handle_unduck_request`` guards on ``state == PAUSED``:
-        After a pure duck (player stays PLAYING), ``handle_unduck_request`` is a
-        no-op because its guard ``state == PlayerState.PAUSED`` is not met.
-        Restore happens via ``ovos.utterance.handled`` → ``handle_utterance_handled``
-        which also calls ``handle_unduck_request``; but that path too requires
-        ``state == PAUSED``.  For a pure duck/unduck cycle (no cork) the volume
-        is therefore lowered by the backend but not explicitly restored through
-        the OCP player layer — the audio service is expected to handle restoration
-        itself.  See ``ovos_media/player.py:1216`` and ``:1228``.
+    See ``ovos_media/player.py:handle_duck_request`` and
+    ``handle_unduck_request``.
     """
 
     def test_duck_lowers_audio_backend_volume(self) -> None:
@@ -250,22 +244,22 @@ class TestDuckUnduck(unittest.TestCase):
             h.player.audio_service.lower_volume.assert_not_called()
             self.assertFalse(h.player._paused_on_duck)
 
-    def test_unduck_when_playing_is_no_op(self) -> None:
-        """unduck() is a no-op when player is PLAYING.
+    def test_unduck_when_playing_restores_volume(self) -> None:
+        """unduck() must restore volume even when player is PLAYING.
 
-        ``handle_unduck_request`` guards on ``state == PlayerState.PAUSED``.
-        After a pure duck cycle the player is PLAYING so restore_volume is not
-        called and ``_paused_on_duck`` stays True.
+        After a pure duck cycle the player stays PLAYING.  ``handle_unduck_request``
+        must call ``audio_service.restore_volume()`` and clear ``_paused_on_duck``
+        regardless of player state.
         """
         with OCPPlayerHarness() as h:
             h.play(_audio_entry("http://example.com/song.mp3"))
             h.duck()
             h.assert_player_state(PlayerState.PLAYING)  # still PLAYING after duck
             h.unduck()
-            # restore_volume NOT called — guard requires PAUSED
-            h.player.audio_service.restore_volume.assert_not_called()
-            # _paused_on_duck is also still True — unduck was a no-op
-            self.assertTrue(h.player._paused_on_duck)
+            # restore_volume IS called — no PAUSED guard
+            h.player.audio_service.restore_volume.assert_called()
+            # _paused_on_duck cleared
+            self.assertFalse(h.player._paused_on_duck)
 
     def test_legacy_bus_messages_trigger_duck(self) -> None:
         """``recognizer_loop:audio_output_start`` must be equivalent to duck."""
