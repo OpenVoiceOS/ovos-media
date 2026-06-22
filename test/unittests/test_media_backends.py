@@ -188,7 +188,7 @@ class TestBaseMediaServiceSelection(unittest.TestCase):
             if uri_type in s.supported_uris():
                 break
         else:
-            from ovos_utils.messagebus import Message
+            from ovos_bus_client.message import Message
             bus.emit(Message("ovos.common_play.media.state",
                              {"state": MediaState.INVALID_MEDIA}))
 
