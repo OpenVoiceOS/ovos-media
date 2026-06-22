@@ -1,4 +1,10 @@
-# OCP Skills and the Media Pipeline
+# OCP Skills and the Media Pipeline (legacy)
+
+> **Superseded.** OCP *search skills* (`OVOSCommonPlaybackSkill` + `@ocp_search`)
+> are the legacy catalog/search approach. New catalog integrations should be
+> written as [MediaProvider plugins](media-providers.md), which the OCP pipeline
+> loads in-process instead of broadcasting bus queries to skills. This page
+> documents the legacy flow, which still works during the transition.
 
 ## What is OCP?
 
@@ -55,6 +61,10 @@ The `as_dict` property — `NowPlaying.as_dict` — `ovos_media/player.py:167` �
 
 ## Writing an OCP skill
 
+> For new integrations, write a [MediaProvider](media-providers.md) instead — it
+> is loaded in-process and returns typed `mediavocab.Release` objects. The skill
+> approach below is retained for compatibility.
+
 OCP skills subclass `OVOSCommonPlaybackSkill` from `ovos-workshop` and implement a `search_ocp` method that returns a list of `MediaEntry` objects. Full documentation and the base class API are in the `ovos-workshop` package.
 
 A minimal skeleton:
@@ -85,7 +95,7 @@ class MyMusicSkill(OVOSCommonPlaybackSkill):
         return results
 ```
 
-Skills must declare their entry point under `opm.plugin.ocp` in `pyproject.toml` so that `ovos-plugin-manager` can discover them at runtime.
+OCP skills are regular OVOS skills: they announce themselves on the bus with `ovos.common_play.announce` when they load, and the OCP pipeline tracks the available skills from those announcements.
 
 ## Backend selection
 
@@ -125,4 +135,13 @@ Backend preferences and feature flags live under the `"media"` key in the OVOS c
 }
 ```
 
-See `docs/mpris.md` for all MPRIS-specific options.
+See [mpris.md](mpris.md) for all MPRIS-specific options.
+
+---
+
+## See also
+
+- [Media providers](media-providers.md) — the current catalog/search approach that supersedes OCP skills
+- [Architecture](architecture.md) — where the pipeline and player sit in the flow
+- [Backends](backends.md) — the playback plugins that consume search results
+- [Configuration](configuration.md) — the `media` config block

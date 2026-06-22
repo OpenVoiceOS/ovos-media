@@ -11,7 +11,7 @@ The entry point is `OcpMprisExporter` — `ovos_media/mpris.py:57`. It is a `Thr
 
 Both interfaces are exported at the object path `/org/mpris/MediaPlayer2` and the well-known name `org.mpris.MediaPlayer2.OCP` is requested from the session bus — `OcpMprisExporter.export_ocp` — `ovos_media/mpris.py:113`.
 
-The backward-compatibility alias `MprisPlayerCtl = OcpMprisExporter` is defined at `ovos_media/mpris.py:692` and will be removed once `ovos-media-plugin-mpris` is released.
+The backward-compatibility alias `MprisPlayerCtl = OcpMprisExporter` is defined at `ovos_media/mpris.py:692`.
 
 ## Role A: OCP as an MPRIS player
 
@@ -127,10 +127,17 @@ playerctl --player=OCP next
 playerctl --player=OCP previous
 ```
 
-## Known limitations
+## Behaviour notes
 
-- `CanSeek` is hardcoded to `False` — seeking via MPRIS is not yet implemented — `_MediaPlayer2PlayerInterface.CanSeek` — `ovos_media/mpris.py:836`.
-- `Rate` is hardcoded to `1.0` — variable playback speed is not yet implemented — `_MediaPlayer2PlayerInterface.Rate` — `ovos_media/mpris.py:818`.
-- Volume read uses a 0.5-second bus timeout; if the volume service is unavailable the getter silently returns `1.0` — `_MediaPlayer2PlayerInterface.Volume` — `ovos_media/mpris.py:808-811`.
-- Role B (external player management) is planned to be extracted to a separate plugin `ovos-media-plugin-mpris`. The `MprisPlayerCtl` alias at `ovos_media/mpris.py:692` is a forward-compatibility shim for that transition.
-- The `dbus_next` library is patched at import time to ignore malformed introspection XML — `patch_dbus_next` — `ovos_media/mpris.py:7`. This is a workaround for misbehaving players that expose invalid D-Bus introspection data.
+- `CanSeek` always reports `False`; seeking is not exposed over MPRIS — `_MediaPlayer2PlayerInterface.CanSeek` — `ovos_media/mpris.py:836`.
+- `Rate` always reports `1.0`; variable playback speed is not exposed over MPRIS — `_MediaPlayer2PlayerInterface.Rate` — `ovos_media/mpris.py:818`.
+- Volume read uses a 0.5-second bus timeout; if the volume service is unavailable the getter returns `1.0` — `_MediaPlayer2PlayerInterface.Volume` — `ovos_media/mpris.py:808-811`.
+- The `dbus_next` library is patched at import time to ignore malformed introspection XML — `patch_dbus_next` — `ovos_media/mpris.py:7`. This accommodates players that expose invalid D-Bus introspection data.
+
+---
+
+## See also
+
+- [Architecture](architecture.md) — the MPRIS exporter inside the daemon
+- [Configuration](configuration.md) — the `media` config block
+- [Backends](backends.md) — the playback plugins MPRIS controls

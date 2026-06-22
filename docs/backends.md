@@ -1,6 +1,10 @@
-# Backend Plugins
+# Backend plugins
 
-This document describes the backend plugin system in `ovos-media` (version 0.0.1, Apache-2.0, Python 3.10+). Every behavioural claim cites a source location as `ClassName.method — path/to/file.py:LINE`.
+Backends are the **playback** layer of `ovos-media`: single-track players that
+take a resolved URI and play it. They are distinct from
+[media providers](media-providers.md), which are the *search/catalog* layer that
+finds what to play. The daemon picks a backend per track based on the playback
+type and the configured preferences.
 
 ---
 
@@ -10,9 +14,9 @@ This document describes the backend plugin system in `ovos-media` (version 0.0.1
 
 | Backend type | Manager class | Content type |
 | :--- | :--- | :--- |
-| Audio | `AudioService` — `ovos_media/media_backends/audio.py:8` | Audio streams and files |
-| Video | `VideoService` — `ovos_media/media_backends/video.py:8` | Video streams and files |
-| Web | `WebService` — `ovos_media/media_backends/web.py:8` | Web views (`MediaType.WEBVIEW`) |
+| Audio | `AudioService` — `ovos_media/media_backends/audio.py` | Audio streams and files |
+| Video | `VideoService` — `ovos_media/media_backends/video.py` | Video streams and files |
+| Web | `WebService` — `ovos_media/media_backends/web.py` | Web views (`MediaType.WEBVIEW`) |
 
 All three classes inherit from `BaseMediaService` — `ovos_media/media_backends/base.py:17`, which provides shared plugin loading, bus event registration, and backend-selection logic.
 
@@ -39,12 +43,13 @@ The method:
 
 ## Audio Backends
 
-- **Class**: `AudioService` — `ovos_media/media_backends/audio.py:8`
+- **Class**: `AudioService` — `ovos_media/media_backends/audio.py`
+- **Entry-point group**: `opm.media.audio`
 - **OPM plugin loader**: `ovos_plugin_manager.ocp.find_ocp_audio_plugins`
 - **Config key**: `media.audio_players`
 - **Preferred service config key**: `media.preferred_audio_services`
 
-Example well-known plugins: `ovos-audio-plugin-vlc`, `ovos-audio-plugin-mpv`, `ovos-audio-plugin-simple`.
+Example plugins: `ovos-media-plugin-vlc`, `ovos-media-plugin-mplayer`, `ovos-media-plugin-simple`, `ovos-media-plugin-spotify`, `ovos-media-plugin-chromecast`.
 
 Audio backends support: play, pause, resume, stop, seek, volume ducking, track position query, and track length query. URI type support is plugin-specific (e.g. `http`, `https`, `file`).
 
@@ -52,7 +57,8 @@ Audio backends support: play, pause, resume, stop, seek, volume ducking, track p
 
 ## Video Backends
 
-- **Class**: `VideoService` — `ovos_media/media_backends/video.py:8`
+- **Class**: `VideoService` — `ovos_media/media_backends/video.py`
+- **Entry-point group**: `opm.media.video`
 - **OPM plugin loader**: `ovos_plugin_manager.ocp.find_ocp_video_plugins`
 - **Config key**: `media.video_players`
 - **Preferred service config key**: `media.preferred_video_services`
@@ -63,7 +69,8 @@ Video backends are selected when `now_playing.playback == PlaybackType.VIDEO` �
 
 ## Web Backends
 
-- **Class**: `WebService` — `ovos_media/media_backends/web.py:8`
+- **Class**: `WebService` — `ovos_media/media_backends/web.py`
+- **Entry-point group**: `opm.media.web`
 - **OPM plugin loader**: `ovos_plugin_manager.ocp.find_ocp_web_plugins`
 - **Config key**: `media.web_players`
 - **Preferred service config key**: `media.preferred_web_services`
@@ -142,51 +149,45 @@ Before routing, `OCPMediaPlayer.validate_stream` — `ovos_media/player.py:675` 
 
 ## Writing a Custom Backend Plugin
 
-Backend plugins are OPM `AudioBackend` (or `VideoBackend` / `WebBackend`) subclasses, not `BaseMediaService` subclasses. `BaseMediaService` is the manager; the plugin is the worker.
+Backend plugins subclass `AudioPlayerBackend` (or `VideoPlayerBackend` / `WebPlayerBackend`) from `ovos_plugin_manager.templates.media`, **not** `BaseMediaService`. `BaseMediaService` is the manager that loads and selects backends; the plugin is the worker that drives a player.
 
 ### Minimal `pyproject.toml` registration
 
 ```toml
-[project.entry-points."opm.plugin.audio"]
+[project.entry-points."opm.media.audio"]
 my-audio-backend = "my_package.plugin:MyAudioBackend"
 ```
 
-For video plugins use the group `"opm.plugin.video"`. For web plugins use `"opm.plugin.web"`.
+For video plugins use the group `opm.media.video`; for web plugins use `opm.media.web`.
 
 ### Minimal skeleton class
 
 ```python
-from ovos_plugin_manager.templates.media import AudioBackend
+from ovos_plugin_manager.templates.media import AudioPlayerBackend
 
 
-class MyAudioBackend(AudioBackend):
+class MyAudioBackend(AudioPlayerBackend):
     """Minimal custom audio backend for ovos-media."""
 
-    def __init__(self, config: dict, bus) -> None:
+    def __init__(self, config=None, bus=None):
         super().__init__(config, bus)
 
-    @property
-    def supported_uris(self) -> list[str]:
+    def supported_uris(self) -> list:
         """Return the URI schemes this backend can play."""
         return ["http", "https", "file"]
 
-    def load_track(self, uri: str) -> None:
-        """Load a URI; call self.ocp_start() when playback begins."""
-        # TODO: implement media loading
-        self.ocp_start()
-
     def play(self) -> None:
-        """Begin playback of the loaded track."""
+        """Begin playback of the currently loaded track (self._now_playing)."""
+
+    def stop(self) -> bool:
+        """Stop playback. Return True if something was stopped."""
+        return True
 
     def pause(self) -> None:
         """Pause playback."""
 
     def resume(self) -> None:
         """Resume paused playback."""
-
-    def stop(self) -> bool:
-        """Stop playback. Return True if something was stopped."""
-        return True
 
     def lower_volume(self) -> None:
         """Reduce volume for TTS ducking."""
@@ -206,4 +207,17 @@ class MyAudioBackend(AudioBackend):
         return 0
 ```
 
-The `BaseMediaService.load_services` call instantiates the plugin as `MyAudioBackend(plug_cfg, bus)` — `ovos_media/media_backends/base.py:94`. The `plug_cfg` dict comes from the `media.audio_players.<player_name>` configuration block.
+The base class provides `load_track(uri, metadata=None)` (which stores the URI and emits `MediaState.LOADED_MEDIA`) and the `ocp_start` / `ocp_stop` / `ocp_pause` / `ocp_resume` helpers that emit the OCP state events for you. Subclasses implement the abstract transport methods above; `supported_uris` is a method, not a property.
+
+`BaseMediaService.load_services` instantiates the plugin as `MyAudioBackend(plug_cfg, bus)`. The `plug_cfg` dict comes from the `media.audio_players.<player_name>` configuration block.
+
+Remote backends (servers, casting targets) subclass `RemoteAudioPlayerBackend` / `RemoteVideoPlayerBackend` / `RemoteWebPlayerBackend` instead, which the manager always checks *after* local backends so playback starts locally by default.
+
+---
+
+## See also
+
+- [Architecture](architecture.md) — where backends sit in the daemon
+- [Media providers](media-providers.md) — the search/catalog layer that supplies playables
+- [Configuration](configuration.md) — `audio_players` / `video_players` / `web_players` and the preferred-service keys
+- [MPRIS integration](mpris.md) — controlling playback from the desktop
