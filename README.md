@@ -156,3 +156,8 @@ under mycroft.conf
   }
 }
 ```
+
+
+## Credits
+
+The original [OCP dataset](https://github.com/NeonGeckoCom/OCP-dataset) used to train the classifiers was sponsored by [@NeonGeckoCom](https://github.com/NeonGeckoCom/) as part of [The OCP Sprint](https://github.com/OpenVoiceOS/ovos-ocp-audio-plugin/issues/74). More recent training datasets are maintained by [@TigreGotico](https://github.com/TigreGotico).
