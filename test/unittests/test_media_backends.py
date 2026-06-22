@@ -685,6 +685,78 @@ class TestHandleMediaStateChange(unittest.TestCase):
         svc.handle_media_state_change(self._msg(MediaState.NO_MEDIA))
         self.assertEqual(len(emitted), 0)
 
+    def test_unknown_namespace_normalizes_and_forwards(self):
+        """A custom namespace must NOT silently drop the state change; it is
+        normalized to a generic PLAYING_AUDIO TrackState and forwarded."""
+        from ovos_utils.ocp import MediaState, TrackState
+
+        svc, bus = _make_base_svc(namespace="custom-thing")
+        b = _FullFakeBackend(uris=["http"], name="thing")
+        svc.current = b
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].data["state"], TrackState.PLAYING_AUDIO)
+
+
+class TestGetPreferredPlayers(unittest.TestCase):
+    """BaseMediaService.get_preferred_players — per-namespace config key with
+    fallback to all loaded backend names."""
+
+    def test_returns_configured_audio_preference(self):
+        svc, bus = _make_base_svc(
+            namespace="audio",
+            config={"preferred_audio_services": ["vlc", "mpv"]})
+        self.assertEqual(svc.get_preferred_players(), ["vlc", "mpv"])
+
+    def test_returns_configured_video_preference(self):
+        svc, bus = _make_base_svc(
+            namespace="video",
+            config={"preferred_video_services": ["mpv"]})
+        self.assertEqual(svc.get_preferred_players(), ["mpv"])
+
+    def test_returns_configured_web_preference(self):
+        svc, bus = _make_base_svc(
+            namespace="web",
+            config={"preferred_web_services": ["browser"]})
+        self.assertEqual(svc.get_preferred_players(), ["browser"])
+
+    def test_falls_back_to_all_loaded_backends_when_unconfigured(self):
+        backends = [_FullFakeBackend(name="vlc"),
+                    _FullFakeBackend(name="mpv")]
+        svc, bus = _make_base_svc(namespace="audio", config={},
+                                  services=backends)
+        self.assertEqual(svc.get_preferred_players(), ["vlc", "mpv"])
+
+    def test_fallback_preserves_loaded_backend_order(self):
+        backends = [_FullFakeBackend(name="mpv"),
+                    _FullFakeBackend(name="vlc")]
+        svc, bus = _make_base_svc(namespace="audio", config={},
+                                  services=backends)
+        self.assertEqual(svc.get_preferred_players(), ["mpv", "vlc"])
+
+    def test_empty_preference_falls_back_to_backends(self):
+        backends = [_FullFakeBackend(name="vlc")]
+        svc, bus = _make_base_svc(
+            namespace="audio",
+            config={"preferred_audio_services": []},
+            services=backends)
+        self.assertEqual(svc.get_preferred_players(), ["vlc"])
+
+    def test_no_config_no_backends_returns_empty(self):
+        svc, bus = _make_base_svc(namespace="audio", config={}, services=[])
+        self.assertEqual(svc.get_preferred_players(), [])
+
+    def test_does_not_mutate_config_list(self):
+        cfg_list = ["vlc"]
+        svc, bus = _make_base_svc(
+            namespace="audio",
+            config={"preferred_audio_services": cfg_list})
+        result = svc.get_preferred_players()
+        result.append("mpv")
+        self.assertEqual(cfg_list, ["vlc"])  # original untouched
+
 
 class TestIsMessageForService(unittest.TestCase):
 
