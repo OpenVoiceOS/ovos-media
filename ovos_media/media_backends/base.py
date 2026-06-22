@@ -167,20 +167,25 @@ class BaseMediaService:
         state = message.data["state"]
         if self.current and state == MediaState.LOADED_MEDIA:
             self.current.play()
-            if self.namespace == "audio":
-                self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_AUDIO}))
-            elif self.namespace == "video":
-                self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_VIDEO}))
-            elif self.namespace == "web":
-                self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_WEBVIEW}))
-            else:
+            track_state = {
+                "audio": TrackState.PLAYING_AUDIO,
+                "video": TrackState.PLAYING_VIDEO,
+                "web": TrackState.PLAYING_WEBVIEW,
+            }.get(self.namespace)
+            if track_state is None:
+                # custom-namespace backend: no typed PLAYING_* state maps to
+                # it, but we must NOT silently drop the event. Normalize to
+                # PLAYING_AUDIO (the OCP default playback state) and forward it
+                # so downstream consumers (GUI, MPRIS, NowPlaying) still learn
+                # that playback has started.
                 LOG.warning(
-                    f"handle_media_state_change: unknown namespace '{self.namespace}' "
-                    f"— cannot determine TrackState for LOADED_MEDIA event"
+                    f"handle_media_state_change: unknown namespace "
+                    f"'{self.namespace}' — normalizing to PLAYING_AUDIO "
+                    f"TrackState for LOADED_MEDIA event"
                 )
+                track_state = TrackState.PLAYING_AUDIO
+            self.bus.emit(Message("ovos.common_play.track.state",
+                                  {"state": track_state}))
 
     def wait_for_load(self, timeout=3 * 60):
         """Wait for services to be loaded.
