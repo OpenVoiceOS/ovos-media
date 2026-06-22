@@ -156,8 +156,3 @@ under mycroft.conf
   }
 }
 ```
-
-
-## Credits
-
-This work and [Dataset collection](https://github.com/NeonGeckoCom/OCP-dataset) for training the classifiers has been sponsored by [@NeonGeckoCom](https://github.com/NeonGeckoCom/) as part of [The OCP Sprint](https://github.com/OpenVoiceOS/ovos-ocp-audio-plugin/issues/74)
