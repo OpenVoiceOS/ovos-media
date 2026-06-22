@@ -7,4 +7,6 @@ on:
 jobs:
   coverage:
     uses: OpenVoiceOS/gh-automations/.github/workflows/coverage.yml@dev
+    with:
+      install_extras: "test"
     secrets: inherit

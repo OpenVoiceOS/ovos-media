@@ -33,6 +33,11 @@ extras = [
     "ovos-ocp-files-plugin",
     "ovos-ocp-news-plugin",
 ]
+test = [
+    "pytest",
+    "pytest-cov",
+    "ovoscope",
+]
 
 [project.scripts]
 ovos-media = "ovos_media.__main__:main"
