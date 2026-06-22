@@ -1,4 +1,5 @@
 import abc
+import threading
 import time
 from threading import Lock
 from typing import Callable
@@ -105,6 +106,14 @@ class BaseMediaService:
         # Sort services so local services are checked first
         self.services = local + remote
 
+        if not self.services:
+            LOG.error(
+                f"No {self.namespace} backends loaded — all {self.namespace} playback will fail. "
+                f"Install at least one backend plugin (e.g. ovos-vlc-plugin, ovos-mplayer-plugin)."
+            )
+            self.bus.emit(Message("ovos.common_play.media.state",
+                                  {"state": MediaState.NO_MEDIA}))
+
         # Register end of track callback
         for s in self.services:
             s.set_track_start_callback(self.track_start)
@@ -128,7 +137,25 @@ class BaseMediaService:
         return self.services
 
     def get_preferred_players(self):
-        return []
+        """Return the ordered list of preferred backend names for this service.
+
+        Reads the per-namespace preference key from config
+        (``preferred_audio_services`` / ``preferred_video_services`` /
+        ``preferred_web_services``). When no preference is configured the full
+        list of loaded backend names is returned so that callers always receive
+        a usable, ordered selection list rather than an empty one.
+
+        Returns:
+            list[str]: ordered preferred backend names (most-preferred first),
+                falling back to every loaded backend's name when no preference
+                is configured.
+        """
+        key = f"preferred_{self.namespace}_services"
+        preferred = self.config.get(key)
+        if preferred:
+            return list(preferred)
+        # no preference configured -> fall back to all loaded backends
+        return [s.name for s in self.services]
 
     def handle_media_state_change(self, message: Message):
         """
@@ -140,17 +167,25 @@ class BaseMediaService:
         state = message.data["state"]
         if self.current and state == MediaState.LOADED_MEDIA:
             self.current.play()
-            if self.namespace == "audio":
-                self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_AUDIO}))
-            elif self.namespace == "video":
-                self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_VIDEO}))
-            elif self.namespace == "web":
-                self.bus.emit(Message("ovos.common_play.track.state",
-                                      {"state": TrackState.PLAYING_WEBVIEW}))
-            else:
-                pass  # ???
+            track_state = {
+                "audio": TrackState.PLAYING_AUDIO,
+                "video": TrackState.PLAYING_VIDEO,
+                "web": TrackState.PLAYING_WEBVIEW,
+            }.get(self.namespace)
+            if track_state is None:
+                # custom-namespace backend: no typed PLAYING_* state maps to
+                # it, but we must NOT silently drop the event. Normalize to
+                # PLAYING_AUDIO (the OCP default playback state) and forward it
+                # so downstream consumers (GUI, MPRIS, NowPlaying) still learn
+                # that playback has started.
+                LOG.warning(
+                    f"handle_media_state_change: unknown namespace "
+                    f"'{self.namespace}' — normalizing to PLAYING_AUDIO "
+                    f"TrackState for LOADED_MEDIA event"
+                )
+                track_state = TrackState.PLAYING_AUDIO
+            self.bus.emit(Message("ovos.common_play.track.state",
+                                  {"state": track_state}))
 
     def wait_for_load(self, timeout=3 * 60):
         """Wait for services to be loaded.
@@ -317,8 +352,8 @@ class BaseMediaService:
                 preferred_service = None
 
             try:
-                self.play(tracks, preferred_service)
-                time.sleep(0.5)
+                # Use a timer to avoid blocking the bus event loop
+                threading.Timer(0.5, self.play, args=[tracks, preferred_service]).start()
             except Exception as e:
                 LOG.exception(e)
 
@@ -425,3 +460,6 @@ class BaseMediaService:
         self.bus.remove(f'ovos.{self.namespace}.service.get_track_length', self.handle_get_track_length)
         self.bus.remove(f'ovos.{self.namespace}.service.seek_forward', self.handle_seek_forward)
         self.bus.remove(f'ovos.{self.namespace}.service.seek_backward', self.handle_seek_backward)
+        self.bus.remove(f'ovos.{self.namespace}.service.list_backends', self.handle_list_backends)
+        self.bus.remove(f'ovos.{self.namespace}.service.duck', self.lower_volume)
+        self.bus.remove(f'ovos.{self.namespace}.service.unduck', self.restore_volume)

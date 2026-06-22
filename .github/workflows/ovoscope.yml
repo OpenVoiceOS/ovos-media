@@ -1,0 +1,13 @@
+name: End-to-End Integration Tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  end2end:
+    uses: OpenVoiceOS/gh-automations/.github/workflows/ovoscope.yml@dev
+    secrets: inherit
+    with:
+      test_path: "test/end2end/"
+      install_extras: "test"

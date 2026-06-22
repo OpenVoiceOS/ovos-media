@@ -1,8 +1,6 @@
 from ovos_plugin_manager.ocp import find_ocp_audio_plugins
 
-from ovos_bus_client.message import Message
 from ovos_media.media_backends.base import BaseMediaService
-from ovos_utils.ocp import MediaState, TrackState
 
 
 class AudioService(BaseMediaService):
@@ -17,7 +15,3 @@ class AudioService(BaseMediaService):
                 bus: OVOS messagebus
         """
         super().__init__(bus, "audio", find_ocp_audio_plugins, config, *args, **kwargs)
-
-    def get_preferred_players(self):
-        return self.config.get("preferred_audio_services")
-

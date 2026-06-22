@@ -54,23 +54,29 @@ from ovos_utils.log import LOG
 from ovos_utils.ocp import TrackState, PlaybackType, PlayerState, LoopState, MediaState
 
 
-class MprisPlayerCtl(Thread):
-    """ detects other media players in the system and integrates with them
-    - stop internal playback when an external player starts
-    - display metadata from external media player
-    - provide control over the external player
-    - provide intents for external player
-    - advertises OCP over mpris so external applications can control it
-        eg, KDE connect will allow controlling OCP via the phone
+class OcpMprisExporter(Thread):
+    """Exposes OCP as an MPRIS MediaPlayer2 on the D-Bus session bus.
+
+    Role A (always active when ``enable_mpris: true``):
+    - Registers ``org.mpris.MediaPlayer2.OCP`` on the session bus.
+    - Keeps Metadata, PlaybackStatus, Position, LoopStatus, Shuffle, Volume in sync.
+    - Accepts control signals from external MPRIS clients (KDE Connect, playerctl,
+      GNOME Shell media widget).
+
+    Role B (external player management, opt-in via ``manage_external_players: true``):
+    - Polls D-Bus for external MPRIS players (Spotify, VLC, Firefox …).
+    - Auto-pauses OCP when an external player becomes active.
+    - Proxies OCP's skip/pause/shuffle/repeat to external players.
+    - Will be extracted to ``ovos-media-plugin-mpris`` in a future release.
     """
 
     def __init__(self, player, config=None, daemonic=True, manage_players=False):
-        super(MprisPlayerCtl, self).__init__()
+        super().__init__()
         self.dbus = None
         self.config = config or {}
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.new_event_loop()
 
-        self.setDaemon(daemonic)
+        self.daemon = daemonic
         self.shutdown_event = Event()
         self.stop_event = Event()
         self.pause_event = Event()
@@ -90,12 +96,13 @@ class MprisPlayerCtl(Thread):
         self.players = {}
         self.player_meta = {}
         self._player_fails = {}
-        self.manage_players = True  # manage_players
-        # TODO from ovos_media.conf
-        self.ignored_players = [
+        # honor the manage_players argument, letting config override it; use
+        # self.config (never the raw param) so config=None can't crash here
+        self.manage_players = self.config.get("manage_external_players", manage_players)
+        self.ignored_players = self.config.get("ignored_players", [
             "org.mpris.MediaPlayer2.OCP",
             "org.mpris.MediaPlayer2.plasma-browser-integration"  # browsers already show up as individual players
-        ]
+        ])
 
         self.start()
 
@@ -173,11 +180,7 @@ class MprisPlayerCtl(Thread):
                 data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
 
             self._ocp_player.set_now_playing(data)
-            self._ocp_player.gui.prepare_gui_data()
-            if data["state"] == "Playing":
-                # move GUI to player page
-                if render:
-                    self._ocp_player.gui.render_player()
+            self._ocp_player._update_gui()
 
     async def handle_new_player(self, data):
         if data['name'] not in self._player_fails:
@@ -187,7 +190,7 @@ class MprisPlayerCtl(Thread):
         LOG.info(f"MPRIS Player Shuffle: {shuffle}")
         if self.manage_players:
             self._ocp_player.shuffle = shuffle
-            self._ocp_player.gui.update_buttons()
+            self._ocp_player._update_gui()
 
     async def handle_player_loop_state(self, state):
         LOG.info(f"MPRIS Player Repeat: {state}")
@@ -198,7 +201,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.loop_state = LoopState.REPEAT_TRACK
             else:
                 self._ocp_player.loop_state = LoopState.NONE
-            self._ocp_player.gui.update_buttons()
+            self._ocp_player._update_gui()
 
     async def handle_player_state(self, state):
         LOG.info(f"MPRIS Player State: {state}")
@@ -211,7 +214,7 @@ class MprisPlayerCtl(Thread):
                 self._ocp_player.set_player_state(PlayerState.PLAYING)
             else:
                 self._ocp_player.set_player_state(PlayerState.STOPPED)
-            self._ocp_player.gui.update_buttons()
+            self._ocp_player._update_gui()
 
     async def handle_lost_player(self, name):
         LOG.info(f"Lost MPRIS Player: {name}")
@@ -227,8 +230,9 @@ class MprisPlayerCtl(Thread):
             self._update_ocp()
 
     async def _set_main_player(self, name):
+        old_main = self.main_player
         self.main_player = name
-        if name != self.main_player:
+        if name != old_main:
             LOG.info(f"Active MPRIS player: {name}")
         # if there are multiple external players playing, stop the
         # previous ones!
@@ -578,9 +582,13 @@ class MprisPlayerCtl(Thread):
         while not self.shutdown_event.is_set():
 
             if not self.dbus:
-                self.dbus = await DbusMessageBus(
-                    bus_type=self.dbus_type).connect()
-                await self.export_ocp()
+                try:
+                    self.dbus = await DbusMessageBus(
+                        bus_type=self.dbus_type).connect()
+                    await self.export_ocp()
+                except Exception as e:
+                    LOG.warning(f"MPRIS unavailable: could not connect to D-Bus session bus: {e}")
+                    return
 
             # ocp requests to manipulate external players
             if self.stop_event.is_set():
@@ -621,16 +629,20 @@ class MprisPlayerCtl(Thread):
                     await self._repeat_disable(self.main_player)
                 self.repeat_event.clear()
 
-            # scan for new external players
-            await self.scan_players()
-            sleep(1)  # TODO configurable time between checks
+            # scan for new external players (Role B — only when manage_external_players is enabled)
+            poll_interval = self.config.get("mpris_poll_interval", 1)
+            if self.manage_players:
+                await self.scan_players()
+                await asyncio.sleep(poll_interval)
 
-            # sync player meta, not all players send all events properly...
-            # eg, firefox videos do not send events if they autoplay, only if
-            # you click the play button
-            for player in list(self.players.keys()):
-                await self.query_player(player)
-            sleep(1)  # TODO configurable time between checks
+                # sync player meta, not all players send all events properly...
+                # eg, firefox videos do not send events if they autoplay, only if
+                # you click the play button
+                for player in list(self.players.keys()):
+                    await self.query_player(player)
+                await asyncio.sleep(poll_interval)
+            else:
+                await asyncio.sleep(poll_interval)
 
     def run(self):
         count = 0
@@ -668,13 +680,19 @@ class MprisPlayerCtl(Thread):
     def toggle_repeat(self):
         self.repeat_event.set()
 
-    def shutdown(self):
+    def shutdown(self) -> None:
+        """Stop the MPRIS event loop and release resources."""
         self.stop()
         self.shutdown_event.set()
-        self.loop.stop()
-        while self.loop.is_running():
-            sleep(0.2)
-        self.loop.close()
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        # Wait for the loop to finish from the outside (this runs on a different thread)
+        self.join(timeout=5)
+        if not self.loop.is_running():
+            self.loop.close()
+
+
+# Backward-compatibility alias — remove after ovos-media-plugin-mpris is released
+MprisPlayerCtl = OcpMprisExporter
 
 
 class _MediaPlayer2Interface(ServiceInterface):
@@ -764,17 +782,20 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @dbus_property()
     def LoopStatus(self) -> 's':
-        # TODO validate strings
         if self._ocp_player.loop_state == LoopState.REPEAT_TRACK:
-            return "RepeatTrack"
+            return "Track"  # MPRIS 2.2 spec: "None", "Track", or "Playlist"
         if self._ocp_player.loop_state == LoopState.REPEAT:
-            return "Repeat"
+            return "Playlist"
         return "None"
 
     @LoopStatus.setter
     def LoopStatus_setter(self, val: 's'):
-        # TODO translate state
-        self._ocp_player.loop_state = val
+        if val == "Track":
+            self._ocp_player.loop_state = LoopState.REPEAT_TRACK
+        elif val == "Playlist":
+            self._ocp_player.loop_state = LoopState.REPEAT
+        else:
+            self._ocp_player.loop_state = LoopState.NONE
 
     @dbus_property()
     def Shuffle(self) -> 'b':
@@ -801,7 +822,9 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def Position(self) -> 'd':
-        return 1  # TODO from ocp_player
+        if self._ocp_player.now_playing:
+            return self._ocp_player.now_playing.position * 1e6
+        return 0
 
     @dbus_property(access=PropertyAccess.READ)
     def CanPlay(self) -> 'b':
@@ -837,7 +860,7 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @method()
     def Stop(self):
-        self._ocp_player.pause()
+        self._ocp_player.stop()
 
     @method()
     def Play(self):

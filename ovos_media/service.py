@@ -5,9 +5,8 @@ from ovos_utils.log import LOG
 from ovos_utils.process_utils import ProcessStatus, StatusCallbackMap
 
 from ovos_config.config import Configuration
+from ovos_media.legacy_api import LegacyAudioServiceCompat
 from ovos_media.player import OCPMediaPlayer
-from ovos_media.gui import OCPGUIState
-
 
 def on_ready():
     LOG.info('Media service is ready.')
@@ -58,13 +57,14 @@ class MediaService(Thread):
         self.status.set_alive()
         self.init_messagebus()
         self.ocp = OCPMediaPlayer(self.bus)
-        self.ocp.add_event('ovos.common_play.home', self.handle_home)
-        self.ocp.add_event("ovos.common_play.ping", self.handle_ping)
-        self.ocp.add_event("ovos.common_play.search.start", self.handle_search_start)
-        self.ocp.add_event("ovos.common_play.search.end", self.handle_search_end)
+        self.bus.on('ovos.common_play.home', self.handle_home)
+        self.bus.on("ovos.common_play.ping", self.handle_ping)
+        self.bus.on("ovos.common_play.search.start", self.handle_search_start)
+        self.bus.on("ovos.common_play.search.end", self.handle_search_end)
+        self.legacy_compat = LegacyAudioServiceCompat(self.ocp, self.bus)
 
     def handle_home(self, message):
-        self.ocp.gui.manage_display(OCPGUIState.HOME)
+        self.ocp._update_gui()
 
     def handle_ping(self, message):
         """
@@ -75,14 +75,33 @@ class MediaService(Thread):
 
     def handle_search_start(self, message):
         """when OCP pipeline triggers, show search animation"""
-        self.ocp.gui.manage_display(OCPGUIState.SPINNER)
+        self.ocp.gui.show_media_player(
+            now_playing=None,
+            playlist=[],
+            search_results=[],
+            state="loading",
+        )
 
-    def handle_search_end(self, message):
-        """remove search spinner"""
-        pass
+    def handle_search_end(self, message: "Message") -> None:
+        """Dismiss the search spinner and refresh the player GUI."""
+        self.ocp._update_gui()
 
     def run(self):
         self.status.set_ready()
+
+    def handle_opm_audio_query(self, message: Message) -> None:
+        """Handle ``opm.audio.query`` — report installed audio backends.
+
+        Returns the same structure as the old ``PlaybackService`` handler so
+        that OPM discovery continues to work after migration to ovos-media.
+        """
+        backends = self.ocp.audio_service.available_backends() if self.ocp else {}
+        data = {
+            "plugins": list(backends.keys()),
+            "configs": backends,
+            "options": {},
+        }
+        self.bus.emit(message.response(data))
 
     def shutdown(self):
         """Shutdown the audio service cleanly.
@@ -92,6 +111,7 @@ class MediaService(Thread):
         # TODO - update gui for no-media in now_playing page
         self.ocp.reset()
         self.status.set_stopping()
+        self.legacy_compat.shutdown()
         self.ocp.shutdown()
 
     def init_messagebus(self):
@@ -99,3 +119,4 @@ class MediaService(Thread):
         Start speech related handlers.
         """
         Configuration.set_config_update_handlers(self.bus)
+        self.bus.on("opm.audio.query", self.handle_opm_audio_query)
