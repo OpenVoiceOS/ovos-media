@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.2a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a2) (2026-06-22)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.2a1...0.0.2a2)
+
+**Merged pull requests:**
+
+- docs: drop NeonGecko sponsorship credit [\#39](https://github.com/OpenVoiceOS/ovos-media/pull/39) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a1) (2026-06-22)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a22...0.0.2a1)
