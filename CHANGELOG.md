@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.2a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a3) (2026-06-22)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.2a2...0.0.2a3)
+
+**Merged pull requests:**
+
+- docs: scope dataset credits \(NeonGecko = original OCP dataset, TigreGotico = newer\) [\#41](https://github.com/OpenVoiceOS/ovos-media/pull/41) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.0.2a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a2) (2026-06-22)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.2a1...0.0.2a2)
