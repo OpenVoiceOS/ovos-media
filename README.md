@@ -1,8 +1,16 @@
 # ovos-media
 
-**The OCP-native media service for OpenVoiceOS** — a standalone daemon that plays
-audio, video and web content on behalf of OVOS, with per-session playback state,
-MPRIS/D-Bus integration and a pluggable backend architecture.
+**The OVOS Virtual Media Player** — a standalone daemon that plays audio, video and
+web content on behalf of OpenVoiceOS, with per-session playback state, MPRIS/D-Bus
+integration and a pluggable backend architecture.
+
+`ovos-media` implements **OCP — OVOS Common Playback**: one logical media player per
+session that *every* media voice command targets. It arbitrates both OVOS-initiated
+playback ("play jazz") and transport control ("pause", "next", "stop the music"), and
+because it bridges to the host OS over MPRIS, even playback OVOS did **not** start — a
+browser tab, a desktop player — is controllable by voice as long as it speaks the open
+standard. The concept is specified in
+[OVOS-OCP-1](https://github.com/OpenVoiceOS/architecture/blob/dev/ovos-ocp-1.md).
 
 `ovos-media` is the modern replacement for the legacy audio service (the
 `ovos-ocp-audio-plugin` bundled inside `ovos-audio`). It splits the monolith into
