@@ -137,7 +137,25 @@ class BaseMediaService:
         return self.services
 
     def get_preferred_players(self):
-        return []
+        """Return the ordered list of preferred backend names for this service.
+
+        Reads the per-namespace preference key from config
+        (``preferred_audio_services`` / ``preferred_video_services`` /
+        ``preferred_web_services``). When no preference is configured the full
+        list of loaded backend names is returned so that callers always receive
+        a usable, ordered selection list rather than an empty one.
+
+        Returns:
+            list[str]: ordered preferred backend names (most-preferred first),
+                falling back to every loaded backend's name when no preference
+                is configured.
+        """
+        key = f"preferred_{self.namespace}_services"
+        preferred = self.config.get(key)
+        if preferred:
+            return list(preferred)
+        # no preference configured -> fall back to all loaded backends
+        return [s.name for s in self.services]
 
     def handle_media_state_change(self, message: Message):
         """
