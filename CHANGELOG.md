@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.2a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a4) (2026-06-22)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.2a3...0.0.2a4)
+
+**Merged pull requests:**
+
+- docs: modernize README + overhaul /docs \(Virtual Media Player, MediaProviders\) [\#43](https://github.com/OpenVoiceOS/ovos-media/pull/43) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.0.2a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a3) (2026-06-22)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.2a2...0.0.2a3)
