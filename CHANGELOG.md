@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a1) (2026-06-22)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a22...0.0.2a1)
+
+**Fixed bugs:**
+
+- \[BUG\] Doesn't respect the disable\_mpris config [\#18](https://github.com/OpenVoiceOS/ovos-media/issues/18)
+
+**Closed issues:**
+
+- When music is playing, gui complains about missing file [\#22](https://github.com/OpenVoiceOS/ovos-media/issues/22)
+- No luck with ovos-media and OCP plugin [\#21](https://github.com/OpenVoiceOS/ovos-media/issues/21)
+
+**Merged pull requests:**
+
+- feat: modernize and stabilize ovos-media \(OCPMediaPlayer rework, tests, GUI decoupling\) [\#37](https://github.com/OpenVoiceOS/ovos-media/pull/37) ([JarbasAl](https://github.com/JarbasAl))
+- chore\(deps\): update dependency ovos-plugin-manager to v2 [\#33](https://github.com/OpenVoiceOS/ovos-media/pull/33) ([renovate[bot]](https://github.com/apps/renovate))
+- chore\(deps\): update dependency ovos-config to v2 [\#32](https://github.com/OpenVoiceOS/ovos-media/pull/32) ([renovate[bot]](https://github.com/apps/renovate))
+- chore\(deps\): update dependency ovos-bus-client to v1 [\#31](https://github.com/OpenVoiceOS/ovos-media/pull/31) ([renovate[bot]](https://github.com/apps/renovate))
+- chore\(deps\): update dependency python to 3.14 [\#25](https://github.com/OpenVoiceOS/ovos-media/pull/25) ([renovate[bot]](https://github.com/apps/renovate))
+- chore: Configure Renovate [\#24](https://github.com/OpenVoiceOS/ovos-media/pull/24) ([renovate[bot]](https://github.com/apps/renovate))
+
+## [V0.0.1a22](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a22) (2024-04-09)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a21...V0.0.1a22)
+
 ## [V0.0.1a21](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a21) (2024-04-09)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a20...V0.0.1a21)
