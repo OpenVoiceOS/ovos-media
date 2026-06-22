@@ -96,8 +96,10 @@ class OcpMprisExporter(Thread):
         self.players = {}
         self.player_meta = {}
         self._player_fails = {}
-        self.manage_players = config.get("manage_external_players", False)
-        self.ignored_players = config.get("ignored_players", [
+        # honor the manage_players argument, letting config override it; use
+        # self.config (never the raw param) so config=None can't crash here
+        self.manage_players = self.config.get("manage_external_players", manage_players)
+        self.ignored_players = self.config.get("ignored_players", [
             "org.mpris.MediaPlayer2.OCP",
             "org.mpris.MediaPlayer2.plasma-browser-integration"  # browsers already show up as individual players
         ])
