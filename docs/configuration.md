@@ -1,7 +1,15 @@
-# Configuration Reference
+# Configuration reference
 
-All runtime settings for `ovos-media` live inside the `media` top-level key of
-the OVOS/Mycroft configuration file.
+`ovos-media` reads two top-level keys from the OVOS/Mycroft configuration file:
+
+- **`media`** — the daemon: backends, playback behaviour, MPRIS. Documented here.
+- **`media_providers`** — per-provider catalog/search settings. Documented in
+  [media-providers.md](media-providers.md#configuration) and summarised
+  [below](#media-providers).
+
+The legacy audio service is turned off with the top-level `enable_old_audioservice`
+flag (see [getting started](getting-started.md) and the
+[migration guide](migration-guide.md)).
 
 ---
 
@@ -48,8 +56,44 @@ match is found, any available backend is used.
 | `preferred_video_services` | list of strings | `[]` | Ordered preference list for video backends. Read by `VideoService.get_preferred_players` — `ovos_media/media_backends/video.py:21`. |
 | `preferred_web_services` | list of strings | `[]` | Ordered preference list for web/webview backends. Read by `WebService.get_preferred_players` — `ovos_media/media_backends/web.py:21`. |
 
-Backend plugin names are the entry-point keys registered under `opm.plugin.audio`,
-`opm.plugin.video`, or `opm.plugin.web` in each plugin's `pyproject.toml`.
+Backend plugin names are the entry-point keys registered under `opm.media.audio`,
+`opm.media.video`, or `opm.media.web` in each plugin's `pyproject.toml`.
+
+---
+
+## Declaring Backends
+
+The `audio_players`, `video_players`, and `web_players` blocks declare which
+installed backends `ovos-media` should load and how they are addressed. Each
+entry's key is a local name; `module` is the plugin's entry-point name,
+`aliases` are spoken names a user can say ("play on VLC"), and `active: false`
+loads-time-disables a backend without removing it.
+
+```json
+{
+  "media": {
+    "audio_players": {
+      "vlc": { "module": "ovos-media-audio-plugin-vlc", "aliases": ["VLC"], "active": true },
+      "cli": { "module": "ovos-media-audio-plugin-cli", "aliases": ["Command Line"], "active": true }
+    },
+    "video_players": {
+      "vlc": { "module": "ovos-media-video-plugin-vlc", "aliases": ["VLC"], "active": true }
+    },
+    "web_players": {
+      "browser": { "module": "ovos-media-web-plugin-browser", "aliases": ["Browser"], "active": true }
+    }
+  }
+}
+```
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `audio_players` | dict | `{}` | Audio backends to load, keyed by local name. |
+| `video_players` | dict | `{}` | Video backends to load. |
+| `web_players` | dict | `{}` | Web/webview backends to load. |
+
+Any additional keys inside a player entry are passed through to that backend
+plugin's own `config` dict. See [backends.md](backends.md) for the backend API.
 
 ---
 
@@ -128,3 +172,35 @@ control-signal checks.
 This configuration enables MPRIS with external player management, polls every
 two seconds, prefers VLC for both audio and video, and leaves the web service
 with no preference (first available backend wins).
+
+---
+
+## Media Providers
+
+Catalog/search providers are configured under the **separate top-level
+`media_providers` key** (not inside `media`), keyed by each provider's
+entry-point name. Keys are passed through to the provider's `config`; set
+`enabled: false` to disable a provider without uninstalling it.
+
+```json
+{
+  "media_providers": {
+    "bandcamp": { "max_pages": 2 },
+    "youtube": { "max_results": 10 },
+    "soundcloud": { "enabled": false }
+  }
+}
+```
+
+Provider settings and the full provider list are documented in
+[media-providers.md](media-providers.md#configuration).
+
+---
+
+## See also
+
+- [Getting started](getting-started.md) — install and enable the daemon
+- [Backends](backends.md) — the `audio_players` / `video_players` / `web_players` plugins
+- [Media providers](media-providers.md) — the `media_providers` catalog/search plugins
+- [MPRIS integration](mpris.md) — all MPRIS-specific options in depth
+- [Migration guide](migration-guide.md) — mapping legacy audio-service config to `media`

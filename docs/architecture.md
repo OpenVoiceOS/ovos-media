@@ -1,6 +1,42 @@
 # Architecture
 
-This document describes the runtime architecture of `ovos-media` (version 0.0.1, Apache-2.0, Python 3.10+). Every behavioural claim cites a source location as `ClassName.method — path/to/file.py:LINE`.
+This document describes the runtime architecture of `ovos-media` — the playback
+daemon — and how it sits inside the wider OCP media flow. Behavioural claims cite
+a source location as `ClassName.method — path/to/file.py`.
+
+---
+
+## The media flow end to end
+
+`ovos-media` is one stage in a plugin pipeline. Each boundary is swappable:
+
+```
+ utterance
+   │
+   ▼
+ ovos-core ─ OCP pipeline (ovos-ocp-pipeline-plugin)
+   │   classifies the media type, parses title/artist/genre into mediavocab.Signals,
+   │   gates + dispatches MediaProvider plugins in-process, ranks the Release results
+   ▼
+ ovos-media (this daemon)
+   │   receives the winning result, picks a playback backend, manages the
+   │   queue / now-playing, exposes state over the bus / MPRIS / GUI
+   ▼
+ playback backend (opm.media.audio | .video | .web)
+   │   plays the URI via vlc / mplayer / spotify / chromecast / browser …
+   ▼
+ stream extractor (opm.ocp.extractor) resolves youtube//… , rss//… , file://…
+```
+
+- The **OCP pipeline plugin** (`ovos-ocp-pipeline-plugin`) is the NLP brain: it
+  classifies the utterance, queries [media providers](media-providers.md), ranks
+  the results, and emits the winner to this daemon. It never plays anything.
+- **`ovos-media`** is the player: queue, now-playing, state, and backend
+  dispatch. It is a bus-connected service, **not** a skill.
+- **Backends** ([backends.md](backends.md)) are single-track players; **stream
+  extractors** resolve deferred `{sei}//{uri}` stream identifiers at playback.
+
+The rest of this document focuses on the daemon itself.
 
 ---
 
@@ -29,7 +65,7 @@ Registered in `MediaService.__init__` — `ovos_media/service.py:60` and `MediaS
 | `ovos.common_play.home` | `handle_home` | Calls `ocp._update_gui()` to refresh the GUI home screen. `MediaService.handle_home — ovos_media/service.py:66` |
 | `ovos.common_play.ping` | `handle_ping` | Replies immediately with `ovos.common_play.pong`. `MediaService.handle_ping — ovos_media/service.py:69` |
 | `ovos.common_play.search.start` | `handle_search_start` | Calls `ocp.gui.show_media_player(state="loading")` to display a loading animation. `MediaService.handle_search_start — ovos_media/service.py:76` |
-| `ovos.common_play.search.end` | `handle_search_end` | Stub — spinner dismissal not yet implemented. `MediaService.handle_search_end — ovos_media/service.py:85` |
+| `ovos.common_play.search.end` | `handle_search_end` | Marks the end of a search dispatch. `MediaService.handle_search_end — ovos_media/service.py:85` |
 | `opm.audio.query` | `handle_opm_audio_query` | Replies with the dict returned by `audio_service.available_backends()`, preserving the legacy OPM discovery contract. `MediaService.handle_opm_audio_query — ovos_media/service.py:92` |
 
 ### OCPMediaPlayer handlers
@@ -162,3 +198,27 @@ The three concrete subclasses and their OPM discovery functions are:
 | `AudioService` | `ovos_media/media_backends/audio.py:8` | `find_ocp_audio_plugins` |
 | `VideoService` | `ovos_media/media_backends/video.py:8` | `find_ocp_video_plugins` |
 | `WebService` | `ovos_media/media_backends/web.py:8` | `find_ocp_web_plugins` |
+
+---
+
+## Per-session player state
+
+The OCP pipeline plugin does not assume a single global player. It tracks one
+player proxy per MessageBus session, recording that session's player and media
+state, the classified media type, and which extractors that player can resolve.
+
+This matters for distributed setups (for example HiveMind satellites): each
+device has its own session, so a user on a satellite plays media on **that**
+device's player rather than the hub's. `ovos-media` participates by announcing
+itself on the bus and reporting its state through `handle_status`, which the
+pipeline associates with the originating session.
+
+---
+
+## See also
+
+- [Media providers](media-providers.md) — the catalog/search layer feeding this daemon
+- [Backends](backends.md) — the audio/video/web playback plugins
+- [Configuration](configuration.md) — the `media` config block
+- [MPRIS integration](mpris.md) — the D-Bus exporter in depth
+- [Migration guide](migration-guide.md) — moving from the legacy audio service
