@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.2.0a4) (2026-06-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.2.0a3...0.2.0a4)
+
+**Merged pull requests:**
+
+- docs: 10/10 pass — glossary, audience routing, game-skill carve-out [\#56](https://github.com/OpenVoiceOS/ovos-media/pull/56) ([JarbasAl](https://github.com/JarbasAl))
+
+## [0.2.0a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.2.0a3) (2026-06-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.2.0a2...0.2.0a3)
+
 ## [0.2.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.2.0a2) (2026-06-25)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.2.0a1...0.2.0a2)
