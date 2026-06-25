@@ -198,6 +198,33 @@ class TestNowPlayingInit(unittest.TestCase):
         with self.assertRaises(ValueError):
             np.handle_track_state_change(msg)
 
+    def test_handle_track_state_change_queued_does_not_crash(self):
+        """Regression: a non-PLAYING state (QUEUED/…) used to hit a reference to
+        the non-existent ``TrackState.PAUSED_AUDIO`` and raise AttributeError."""
+        np, _ = self._make_now_playing()
+        np._player = MagicMock()
+        for st in (TrackState.QUEUED_AUDIO, TrackState.QUEUED_VIDEO,
+                   TrackState.QUEUED_AUDIOSERVICE, TrackState.DISAMBIGUATION):
+            np.status = TrackState.PLAYING_AUDIO  # force a transition each time
+            np.handle_track_state_change(
+                Message("ovos.common_play.track.state", {"state": int(st)}))
+        # queued/disambiguation never change the player state
+        np._player.set_player_state.assert_not_called()
+
+    def test_handle_track_state_change_playing_sets_player_playing(self):
+        """Every PLAYING_* track state (incl. AUDIOSERVICE and MPRIS) marks the
+        player PLAYING — a paused track stays PLAYING_*, pause is a PlayerState."""
+        from ovos_utils.ocp import PlayerState
+        for st in (TrackState.PLAYING_AUDIO, TrackState.PLAYING_VIDEO,
+                   TrackState.PLAYING_WEBVIEW, TrackState.PLAYING_SKILL,
+                   TrackState.PLAYING_AUDIOSERVICE, TrackState.PLAYING_MPRIS):
+            np, _ = self._make_now_playing()
+            np._player = MagicMock()
+            np.status = TrackState.DISAMBIGUATION
+            np.handle_track_state_change(
+                Message("ovos.common_play.track.state", {"state": int(st)}))
+            np._player.set_player_state.assert_called_once_with(PlayerState.PLAYING)
+
     def test_handle_track_state_change_raises_on_bad_type(self):
         np, _ = self._make_now_playing()
         msg = Message("ovos.common_play.track.state", {"state": "playing"})

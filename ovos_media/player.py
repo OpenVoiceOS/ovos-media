@@ -286,20 +286,21 @@ class NowPlaying(MediaEntry):
         self.status = state
 
         if state in (TrackState.PLAYING_AUDIO, TrackState.PLAYING_VIDEO,
-                     TrackState.PLAYING_WEBVIEW, TrackState.PLAYING_SKILL):
+                     TrackState.PLAYING_WEBVIEW, TrackState.PLAYING_SKILL,
+                     TrackState.PLAYING_AUDIOSERVICE, TrackState.PLAYING_MPRIS):
             # backend confirmed playback started — mark player as PLAYING
             if hasattr(self, '_player') and self._player is not None:
                 self._player.set_player_state(PlayerState.PLAYING)
-        elif state == TrackState.PAUSED_AUDIO:
-            if hasattr(self, '_player') and self._player is not None:
-                self._player.set_player_state(PlayerState.PAUSED)
         elif state in (TrackState.QUEUED_SKILL, TrackState.QUEUED_VIDEO,
-                       TrackState.QUEUED_AUDIO):
+                       TrackState.QUEUED_AUDIO, TrackState.QUEUED_AUDIOSERVICE,
+                       TrackState.QUEUED_WEBVIEW):
             # audio service is handling playback and this is queued in playlist
             pass
         elif state == TrackState.DISAMBIGUATION:
             # alternative results list — no playback state change
             pass
+        # NOTE: pause is a PlayerState/MediaState concern, never a TrackState —
+        # there is no TrackState.PAUSED_* member, so no pause branch belongs here.
 
     def handle_media_state_change(self, message):
         """
