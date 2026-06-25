@@ -7,6 +7,7 @@
 **Merged pull requests:**
 
 - docs: complete + verify ovos-media documentation [\#52](https://github.com/OpenVoiceOS/ovos-media/pull/52) ([JarbasAl](https://github.com/JarbasAl))
+- test: e2e daemon lifecycle across all backend types + run e2e in CI [\#51](https://github.com/OpenVoiceOS/ovos-media/pull/51) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.2.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.2.0a1) (2026-06-25)
 
