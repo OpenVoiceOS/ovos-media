@@ -11,3 +11,9 @@ jobs:
     with:
       test_path: "test/end2end/"
       install_extras: "test"
+      # The end2end harness lives in ovoscope's [media] extra, first shipped in
+      # the 0.21.0a1 prerelease. The reusable workflow's own install step does a
+      # bare `pip install ovoscope` (latest stable, no media extra), so install
+      # the media harness up-front. Pinning the prerelease as the floor lets pip
+      # resolve it without --pre.
+      pre_install_pip: "ovoscope[media]>=0.21.0a1"

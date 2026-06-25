@@ -36,7 +36,7 @@ extras = [
 test = [
     "pytest",
     "pytest-cov",
-    "ovoscope",
+    "ovoscope[media]>=0.21.0a1",
 ]
 
 [project.scripts]
