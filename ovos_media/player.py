@@ -424,6 +424,8 @@ class OCPMediaPlayer:
         self.bus.on("ovos.common_play.like", self.handle_like)
         self.bus.on("ovos.common_play.unlike", self.handle_unlike)
         self.bus.on("ovos.common_play.status", self.handle_status)
+        # external MPRIS player → reflect as OCP now_playing (no local backend)
+        self.bus.on("ovos.common_play.mpris.now_playing", self.handle_mpris_now_playing)
         self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))  # report to ovos-core
         self.handle_status(Message("ovos.common_play.status"))  # report to ovos-core
 
@@ -663,6 +665,61 @@ class OCPMediaPlayer:
                 {"Metadata": self.now_playing.mpris_metadata}
             )
         self.handle_status(Message("ovos.common_play.status"))  # report full status to ovos-core
+
+    def set_external_now_playing(self, data: dict):
+        """Reflect an **external** MPRIS player's track as OCP now_playing.
+
+        This is the playback-less path: it updates now_playing + player/media
+        state to mirror a player OCP does not itself drive (Spotify, a browser,
+        VLC, …), so the GUI / voice queries see what's actually playing, WITHOUT
+        invoking any OCP backend (``PlaybackType.MPRIS`` is external).
+
+        Used both in-process by :class:`~ovos_media.mpris.OcpMprisExporter` and,
+        out-of-process, by the standalone ``ovos-media-plugin-mpris`` watcher via
+        the ``ovos.common_play.mpris.now_playing`` bus message.
+
+        Args:
+            data: external track metadata. Recognised keys: ``external_player``
+                (or ``skill_id``) — the MPRIS bus name; ``title``/``artist``/
+                ``image``/``length`` (ms); ``state`` — ``"Playing"`` (default),
+                ``"Paused"`` or ``"Stopped"``; optional ``skill_icon``.
+        """
+        player_id = data.get("external_player") or data.get("skill_id")
+        if not player_id:
+            LOG.warning("external MPRIS now_playing with no player id; ignoring")
+            return
+        state = data.get("state") or "Playing"
+
+        self.active_skill = player_id
+        self.playback_type = PlaybackType.MPRIS
+
+        data = dict(data)
+        data.setdefault("skill_id", player_id)
+        data["playback"] = PlaybackType.MPRIS
+        data["status"] = TrackState.PLAYING_MPRIS
+        data["bg_image"] = (data.get("bg_image") or data.get("image")
+                            or data.get("thumbnail"))
+
+        # update metadata first so the GUI shows the right track for every state
+        self.set_now_playing(data)
+        if state == "Paused":
+            self.set_player_state(PlayerState.PAUSED)
+            self.set_media_state(MediaState.BUFFERED_MEDIA)
+        elif state == "Stopped":
+            self.set_player_state(PlayerState.STOPPED)
+            self.set_media_state(MediaState.END_OF_MEDIA)
+        else:  # Playing
+            self.set_player_state(PlayerState.PLAYING)
+            self.set_media_state(MediaState.BUFFERED_MEDIA)
+        self._update_gui()
+
+    def handle_mpris_now_playing(self, message: Message):
+        """Bus entry point for :meth:`set_external_now_playing`.
+
+        Lets the out-of-process ``ovos-media-plugin-mpris`` watcher reflect an
+        external player into OCP without a direct object reference.
+        """
+        self.set_external_now_playing(dict(message.data))
 
     def _resolve_preferred_service(self, media_service):
         """Resolve preferred backend from config and return the matching service instance.

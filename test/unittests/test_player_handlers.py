@@ -32,6 +32,7 @@ from ovos_utils.ocp import (
     MediaState,
     LoopState,
     PlaybackType,
+    TrackState,
     MediaEntry,
     Playlist,
 )
@@ -763,6 +764,63 @@ class TestHandlePlayRequest(unittest.TestCase):
         msg = Message("ovos.common_play.play", {"media": media})
         p.handle_play_request(msg)
         p.play_media.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# handle_mpris_now_playing / set_external_now_playing
+# ---------------------------------------------------------------------------
+
+class TestExternalMprisNowPlaying(unittest.TestCase):
+    """An external MPRIS player is reflected as OCP now_playing with NO local
+    backend playback (PlaybackType.MPRIS)."""
+
+    def _player(self):
+        p = _make_player(PlaybackType.AUDIO)
+        p.set_now_playing = MagicMock()
+        p._update_gui = MagicMock()
+        p.handle_status = MagicMock()
+        return p
+
+    def test_playing_reflects_and_sets_playing(self):
+        p = self._player()
+        p.handle_mpris_now_playing(Message(
+            "ovos.common_play.mpris.now_playing",
+            {"external_player": "org.mpris.MediaPlayer2.spotify",
+             "title": "Song", "artist": "Artist",
+             "uri": "spotify:track:1", "state": "Playing"}))
+        self.assertEqual(p.playback_type, PlaybackType.MPRIS)
+        self.assertEqual(p.active_skill, "org.mpris.MediaPlayer2.spotify")
+        self.assertEqual(p.state, PlayerState.PLAYING)
+        # metadata reflected as an MPRIS track
+        data = p.set_now_playing.call_args[0][0]
+        self.assertEqual(data["playback"], PlaybackType.MPRIS)
+        self.assertEqual(data["status"], TrackState.PLAYING_MPRIS)
+        self.assertEqual(data["skill_id"], "org.mpris.MediaPlayer2.spotify")
+        # NO local backend invoked
+        p.audio_service.play.assert_not_called()
+        p.video_service.play.assert_not_called()
+
+    def test_paused_sets_paused(self):
+        p = self._player()
+        p.handle_mpris_now_playing(Message("x", {
+            "external_player": "vlc", "state": "Paused"}))
+        self.assertEqual(p.state, PlayerState.PAUSED)
+        p.audio_service.play.assert_not_called()
+
+    def test_stopped_sets_stopped(self):
+        p = self._player()
+        p.handle_mpris_now_playing(Message("x", {
+            "external_player": "vlc", "state": "Stopped"}))
+        self.assertEqual(p.state, PlayerState.STOPPED)
+
+    def test_no_player_id_is_ignored(self):
+        p = self._player()
+        p.handle_mpris_now_playing(Message("x", {"title": "no id"}))
+        p.set_now_playing.assert_not_called()
 
 
 if __name__ == "__main__":
