@@ -43,10 +43,10 @@ Every arrow is a plugin boundary, so each piece can be replaced independently:
 
 | Concern | Plugin group | Examples |
 |---|---|---|
-| **Find media** (catalogs/search) | `opm.media.provider` | youtube, bandcamp, soundcloud, tunein, somafm, … |
-| **Play audio** | `opm.media.audio` | vlc, mplayer, simple, spotify, chromecast |
-| **Play video** | `opm.media.video` | vlc, mpv, chromecast |
-| **Render web/webview** | `opm.media.web` | browser, gui |
+| **Find media** (catalogs/search) | `opm.media.provider` | youtube, bandcamp, soundcloud, tunein, somafm, pyradios |
+| **Play audio** | `opm.media.audio` | vlc, mplayer, simple (cli), ffplay, spotify, chromecast, mass, mpris |
+| **Play video** | `opm.media.video` | vlc, mplayer, chromecast |
+| **Render web/webview** | `opm.media.web` | (rendered via the GUI WebView) |
 | **Resolve a stream URI** | `opm.ocp.extractor` | youtube, m3u, rss, files |
 
 Search results flow as [`mediavocab.Release`](https://github.com/TigreGotico/mediavocab)
@@ -101,9 +101,8 @@ All configuration lives under the `"media"` key in `mycroft.conf`. The essential
 
     // order of preference per playback type; the first backend that can
     // handle the URI wins. Users may also name a backend in the utterance.
-    "preferred_audio_services": ["gui", "vlc", "mplayer", "cli"],
-    "preferred_video_services": ["gui", "vlc"],
-    "preferred_web_services":   ["gui", "browser"],
+    "preferred_audio_services": ["vlc", "mplayer", "cli"],
+    "preferred_video_services": ["vlc"],
 
     // declare the backends available to each playback type.
     // "module" is the plugin's entry-point name; "aliases" are spoken names.
@@ -113,9 +112,6 @@ All configuration lives under the `"media"` key in `mycroft.conf`. The essential
     },
     "video_players": {
       "vlc": { "module": "ovos-media-video-plugin-vlc", "aliases": ["VLC"], "active": true }
-    },
-    "web_players": {
-      "browser": { "module": "ovos-media-web-plugin-browser", "aliases": ["Browser"], "active": true }
     }
   }
 }
@@ -142,10 +138,10 @@ Start at **[docs/index.md](docs/index.md)**.
 
 ## Status
 
-`ovos-media` is the upcoming default playback stack and is opt-in today. The
-`MediaProvider` plugin model that supplies catalogs is replacing the older OCP
-*skills* approach — see [docs/media-providers.md](docs/media-providers.md) for the
-current migration state.
+`ovos-media` is the OCP-native playback stack and is opt-in today (enable it by
+turning off the legacy audio service). Catalogs are supplied by
+[`MediaProvider` plugins](docs/media-providers.md) (`opm.media.provider`); the
+legacy OCP *search skills* still work during the transition.
 
 ---
 

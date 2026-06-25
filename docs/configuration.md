@@ -35,15 +35,13 @@ Minimal example:
 }
 ```
 
-`MediaService.__init__` reads this section via `Configuration().get("media", {})` — `ovos_media/service.py:47`.
-
-`OCPMediaPlayer.__init__` stores it as `self.ocp_config` — `ovos_media/player.py:345`.
+`MediaService.__init__` reads this section via `Configuration().get("media", {})`, and `OCPMediaPlayer.__init__` stores it as `self.ocp_config`.
 
 ---
 
 ## Backend Selection
 
-`OCPMediaPlayer._resolve_preferred_service` — `ovos_media/player.py:650`
+`OCPMediaPlayer._resolve_preferred_service`
 
 When `ovos-media` is about to play a track it resolves a preferred backend by
 walking the ordered list of names in the relevant config key and returning the
@@ -53,8 +51,8 @@ match is found, any available backend is used.
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `preferred_audio_services` | list of strings | `[]` | Ordered preference list for audio backends (e.g. `["vlc", "mpv", "simple"]`). Also used as a generic fallback when no type-specific list is set. |
-| `preferred_video_services` | list of strings | `[]` | Ordered preference list for video backends. Read by `VideoService.get_preferred_players` — `ovos_media/media_backends/video.py:21`. |
-| `preferred_web_services` | list of strings | `[]` | Ordered preference list for web/webview backends. Read by `WebService.get_preferred_players` — `ovos_media/media_backends/web.py:21`. |
+| `preferred_video_services` | list of strings | `[]` | Ordered preference list for video backends. |
+| `preferred_web_services` | list of strings | `[]` | Ordered preference list for web/webview backends. |
 
 Backend plugin names are the entry-point keys registered under `opm.media.audio`,
 `opm.media.video`, or `opm.media.web` in each plugin's `pyproject.toml`.
@@ -79,18 +77,24 @@ loads-time-disables a backend without removing it.
     "video_players": {
       "vlc": { "module": "ovos-media-video-plugin-vlc", "aliases": ["VLC"], "active": true }
     },
-    "web_players": {
-      "browser": { "module": "ovos-media-web-plugin-browser", "aliases": ["Browser"], "active": true }
-    }
+    "web_players": {}
   }
 }
 ```
 
+Web backends register under `opm.media.web`; add their declarations to
+`web_players` once one is installed.
+
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `audio_players` | dict | `{}` | Audio backends to load, keyed by local name. |
-| `video_players` | dict | `{}` | Video backends to load. |
-| `web_players` | dict | `{}` | Web/webview backends to load. |
+| `audio_players` | dict | `{}` | Audio backends to load (`opm.media.audio`), keyed by local name. |
+| `video_players` | dict | `{}` | Video backends to load (`opm.media.video`). |
+| `web_players` | dict | `{}` | Web/webview backends to load (`opm.media.web`). |
+
+The `module` value is the plugin's **entry-point name** (e.g.
+`ovos-media-audio-plugin-vlc`), which often differs from its pip package name
+(`ovos-media-plugin-vlc`). See [backends.md](backends.md) for each plugin's
+entry-point name.
 
 Any additional keys inside a player entry are passed through to that backend
 plugin's own `config` dict. See [backends.md](backends.md) for the backend API.
@@ -101,16 +105,14 @@ plugin's own `config` dict. See [backends.md](backends.md) for the backend API.
 
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `autoplay` | bool | `true` | Automatically start playback when search results arrive. Checked at `ovos_media/player.py:1074`. |
-| `merge_search` | bool | `true` | Merge incoming search results into the existing playlist rather than replacing it. Checked at `ovos_media/player.py:565`. |
-| `force_audioservice` | bool | `false` | Force audio-only playback even when a GUI is connected; bypasses video backend selection. Checked at `ovos_media/player.py:690`. |
-| `playback_mode` | string | `""` | Set to `"force_audio"` (`PlaybackMode.FORCE_AUDIO`) to always use audio backends regardless of GUI availability. Checked at `ovos_media/player.py:691`. |
+| `autoplay` | bool | `true` | Automatically advance to the next track when the current one ends (and on invalid media). |
+| `merge_search` | bool | `true` | Merge incoming search results into the playback queue alongside the user playlist rather than ignoring them. |
+| `force_audioservice` | bool | `false` | Force audio-only playback even when a GUI is connected; bypasses video/web backend selection. |
+| `playback_mode` | enum | unset | Set to `PlaybackMode.FORCE_AUDIO` to always use audio backends regardless of GUI availability. |
 
 ---
 
 ## MPRIS Integration
-
-`OcpMprisExporter` — `ovos_media/mpris.py:57`
 
 MPRIS (Media Player Remote Interfacing Specification) is the standard D-Bus
 protocol used by desktop environments to control media players. When enabled,
@@ -120,12 +122,11 @@ media widget, and similar tools.
 
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `enable_mpris` | bool | `false` | Start the D-Bus MPRIS exporter. When `false`, `self.mpris` is set to `None` and no D-Bus registration occurs. Checked at `ovos_media/player.py:384`. |
-| `manage_external_players` | bool | `false` | Role B behaviour: poll for external MPRIS players and pause OCP when another player becomes active; also proxies skip/pause/shuffle/repeat to the external player. Read by `OcpMprisExporter.__init__` — `ovos_media/mpris.py:99`. |
-| `ignored_players` | list of strings | `["org.mpris.MediaPlayer2.OCP", "org.mpris.MediaPlayer2.plasma-browser-integration"]` | D-Bus player names excluded from external player scanning. Read by `OcpMprisExporter.__init__` — `ovos_media/mpris.py:100`. |
-| `mpris_poll_interval` | int (seconds) | `1` | Interval between external player scans. Only relevant when `manage_external_players` is `true`. Read inside `OcpMprisExporter.event_loop` — `ovos_media/mpris.py:633`. |
-
-`OcpMprisExporter.event_loop` — `ovos_media/mpris.py:575`
+| `enable_mpris` | bool | `false` | Start the D-Bus MPRIS exporter. When `false`, `self.mpris` is `None` and no D-Bus registration occurs. |
+| `manage_external_players` | bool | `false` | Role B behaviour: poll for external MPRIS players and pause OCP when another player becomes active; also proxies skip/pause/shuffle/repeat to the external player. |
+| `ignored_players` | list of strings | `["org.mpris.MediaPlayer2.OCP", "org.mpris.MediaPlayer2.plasma-browser-integration"]` | D-Bus player names excluded from external player scanning. |
+| `mpris_poll_interval` | int (seconds) | `1` | Interval between external player scans. Only relevant when `manage_external_players` is `true`. |
+| `dbus_type` | string | `"session"` | `"session"` or `"system"` D-Bus to connect to. |
 
 The event loop runs two passes per poll interval when `manage_external_players`
 is `true`: one `scan_players` call followed by a `query_player` pass over all
@@ -139,9 +140,7 @@ control-signal checks.
 
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `native_sources` | list of strings | `["debug_cli", "audio"]` | Message sources treated as trusted native callers. Requests from these sources bypass skill-search validation. |
-
-`MediaService.__init__` — `ovos_media/service.py:48`
+| `native_sources` | list of strings | `["debug_cli", "audio"]` | Message sources treated as trusted native callers. Requests from these sources bypass message-context validation in the backend services. Read by `MediaService.__init__`. |
 
 ---
 
@@ -159,6 +158,7 @@ control-signal checks.
     "enable_mpris": true,
     "manage_external_players": true,
     "mpris_poll_interval": 2,
+    "dbus_type": "session",
     "ignored_players": [
       "org.mpris.MediaPlayer2.OCP",
       "org.mpris.MediaPlayer2.plasma-browser-integration",

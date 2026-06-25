@@ -73,16 +73,21 @@ readiness via the `ProcessStatus` machinery (`ovos_media/__main__.py`).
 ### Running it embedded
 
 ```python
+from ovos_utils import wait_for_exit_signal
 from ovos_media.service import MediaService
 
-svc = MediaService()
-svc.start()   # starts the daemon thread
-svc.run()     # marks ProcessStatus READY; returns
+svc = MediaService()   # connects to the bus, builds OCPMediaPlayer
+svc.daemon = True
+svc.start()            # starts the daemon thread; run() marks ProcessStatus READY
+wait_for_exit_signal()
+svc.shutdown()
 ```
 
 `MediaService.__init__` reads the `media` section of `mycroft.conf` / `ovos.conf`,
-creates an `OCPMediaPlayer`, and wires up the bus handlers. Calling `run()` emits
-the `READY` status signal.
+opens (or reuses) a `MessageBusClient`, creates an `OCPMediaPlayer`, installs the
+`LegacyAudioServiceCompat` shim, and wires up the bus handlers. The thread's
+`run()` emits the `READY` status signal. This is exactly what the `ovos-media`
+console entry point (`ovos_media/__main__.py`) does.
 
 ---
 
@@ -113,7 +118,7 @@ bus.emit(Message("ovos.common_play.ping"))
 # expect an "ovos.common_play.pong" reply
 ```
 
-`MediaService.handle_ping` — `ovos_media/service.py`.
+(handled by `MediaService.handle_ping`).
 
 ---
 
@@ -137,7 +142,7 @@ bus.emit(Message("ovos.common_play.ping"))
 | `ovos-bus-client` | WebSocket MessageBus client |
 | `ovos-config` | Configuration loader (`mycroft.conf` / `ovos.conf`) |
 | `ovos-plugin-manager` | Backend and media-provider plugin discovery via entry points |
-| `ovos-workshop` | Base application classes |
+| `ovos-workshop` | `OVOSCommonPlaybackSkill` base used by the built-in liked-songs catalog, plus OCP decorators |
 | `ovos-gui-api-client` | GUI interface (`GUIInterface`) for the media player screen |
 | `json-database` | Persistent liked-songs storage (`JsonStorageXDG`) |
 | `dbus-next` | Async D-Bus implementation used by the MPRIS exporter |

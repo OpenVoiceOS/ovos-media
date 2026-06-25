@@ -35,9 +35,9 @@ Every arrow is a plugin boundary, so each concern can be replaced independently:
 | Concern | Plugin group | Examples |
 |---|---|---|
 | **Find media** (catalog/search) | `opm.media.provider` | youtube, bandcamp, soundcloud, tunein, somafm, pyradios |
-| **Play audio** | `opm.media.audio` | vlc, mplayer, simple, spotify, chromecast |
-| **Play video** | `opm.media.video` | vlc, mpv, chromecast |
-| **Render web/webview** | `opm.media.web` | browser, gui |
+| **Play audio** | `opm.media.audio` | vlc, mplayer, simple (cli), ffplay, spotify, chromecast, mass, mpris |
+| **Play video** | `opm.media.video` | vlc, mplayer, chromecast |
+| **Render web/webview** | `opm.media.web` | rendered via the GUI WebView |
 | **Resolve a stream URI** | `opm.ocp.extractor` | youtube, m3u, rss, files |
 
 Search results flow as [`mediavocab.Release`](https://github.com/TigreGotico/mediavocab)
