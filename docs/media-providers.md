@@ -34,8 +34,11 @@ downstream, and its per-instance config key under `media_providers`.
 `MediaProvider` has a **single abstract method**:
 
 ```python
-def search(self, signals: Signals, lang: str = "en-us",
-           **context) -> list[Release]:
+def search(self, signals: Signals, lang: str = "en-us", *,
+           supported_playback_types: set[str] | None = None,
+           blocked_genres: set[str] | None = None,
+           region: str | None = None,
+           session_id: str | None = None) -> list[Release]:
     ...
 ```
 
@@ -52,7 +55,7 @@ class MediaProvider(metaclass=ABCMeta):
         self.config = config or {}
 
     @abstractmethod
-    def search(self, signals, lang="en-us", **context) -> list[Release]: ...
+    def search(self, signals, lang="en-us", *, supported_playback_types=None, blocked_genres=None, region=None, session_id=None) -> list[Release]: ...
 
     def shutdown(self) -> None:     # optional — release resources
         ...
@@ -65,9 +68,9 @@ class MediaProvider(metaclass=ABCMeta):
   `signals.artist` (artist, or director for video). `signals.medium` carries the
   classified `MediaType` and `signals.content_genres` the requested genres.
 - **`lang`** is the BCP-47 language tag for the request (default `"en-us"`).
-- **`**context`** carries whatever the pipeline knows about the request
-  environment. A provider reads the kwargs it cares about and ignores the rest.
-  Recognised keys include:
+- the remaining **keyword-only arguments** carry what the pipeline knows about
+  the request environment (explicitly named, not `**kwargs`); a provider reads the
+  ones it cares about and ignores the rest:
 
   | Context kwarg | Meaning |
   |---|---|
@@ -126,9 +129,9 @@ skipping any whose config sets `"enabled": false`.
 At query time the pipeline:
 
 1. Classifies the utterance into a `Signals` (media type, title, artist, genres).
-2. Builds the `**context` (supported playback types, blocked genres, region,
+2. Builds the context kwargs (supported playback types, blocked genres, region,
    session) from the requesting session's state.
-3. Calls `search(signals, lang, **context)` on each loaded provider
+3. Calls `search(signals, lang, *, ...)` on each loaded provider
    **concurrently** (thread pool). A provider that cannot serve the request
    returns `[]`; a misbehaving provider that raises is caught and treated as `[]`
    so it cannot abort a multi-provider dispatch.
@@ -163,8 +166,11 @@ class BandcampMediaProvider(MediaProvider):
         super().__init__(config)
         self.max_pages = self.config.get("max_pages", 1)
 
-    def search(self, signals: Signals, lang: str = "en-us",
-               **context) -> List[Release]:
+    def search(self, signals: Signals, lang: str = "en-us", *,
+               supported_playback_types: set[str] | None = None,
+               blocked_genres: set[str] | None = None,
+               region: str | None = None,
+               session_id: str | None = None) -> List[Release]:
         title = (signals.title or "").strip()
         artist = (signals.artist or "").strip()
         query = " ".join(p for p in (artist, title) if p).strip()
@@ -252,7 +258,7 @@ playback halves are unchanged — those live in the OCP pipeline and the
 | Old (OCP search skill) | New (MediaProvider) |
 |---|---|
 | Subclass `OVOSCommonPlaybackSkill` | Subclass `MediaProvider` |
-| `@ocp_search` method returning `MediaEntry`/`Playlist` | `search(signals, lang, **context)` returning `list[Release]` |
+| `@ocp_search` method returning `MediaEntry`/`Playlist` | `search(signals, lang, *, ...)` returning `list[Release]` |
 | Registered as a skill; replies to `ovos.common_play.query` over the bus | Registered under `opm.media.provider`; called in-process |
 | Routing implied by the skill's vocab and per-result `media_type` | The provider decides per call and returns `[]` when it can't serve |
 | Match score `0`–`100` on each `MediaEntry` | `match_confidence` `0.0`–`1.0` on each `Release` |

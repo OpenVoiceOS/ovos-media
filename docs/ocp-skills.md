@@ -1,10 +1,20 @@
-# OCP Skills and the Media Pipeline (legacy)
+# OCP Skills and the Media Pipeline
 
-> **Superseded.** OCP *search skills* (`OVOSCommonPlaybackSkill` + `@ocp_search`)
-> are the legacy catalog/search approach. New catalog integrations should be
-> written as [MediaProvider plugins](media-providers.md), which the OCP pipeline
-> loads in-process instead of broadcasting bus queries to skills. This page
-> documents the legacy flow, which still works during the transition.
+There are **two kinds** of OCP skill, and only one of them is deprecated:
+
+| Kind | Base class | Status |
+|------|-----------|--------|
+| **Search skill** — returns catalog results for *"play X"* | `OVOSCommonPlaybackSkill` + `@ocp_search` | ⛔ **deprecated** → write a [MediaProvider](media-providers.md) instead |
+| **Game / interactive skill** — *is* the experience (a game, quiz, interactive story) | `OVOSGameSkill` / `ConversationalGameSkill` | ✅ **fully supported** — stays a skill; see [Game & interactive skills](#game--interactive-skills) |
+
+> **Why the split?** A *search* skill is a catalog: it just answers "where can I
+> find this?", which is exactly what an in-process [MediaProvider](media-providers.md)
+> does better (no bus round-trip, typed `Release` results). A *game* skill, by
+> contrast, owns an interactive session — there is no catalog to extract, so it
+> remains a skill. MediaProviders do **not** replace games.
+
+The rest of this page documents the legacy **search-skill** flow (still functional
+during the transition), then the **game-skill** path which is current.
 
 ## What is OCP?
 
@@ -96,6 +106,51 @@ class MyMusicSkill(OVOSCommonPlaybackSkill):
 ```
 
 OCP skills are regular OVOS skills: they announce themselves on the bus with `ovos.common_play.announce` when they load, and the OCP pipeline tracks the available skills from those announcements.
+
+## Game & interactive skills
+
+**These are not deprecated.** A game skill *is* the media experience rather than a
+catalog of it, so there is nothing for a MediaProvider to replace. Game skills
+subclass `OVOSGameSkill` (or `ConversationalGameSkill` for turn-by-turn
+voice games) from `ovos_workshop.skills.game_skill`, and OCP routes the session
+to them via `PlaybackType.SKILL` — the daemon hands control to the skill instead
+of streaming a URI through an audio/video backend.
+
+`ConversationalGameSkill` gives a game a managed lifecycle (start/stop/pause/
+resume, idle timeout) plus **intent layers** — sets of intents you enable/disable
+as the game advances, so the same utterance means different things in different
+game states.
+
+```python
+from ovos_workshop.skills.game_skill import ConversationalGameSkill
+from ovos_workshop.decorators import layer_intent, enables_layer
+
+class MyGameSkill(ConversationalGameSkill):
+    def __init__(self, *args, **kwargs):
+        super().__init__(skill_voc_filename="MyGameKeyword", *args, **kwargs)
+
+    def initialize(self):
+        self.intent_layers.disable()      # start with game intents off
+
+    def on_play_game(self):
+        """Called when OCP launches the game."""
+        self.speak_dialog("intro")
+        self.enable_intent_layer("main")
+
+    def on_stop_game(self):
+        """Clean up when the session ends."""
+
+    @layer_intent(intent_name="guess.intent", layer_name="main")
+    def handle_guess(self, message):
+        ...
+```
+
+The reference implementation is
+[`ovos-skill-moon-game`](https://github.com/OpenVoiceOS/ovos-skill-moon-game) — an
+Apollo-11 escape-room game built on `ConversationalGameSkill` with intent layers,
+and the canonical end-to-end test that the game-skill integration still works on
+the modern stack. Game skills register under the normal `ovos.plugin.skill`
+entry-point group, not any `opm.media.*` group.
 
 ## Backend selection
 
