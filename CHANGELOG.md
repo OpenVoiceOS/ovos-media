@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.3a1) (2026-06-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.2a4...0.0.3a1)
+
+**Merged pull requests:**
+
+- fix: remove reference to non-existent TrackState.PAUSED\_AUDIO [\#45](https://github.com/OpenVoiceOS/ovos-media/pull/45) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.0.2a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a4) (2026-06-22)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.2a3...0.0.2a4)
