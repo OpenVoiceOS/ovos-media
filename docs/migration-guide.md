@@ -174,6 +174,8 @@ callers keep working.
 | Backend discovery | `opm.audio.query` | `opm.audio.query` (unchanged) |
 | Full status snapshot | — | `ovos.common_play.status` |
 | Like / unlike track | — | `ovos.common_play.like` / `ovos.common_play.unlike` |
+| Reflect external MPRIS player | — | `ovos.common_play.mpris.now_playing` (see [mpris.md](mpris.md)) |
+| Supported stream extractors | — | `ovos.common_play.SEI.get` |
 
 See [architecture.md](architecture.md) for the complete handler and emitted-event
 tables.

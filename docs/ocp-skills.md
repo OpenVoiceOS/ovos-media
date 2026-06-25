@@ -12,7 +12,7 @@ OCP (OpenVoiceOS Common Play) is the media pipeline that routes voice utterances
 
 1. **OCP pipeline plugin** (`ovos-ocp-pipeline-plugin`) — an intent pipeline stage that classifies utterances as media queries, determines the `MediaType`, and broadcasts search requests to registered OCP skills.
 2. **OCP skills** — domain-specific skills (YouTube, Spotify, local music, radio, etc.) that respond to search requests by returning lists of `MediaEntry` objects ranked by confidence.
-3. **`ovos-media`** — receives the winning `MediaEntry`, resolves the appropriate audio/video/web backend, and drives playback. The central class is `OCPMediaPlayer` — `ovos_media/player.py:338`.
+3. **`ovos-media`** — receives the winning `MediaEntry`, resolves the appropriate audio/video/web backend, and drives playback. The central class is `OCPMediaPlayer` (`ovos_media/player.py`).
 
 ## The OCP query flow
 
@@ -32,7 +32,7 @@ User says "play jazz"
   -> Playback begins; MPRIS metadata updated if enabled
 ```
 
-`OCPMediaPlayer.set_now_playing` — `ovos_media/player.py:608` — accepts a `MediaEntry`, a `dict` representation of one, or a `Playlist`. It updates `self.now_playing`, adds the entry to the internal playlist, and notifies any connected MPRIS client by emitting a property-changed signal with the new `Metadata`.
+`OCPMediaPlayer.set_now_playing` accepts a `MediaEntry`, a `dict` representation of one, or a `Playlist`. It updates `self.now_playing`, adds the entry to the internal playlist, and notifies any connected MPRIS client by emitting a property-changed signal with the new `Metadata`.
 
 ## MediaEntry structure
 
@@ -53,11 +53,11 @@ User says "play jazz"
 
 ## NowPlaying
 
-`NowPlaying` — `ovos_media/player.py:146` — is a `MediaEntry` subclass that additionally subscribes to bus events to track live playback state. It is instantiated in `OCPMediaPlayer.bind` — `ovos_media/player.py:376` — and stored as `OCPMediaPlayer.now_playing` — `ovos_media/player.py:355`.
+`NowPlaying` is a `MediaEntry` subclass that additionally subscribes to bus events to track live playback state. It is instantiated in `OCPMediaPlayer.__init__` and stored as `OCPMediaPlayer.now_playing`.
 
-The `as_dict` property — `NowPlaying.as_dict` — `ovos_media/player.py:167` — returns a plain `dict` with the current track's metadata fields (uri, title, artist, image, playback type, etc.). It is a property, not a method; access it as `player.now_playing.as_dict` without calling it.
+The `as_dict` property returns a plain `dict` with the current track's metadata fields (uri, title, artist, image, playback type, etc.). It is a property, not a method; access it as `player.now_playing.as_dict` without calling it.
 
-`NowPlaying` tracks the seek position via the `ovos.common_play.playback_time` bus event — `NowPlaying.__init__` — `ovos_media/player.py:158`. This position is exposed through MPRIS as `Position` in microseconds — see `docs/mpris.md`.
+`NowPlaying` tracks the seek position via the `ovos.common_play.playback_time` bus event. This position is exposed through MPRIS as `Position` in microseconds — see [mpris.md](mpris.md).
 
 ## Writing an OCP skill
 
@@ -65,24 +65,25 @@ The `as_dict` property — `NowPlaying.as_dict` — `ovos_media/player.py:167` �
 > is loaded in-process and returns typed `mediavocab.Release` objects. The skill
 > approach below is retained for compatibility.
 
-OCP skills subclass `OVOSCommonPlaybackSkill` from `ovos-workshop` and implement a `search_ocp` method that returns a list of `MediaEntry` objects. Full documentation and the base class API are in the `ovos-workshop` package.
+OCP skills subclass `OVOSCommonPlaybackSkill` from `ovos-workshop` and decorate a search method with `@ocp_search`. The method (any name) returns or yields `MediaEntry` objects / result dicts. Full documentation and the base class API are in the `ovos-workshop` package.
 
 A minimal skeleton:
 
 ```python
 from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill, MediaType, PlaybackType
+from ovos_workshop.decorators.ocp import ocp_search
 from ovos_utils.ocp import MediaEntry
 
 
 class MyMusicSkill(OVOSCommonPlaybackSkill):
-    def search_ocp(self, phrase: str, media_type: MediaType):
+    @ocp_search()
+    def search(self, phrase: str, media_type: MediaType):
         if media_type not in (MediaType.MUSIC, MediaType.GENERIC):
-            return []
+            return
 
         # Query your source here
-        results = []
         for item in self._my_search(phrase):
-            results.append(MediaEntry(
+            yield MediaEntry(
                 uri=item["stream_url"],
                 title=item["title"],
                 artist=item["artist"],
@@ -91,15 +92,14 @@ class MyMusicSkill(OVOSCommonPlaybackSkill):
                 playback=PlaybackType.AUDIO,
                 skill_id=self.skill_id,
                 match_confidence=item["score"],
-            ))
-        return results
+            )
 ```
 
 OCP skills are regular OVOS skills: they announce themselves on the bus with `ovos.common_play.announce` when they load, and the OCP pipeline tracks the available skills from those announcements.
 
 ## Backend selection
 
-After `set_now_playing`, `OCPMediaPlayer` calls `_resolve_preferred_service` — `ovos_media/player.py:650` — which reads `preferred_audio_services`, `preferred_video_services`, or `preferred_web_services` from the `"media"` configuration section and returns the first matching loaded backend. If no preference is configured, the first available backend is used. The three service wrappers are `AudioService`, `VideoService`, and `WebService`, assigned in `OCPMediaPlayer.bind` — `ovos_media/player.py:378-380`.
+When it plays, `OCPMediaPlayer` calls `_resolve_preferred_service`, which reads `preferred_audio_services`, `preferred_video_services`, or `preferred_web_services` from the `"media"` configuration section and returns the first matching loaded backend. If no preference is configured, the first available backend is used. The three service wrappers are `AudioService`, `VideoService`, and `WebService`, created in `OCPMediaPlayer.__init__`.
 
 ## Testing OCP skills with ovoscope
 
@@ -118,6 +118,10 @@ result = OCPTest(
 The test fires a `recognizer_loop:utterance` message on a `FakeBus`, waits for the pipeline to select a result, and asserts the returned `MediaEntry` fields match `expected_media`. Mock HTTP responses can be injected to avoid real network calls.
 
 For skills that are not exercised through the standard pipeline (for example, those using `PlaybackType.SKILL`), use `FakeBus` unit tests directly instead of `ovoscope`.
+
+To test a modern [MediaProvider](media-providers.md) instead of a skill, use
+ovoscope's `MediaProviderHarness` (see `ovoscope/docs/media-provider-testing.md`),
+which drives a provider's `search()` directly without the skill machinery.
 
 ## Configuration reference
 
