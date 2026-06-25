@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.2.0a1) (2026-06-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.1.0a1...0.2.0a1)
+
+**Merged pull requests:**
+
+- feat: stop OCP playback on external MPRIS takeover [\#49](https://github.com/OpenVoiceOS/ovos-media/pull/49) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.1.0a1) (2026-06-25)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.3a1...0.1.0a1)
