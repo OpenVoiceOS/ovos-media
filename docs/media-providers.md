@@ -5,11 +5,12 @@ returns candidate playables. Providers are the layer that turns *"play Viagra
 Boys"* into a ranked list of streamable tracks, and they are the catalog layer
 of the `ovos-media` stack.
 
-Providers supersede the older OCP *search skills* (`OVOSCommonPlaybackSkill` +
-`@ocp_search`). Instead of broadcasting `ovos.common_play.query` over the bus and
-waiting for skills to answer, the OCP pipeline loads providers **in-process**,
-gates each one by routing, and calls its `search()` method directly. See
-[Migration: from OCP search skills](#migration-from-ocp-search-skills) below.
+Providers are the in-process replacement for the older OCP *search skills*
+(`OVOSCommonPlaybackSkill` + `@ocp_search`). Instead of broadcasting
+`ovos.common_play.query` over the bus and waiting for skills to answer, the OCP
+pipeline loads providers **in-process** and calls each provider's `search()`
+method directly. See [Migration: from OCP search skills](#migration-from-ocp-search-skills)
+below.
 
 ---
 
@@ -23,51 +24,70 @@ Providers register under the `opm.media.provider` entry-point group and subclass
 bandcamp = "ovos_media_provider_bandcamp:BandcampMediaProvider"
 ```
 
-The entry-point key (`bandcamp`) is the provider's registry name and its
-per-instance config key under `media_providers`.
+The entry-point key (`bandcamp`) is the provider's registry name, its `skill_id`
+downstream, and its per-instance config key under `media_providers`.
 
 ---
 
-## The three-axis routing contract
+## The contract: one method
 
-Every provider declares three class-level sets that let the pipeline skip it
-*before* paying for a search. This mirrors mediavocab's canonical routing gate
-(`mediavocab.models.protocols.provider_matches`):
-
-| Class attribute | Type | Meaning | Empty set means |
-|---|---|---|---|
-| `media` | `set[mediavocab.MediaType]` | Which media types the provider serves (`MUSIC`, `RADIO`, `PODCAST`, `MOVIE`, …) | universal — matches any media type |
-| `playback_type` | `set[mediavocab.taxonomy.PlaybackType]` | Player surface: `AUDIO`, `VIDEO`, `PAGED`, `INTERACTIVE` | universal — matches any surface |
-| `genre_filter` | `set[str]` | Genre tags (`mediavocab.taxonomy.genre`) the provider is scoped to | no genre gate |
-
-> **Two `PlaybackType` enums.** The routing axis here is
-> `mediavocab.taxonomy.PlaybackType` (`AUDIO`/`VIDEO`/`PAGED`/`INTERACTIVE`),
-> which is distinct from `ovos_utils.ocp.PlaybackType` (the backend selector used
-> by the daemon when it picks an audio/video/web player). The two are bridged in
-> the pipeline and player — not inside a provider.
-
-The default `matches(signals)` implementation applies all three axes. Override it
-only if your provider needs routing logic the three sets cannot express.
-
----
-
-## The `search()` contract
+`MediaProvider` has a **single abstract method**:
 
 ```python
-def search(self, signals: Signals, lang: str = "en-us") -> list[Release]:
+def search(self, signals: Signals, lang: str = "en-us",
+           **context) -> list[Release]:
     ...
 ```
+
+There is nothing else to implement. There is no `is_available`, no `matches`, no
+`serves`, no routing class attributes, and no `QueryContext` object — a provider
+decides for itself whether it can serve a query and returns an empty list when it
+cannot. Availability and routing are the provider's own concern.
+
+```python
+class MediaProvider(metaclass=ABCMeta):
+    name: ClassVar[str] = ""        # stable registry key / downstream skill_id
+
+    def __init__(self, config: Optional[dict] = None):
+        self.config = config or {}
+
+    @abstractmethod
+    def search(self, signals, lang="en-us", **context) -> list[Release]: ...
+
+    def shutdown(self) -> None:     # optional — release resources
+        ...
+```
+
+### Arguments
 
 - **`signals`** is a `mediavocab.Signals` — the parsed request. The fields a
   provider usually reads are `signals.title` (the search phrase) and
   `signals.artist` (artist, or director for video). `signals.medium` carries the
   classified `MediaType` and `signals.content_genres` the requested genres.
-- **Return** zero or more `mediavocab.Release` objects. Each `Release` is a
-  typed, playable catalog entry shared across the whole media ecosystem. A
-  provider returns **playables**, not identities — drop artist/label hits.
-- **Ranking** rides on each result via `Release.match_confidence` (`0.0`–`1.0`).
-  The pipeline filters and ranks *across* all providers, so you only need to
-  score within your own results.
+- **`lang`** is the BCP-47 language tag for the request (default `"en-us"`).
+- **`**context`** carries whatever the pipeline knows about the request
+  environment. A provider reads the kwargs it cares about and ignores the rest.
+  Recognised keys include:
+
+  | Context kwarg | Meaning |
+  |---|---|
+  | `supported_playback_types` | which player surfaces the requesting device can render (so a video-only provider can bail out on an audio-only device) |
+  | `blocked_genres` | genres the session/profile has blocked |
+  | `region` | the requester's region/country, for geo-scoped catalogs |
+  | `session_id` | the originating MessageBus session |
+
+### Return value
+
+Return zero or more `mediavocab.Release` objects. Each `Release` is a typed,
+playable catalog entry shared across the whole media ecosystem. A provider
+returns **playables**, not identities — drop artist/label hits. Return an empty
+list `[]` whenever the provider cannot serve the query: wrong media type, the
+device can't render the result, a blocked genre, no network or API key, no
+match, and so on.
+
+**Ranking** rides on each result via `Release.match_confidence` (`0.0`–`1.0`).
+The pipeline filters and ranks *across* all providers, so a provider only needs
+to score within its own results.
 
 ### `mediavocab.Release` in brief
 
@@ -97,40 +117,21 @@ does not resolve streams itself. See [Architecture](architecture.md) and
 
 ---
 
-## Lifecycle methods
-
-| Method | Required | Purpose |
-|---|---|---|
-| `is_available() -> bool` | yes | Return `True` only when the provider can run now — API keys present, optional deps importable, network reachable. Unavailable providers are skipped at load. |
-| `search(signals, lang) -> list[Release]` | yes | The search itself (above). |
-| `featured_media(lang) -> list[Release]` | no | Curated/home content for the browse screen. Defaults to `[]`. |
-| `matches(signals) -> bool` | no | Routing gate; defaults to the three-axis test. |
-| `shutdown()` | no | Release any held resources. |
-
-The pipeline calls providers through `search_safe()`, which wraps `search()` so a
-single misbehaving provider cannot abort a multi-provider dispatch — it logs and
-returns `[]` on error.
-
----
-
 ## How the pipeline discovers and dispatches providers
 
-Discovery and instantiation live in `ovos_plugin_manager.media_provider`:
+The OCP pipeline loads every installed `opm.media.provider` entry point,
+instantiating each with its per-provider config (`media_providers.<name>`) and
+skipping any whose config sets `"enabled": false`.
 
-1. `find_media_provider_plugins()` enumerates every installed `opm.media.provider`
-   entry point.
-2. `load_media_providers(config)` instantiates each one with its per-provider
-   config (`media_providers.<name>`), skips any whose config sets
-   `"enabled": false`, and skips any whose `is_available()` returns `False`.
-   It returns a `dict` of `{name: instance}`.
-
-At query time the OCP pipeline:
+At query time the pipeline:
 
 1. Classifies the utterance into a `Signals` (media type, title, artist, genres).
-2. Gates the loaded providers with `provider.matches(signals)`, dropping any
-   whose routing axes exclude the query.
-3. Dispatches `search_safe(signals, lang)` to the surviving providers
-   **concurrently** (thread pool).
+2. Builds the `**context` (supported playback types, blocked genres, region,
+   session) from the requesting session's state.
+3. Calls `search(signals, lang, **context)` on each loaded provider
+   **concurrently** (thread pool). A provider that cannot serve the request
+   returns `[]`; a misbehaving provider that raises is caught and treated as `[]`
+   so it cannot abort a multi-provider dispatch.
 4. Collects, filters, and ranks the returned `Release` objects across providers,
    then hands the winner(s) to the `ovos-media` daemon to play.
 
@@ -144,11 +145,10 @@ announce/response handshake.
 A complete provider over a client library that already emits `Release` objects:
 
 ```python
-from typing import ClassVar, List, Optional, Set
+from typing import ClassVar, List, Optional
 
 from ovos_utils.log import LOG
-from mediavocab import MediaType, Release, Signals, Entity
-from mediavocab.taxonomy import PlaybackType
+from mediavocab import Release, Signals
 from ovos_plugin_manager.templates.media_provider import MediaProvider
 
 from py_bandcamp import BandCamp
@@ -158,23 +158,18 @@ class BandcampMediaProvider(MediaProvider):
     """Search Bandcamp's public catalog for playable music releases."""
 
     name: ClassVar[str] = "bandcamp"
-    media: ClassVar[Set[MediaType]] = {MediaType.MUSIC}
-    playback_type: ClassVar[Set[PlaybackType]] = {PlaybackType.AUDIO}
 
     def __init__(self, config: Optional[dict] = None):
         super().__init__(config)
         self.max_pages = self.config.get("max_pages", 1)
 
-    def is_available(self) -> bool:
-        # public search endpoint, no API key required
-        return True
-
-    def search(self, signals: Signals, lang: str = "en-us") -> List[Release]:
+    def search(self, signals: Signals, lang: str = "en-us",
+               **context) -> List[Release]:
         title = (signals.title or "").strip()
         artist = (signals.artist or "").strip()
         query = " ".join(p for p in (artist, title) if p).strip()
         if not query:
-            return []
+            return []  # nothing to search for
 
         results: List[Release] = []
         try:
@@ -186,7 +181,7 @@ class BandcampMediaProvider(MediaProvider):
                 # Entity (artist/label identity) hits are not playable — skip
         except Exception:
             LOG.exception("Bandcamp search failed")
-            return []
+            return []  # no network / API failure — serve nothing
         return results
 ```
 
@@ -197,6 +192,10 @@ Register it in `pyproject.toml`:
 bandcamp = "ovos_media_provider_bandcamp:BandcampMediaProvider"
 ```
 
+Notice the provider never declares what it serves up front: if the query is for a
+movie, Bandcamp's client simply returns nothing and the provider yields `[]`.
+That is the whole gating contract.
+
 ---
 
 ## Existing providers
@@ -204,15 +203,15 @@ bandcamp = "ovos_media_provider_bandcamp:BandcampMediaProvider"
 Each wraps a standalone scraper/client library that emits `mediavocab.Release`
 objects, and each replaces a legacy OCP search skill.
 
-| Provider | Entry point | Routing (`media` → `playback_type`) | Replaces |
+| Provider | Entry point | Serves | Replaces |
 |---|---|---|---|
-| [`ovos-media-provider-youtube`](https://github.com/OpenVoiceOS/ovos-media-provider-youtube) | `youtube` | `MOVIE, EPISODIC_SERIES, MUSIC_VIDEO, PODCAST, TV, GENERIC` → `VIDEO, AUDIO` | `ovos-skill-youtube` |
-| [`ovos-media-provider-youtube-music`](https://github.com/OpenVoiceOS/ovos-media-provider-youtube-music) | `youtube_music` | music → `AUDIO` | `ovos-skill-youtube-music` |
-| [`ovos-media-provider-bandcamp`](https://github.com/OpenVoiceOS/ovos-media-provider-bandcamp) | `bandcamp` | `MUSIC` → `AUDIO` | `ovos-skill-bandcamp` |
-| [`ovos-media-provider-soundcloud`](https://github.com/OpenVoiceOS/ovos-media-provider-soundcloud) | `soundcloud` | `MUSIC, PLAYLIST` → `AUDIO` | `ovos-skill-soundcloud` |
-| [`ovos-media-provider-tunein`](https://github.com/OpenVoiceOS/ovos-media-provider-tunein) | `tunein` | `RADIO` → `AUDIO` | `ovos-skill-tunein` |
-| [`ovos-media-provider-somafm`](https://github.com/OpenVoiceOS/ovos-media-provider-somafm) | `somafm` | `RADIO` → `AUDIO` | `ovos-skill-somafm` |
-| [`ovos-media-provider-pyradios`](https://github.com/OpenVoiceOS/ovos-media-provider-pyradios) | `pyradios` | `RADIO` → `AUDIO` | `ovos-skill-pyradios` |
+| [`ovos-media-provider-youtube`](https://github.com/OpenVoiceOS/ovos-media-provider-youtube) | `youtube` | video / music videos / podcasts | `ovos-skill-youtube` |
+| [`ovos-media-provider-youtube-music`](https://github.com/OpenVoiceOS/ovos-media-provider-youtube-music) | `youtube_music` | music | `ovos-skill-youtube-music` |
+| [`ovos-media-provider-bandcamp`](https://github.com/OpenVoiceOS/ovos-media-provider-bandcamp) | `bandcamp` | music | `ovos-skill-bandcamp` |
+| [`ovos-media-provider-soundcloud`](https://github.com/OpenVoiceOS/ovos-media-provider-soundcloud) | `soundcloud` | music / playlists | `ovos-skill-soundcloud` |
+| [`ovos-media-provider-tunein`](https://github.com/OpenVoiceOS/ovos-media-provider-tunein) | `tunein` | radio | `ovos-skill-tunein` |
+| [`ovos-media-provider-somafm`](https://github.com/OpenVoiceOS/ovos-media-provider-somafm) | `somafm` | radio | `ovos-skill-somafm` |
+| [`ovos-media-provider-pyradios`](https://github.com/OpenVoiceOS/ovos-media-provider-pyradios) | `pyradios` | radio | `ovos-skill-pyradios` |
 
 ---
 
@@ -253,9 +252,9 @@ playback halves are unchanged — those live in the OCP pipeline and the
 | Old (OCP search skill) | New (MediaProvider) |
 |---|---|
 | Subclass `OVOSCommonPlaybackSkill` | Subclass `MediaProvider` |
-| `@ocp_search` method returning `MediaEntry`/`Playlist` | `search(signals, lang)` returning `list[Release]` |
+| `@ocp_search` method returning `MediaEntry`/`Playlist` | `search(signals, lang, **context)` returning `list[Release]` |
 | Registered as a skill; replies to `ovos.common_play.query` over the bus | Registered under `opm.media.provider`; called in-process |
-| Routing implied by the skill's vocab and per-result `media_type` | Explicit three-axis routing (`media`, `playback_type`, `genre_filter`) |
+| Routing implied by the skill's vocab and per-result `media_type` | The provider decides per call and returns `[]` when it can't serve |
 | Match score `0`–`100` on each `MediaEntry` | `match_confidence` `0.0`–`1.0` on each `Release` |
 | Provider-specific result dicts | Typed `mediavocab.Release`, shared across the ecosystem |
 
