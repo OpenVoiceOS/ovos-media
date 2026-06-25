@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.1.0a1) (2026-06-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.3a1...0.1.0a1)
+
+**Merged pull requests:**
+
+- feat: reflect external MPRIS players as OCP now\_playing \(bus primitive\) [\#47](https://github.com/OpenVoiceOS/ovos-media/pull/47) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.0.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.3a1) (2026-06-25)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.0.2a4...0.0.3a1)
