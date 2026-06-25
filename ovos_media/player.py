@@ -691,6 +691,15 @@ class OCPMediaPlayer:
             return
         state = data.get("state") or "Playing"
 
+        # an external player taking over playback should stop OCP's own backends
+        # first so the two don't overlap. Only on the transition (a different/new
+        # external player starting to play), and BEFORE active_skill is switched
+        # so stop_skill targets the currently-active skill, not the new player.
+        is_new_external = (self.playback_type != PlaybackType.MPRIS or
+                           self.active_skill != player_id)
+        if state == "Playing" and is_new_external:
+            self.handle_MPRIS_takeover()
+
         self.active_skill = player_id
         self.playback_type = PlaybackType.MPRIS
 

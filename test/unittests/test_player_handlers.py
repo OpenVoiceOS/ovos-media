@@ -822,6 +822,27 @@ class TestExternalMprisNowPlaying(unittest.TestCase):
         p.handle_mpris_now_playing(Message("x", {"title": "no id"}))
         p.set_now_playing.assert_not_called()
 
+    def test_new_external_player_triggers_takeover(self):
+        """A new external player starting playback stops OCP's own backends."""
+        p = self._player()
+        p.handle_MPRIS_takeover = MagicMock()
+        p.playback_type = PlaybackType.AUDIO  # OCP was playing its own audio
+        p.active_skill = "some.ocp.skill"
+        p.handle_mpris_now_playing(Message("x", {
+            "external_player": "org.mpris.MediaPlayer2.spotify", "state": "Playing"}))
+        p.handle_MPRIS_takeover.assert_called_once()
+
+    def test_same_external_player_does_not_repeat_takeover(self):
+        """Metadata/position updates from the already-active external player must
+        not re-trigger the takeover (which would stop it)."""
+        p = self._player()
+        p.handle_MPRIS_takeover = MagicMock()
+        p.playback_type = PlaybackType.MPRIS
+        p.active_skill = "org.mpris.MediaPlayer2.spotify"
+        p.handle_mpris_now_playing(Message("x", {
+            "external_player": "org.mpris.MediaPlayer2.spotify", "state": "Playing"}))
+        p.handle_MPRIS_takeover.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
