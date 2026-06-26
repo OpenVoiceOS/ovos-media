@@ -13,11 +13,13 @@ from ovos_config.meta import get_xdg_base
 from ovos_gui_api_client import GUIInterface
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
+from ovos_media.utils import require_default_session
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.gui import is_gui_connected, is_gui_running
 from ovos_utils.log import LOG
 from ovos_bus_client.message import Message
+from ovos_bus_client.session import SessionManager
 from ovos_utils.ocp import MediaType, Playlist
 from ovos_utils.ocp import OCP_ID, PlayerState, LoopState, PlaybackType, PlaybackMode, TrackState, MediaState, \
     MediaEntry
@@ -255,6 +257,16 @@ class NowPlaying(MediaEntry):
         bleed into the new track
         @param message: Message associated with request
         """
+        # NowPlaying is part of the single local player; a play command from a
+        # non-default session (e.g. a HiveMind satellite, routed by the
+        # server-side OCP pipeline) must not bleed its metadata into the local
+        # now_playing. Mirror require_default_session() using the owning
+        # player's validate_source flag.
+        validate = getattr(self._player, "validate_source", True)
+        if validate and SessionManager.get(message).session_id != "default":
+            LOG.debug(f"ignoring '{message.msg_type}' now_playing update, "
+                      f"not from the default/local session")
+            return
         if message.data.get("tracks"):
             # backwards compat / old style
             playlist = message.data["tracks"]
@@ -347,9 +359,15 @@ class OCPMediaPlayer:
     "now playing" is tracked and managed by this interface
     """
 
-    def __init__(self, bus: MessageBusClient, config: Optional[dict] = None) -> None:
+    def __init__(self, bus: MessageBusClient, config: Optional[dict] = None,
+                 validate_source: bool = True) -> None:
         self.bus = bus
         self.ocp_config = config or Configuration().get("media", {})
+        # When True, playback-executing handlers act only on the local/"default"
+        # session (see ovos_media.utils.require_default_session). A satellite
+        # whose sessions are not NAT'd to "default" by hivemind-core should set
+        # this False so its embedded ovos-media acts on all sessions.
+        self.validate_source = validate_source
 
         self.state: PlayerState = PlayerState.STOPPED
         self.loop_state: LoopState = LoopState.NONE
@@ -460,6 +478,7 @@ class OCPMediaPlayer:
             "image": self.now_playing.image
         }))
 
+    @require_default_session()
     def handle_like(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
@@ -474,6 +493,7 @@ class OCPMediaPlayer:
         self.bus.emit(message.forward("mycroft.audio.play_sound",
                                       {"uri": "snd/acknowledge.mp3"}))
 
+    @require_default_session()
     def handle_unlike(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
@@ -1163,6 +1183,7 @@ class OCPMediaPlayer:
         self._update_gui()
 
     # ovos common play bus api requests
+    @require_default_session()
     def handle_play_request(self, message):
         LOG.debug("Received OCP playback request")
         repeat = message.data.get("repeat", False)
@@ -1178,22 +1199,27 @@ class OCPMediaPlayer:
 
         self.play_media(media, disambiguation, playlist)
 
+    @require_default_session()
     def handle_pause_request(self, message):
         self.pause()
 
+    @require_default_session()
     def handle_stop_request(self, message):
         self.stop()
         self.reset()
 
+    @require_default_session()
     def handle_resume_request(self, message):
         self.resume()
-            
+
+    @require_default_session()
     def handle_pause_toggle_request(self, message):
         if self.state == PlayerState.PAUSED:
             self.handle_resume_request(message)
         else:
             self.handle_pause_request(message)
 
+    @require_default_session()
     def handle_seek_request(self, message):
         # from bus api
         miliseconds = message.data.get("seconds", 0) * 1000
@@ -1208,29 +1234,36 @@ class OCPMediaPlayer:
             position += miliseconds
         self.seek(position)
 
+    @require_default_session()
     def handle_next_request(self, message):
         self.play_next()
 
+    @require_default_session()
     def handle_prev_request(self, message):
         self.play_prev()
 
+    @require_default_session()
     def handle_set_shuffle(self, message):
         self.shuffle = True
         self._update_gui()
 
+    @require_default_session()
     def handle_unset_shuffle(self, message):
         self.shuffle = False
         self._update_gui()
 
+    @require_default_session()
     def handle_set_repeat(self, message):
         self.loop_state = LoopState.REPEAT
         self._update_gui()
 
+    @require_default_session()
     def handle_unset_repeat(self, message):
         self.loop_state = LoopState.NONE
         self._update_gui()
 
     # playlist control bus api
+    @require_default_session()
     def handle_repeat_toggle_request(self, message):
         if self.loop_state == LoopState.REPEAT_TRACK:
             self.loop_state = LoopState.NONE
@@ -1243,6 +1276,7 @@ class OCPMediaPlayer:
             self.mpris.toggle_repeat()
         self._update_gui()
 
+    @require_default_session()
     def handle_shuffle_toggle_request(self, message):
         self.shuffle = not self.shuffle
         LOG.info(f"Shuffle: {self.shuffle}")
@@ -1250,18 +1284,22 @@ class OCPMediaPlayer:
             self.mpris.toggle_shuffle()
         self._update_gui()
 
+    @require_default_session()
     def handle_playlist_set_request(self, message):
         self.playlist.clear()
         self.handle_playlist_queue_request(message)
 
+    @require_default_session()
     def handle_playlist_queue_request(self, message):
         for track in message.data["tracks"]:
             self.playlist.add_entry(track)
 
+    @require_default_session()
     def handle_playlist_clear_request(self, message):
         self.playlist.clear()
 
     # audio ducking - NB: we distinguish ducking vs corking  (lower volume vs pause)
+    @require_default_session()
     def handle_cork_request(self, message):
         """
         Pause audio on 'recognizer_loop:record_begin'
@@ -1271,6 +1309,7 @@ class OCPMediaPlayer:
             self.pause()
             self._paused_on_duck = True
 
+    @require_default_session()
     def handle_uncork_request(self, message):
         """
         Resume paused audio on 'recognizer_loop:record_begin'
@@ -1280,6 +1319,7 @@ class OCPMediaPlayer:
             self.resume()
             self._paused_on_duck = False
 
+    @require_default_session()
     def handle_duck_request(self, message):
         """
         Lower volume on 'recognizer_loop:record_begin'
@@ -1292,6 +1332,7 @@ class OCPMediaPlayer:
                 self.audio_service.lower_volume()
             self._paused_on_duck = True
 
+    @require_default_session()
     def handle_unduck_request(self, message):
         """
         Restore volume on 'recognizer_loop:audio_output_end'.
@@ -1378,6 +1419,7 @@ class OCPMediaPlayer:
         data = {"position": pos}
         self.bus.emit(message.response(data))
 
+    @require_default_session()
     def handle_set_track_position_request(self, message):
         miliseconds = message.data.get("position")
         self.seek(miliseconds)
