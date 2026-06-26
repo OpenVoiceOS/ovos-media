@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.0a2) (2026-06-26)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.0a1...0.3.0a2)
+
+**Merged pull requests:**
+
+- chore: drop scratch files [\#60](https://github.com/OpenVoiceOS/ovos-media/pull/60) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.3.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.0a1) (2026-06-26)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.2.0a4...0.3.0a1)
