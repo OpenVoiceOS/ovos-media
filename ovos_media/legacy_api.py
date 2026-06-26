@@ -32,6 +32,8 @@ from ovos_bus_client.message import Message
 from ovos_utils.log import LOG
 from ovos_utils.ocp import MediaEntry, PlaybackType, MediaType
 
+from ovos_media.utils import require_default_session
+
 
 def _tracks_to_entries(
     tracks: List[Union[str, Tuple[str, str]]]
@@ -89,6 +91,17 @@ class LegacyAudioServiceCompat:
         self._register_handlers()
         LOG.info("LegacyAudioServiceCompat: mycroft.audio.service.* shim active")
 
+    @property
+    def validate_source(self) -> bool:
+        """Mirror the player's session filter for ``require_default_session``.
+
+        Executing legacy handlers are gated to the local/"default" session
+        exactly like their modern ``ovos.common_play.*`` counterparts; the
+        flag is inherited from the wrapped player so a single config knob
+        controls both layers.
+        """
+        return getattr(self.player, "validate_source", True)
+
     # ------------------------------------------------------------------
     # Handler registration
     # ------------------------------------------------------------------
@@ -117,6 +130,7 @@ class LegacyAudioServiceCompat:
     # Playback control handlers
     # ------------------------------------------------------------------
 
+    @require_default_session()
     def handle_play(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.play``.
 
@@ -147,6 +161,7 @@ class LegacyAudioServiceCompat:
             "repeat": repeat,
         }))
 
+    @require_default_session()
     def handle_queue(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.queue``.
 
@@ -172,22 +187,27 @@ class LegacyAudioServiceCompat:
         self.bus.emit(message.forward("ovos.common_play.playlist.queue",
                                       {"tracks": entries}))
 
+    @require_default_session()
     def handle_pause(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.pause``."""
         self.bus.emit(message.forward("ovos.common_play.pause"))
 
+    @require_default_session()
     def handle_resume(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.resume``."""
         self.bus.emit(message.forward("ovos.common_play.resume"))
 
+    @require_default_session()
     def handle_stop(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.stop``."""
         self.bus.emit(message.forward("ovos.common_play.stop"))
 
+    @require_default_session()
     def handle_next(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.next``."""
         self.bus.emit(message.forward("ovos.common_play.next"))
 
+    @require_default_session()
     def handle_prev(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.prev``."""
         self.bus.emit(message.forward("ovos.common_play.previous"))
@@ -228,6 +248,7 @@ class LegacyAudioServiceCompat:
     # Position / seeking handlers
     # ------------------------------------------------------------------
 
+    @require_default_session()
     def handle_set_track_position(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.set_track_position``.
 
@@ -264,6 +285,7 @@ class LegacyAudioServiceCompat:
         self.bus.emit(message.reply(
             "mycroft.audio.service.get_track_length.response", data))
 
+    @require_default_session()
     def handle_seek_forward(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.seek_forward``.
 
@@ -273,6 +295,7 @@ class LegacyAudioServiceCompat:
         self.bus.emit(message.forward("ovos.common_play.seek",
                                       {"seconds": seconds}))
 
+    @require_default_session()
     def handle_seek_backward(self, message: Message) -> None:
         """Handle ``mycroft.audio.service.seek_backward``.
 

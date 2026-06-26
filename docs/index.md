@@ -23,6 +23,7 @@ Apache-2.0 · Python 3.10+
 | 🎮 **writing a game / interactive skill** | [OCP skills](ocp-skills.md) (still a skill — *not* a provider) |
 | 🖥️ **wiring desktop / `playerctl`** | [MPRIS](mpris.md) |
 | 🧠 **hacking on the daemon** | [Architecture](architecture.md) |
+| 🛰️ **running HiveMind satellites / a server** | [Sessions](sessions.md) |
 | ⬆️ **migrating from the old stack** | [Migration guide](migration-guide.md) |
 
 ---
@@ -70,6 +71,7 @@ written once feeds playback, MPRIS metadata, and the GUI alike.
 | [Glossary & core concepts](glossary.md) | **Read first.** Every acronym + the mental model (provider vs. backend vs. extractor, `Signals`/`Release`) |
 | [Getting started](getting-started.md) | Install, enable the daemon, run your first playback |
 | [Architecture](architecture.md) | The daemon's layers, bus API, state machine, GUI/MPRIS integration |
+| [Sessions](sessions.md) | The default/local session filter — how a HiveMind server ignores satellite sessions (`validate_source`) |
 | [Media providers](media-providers.md) | Writing a catalog/search plugin (`opm.media.provider`) — the new search layer |
 | [Playback backends](backends.md) | Audio/video/web backend plugins, discovery, writing a custom backend |
 | [Configuration](configuration.md) | Full `mycroft.conf` reference for the `media` and `media_providers` keys |

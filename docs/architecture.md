@@ -293,10 +293,20 @@ device's player rather than the hub's. `ovos-media` participates by reporting it
 state through `handle_status`, which the pipeline associates with the originating
 session.
 
+`ovos-media` itself stays a **single** player bound to its own device — the
+`"default"` session. Its playback-executing handlers are gated by
+`require_default_session()` (`ovos_media/utils.py`), so a server-side daemon
+**ignores** a satellite's forwarded command (`session_id != "default"`) while
+the satellite's own embedded daemon executes it. Read-only query handlers stay
+ungated so a remote pipeline can still read state. See
+[Sessions](sessions.md) for the full topology, the gated-handler list, and the
+`validate_source` config knob.
+
 ---
 
 ## See also
 
+- [Sessions](sessions.md) — the default/local session filter (HiveMind topology)
 - [Media providers](media-providers.md) — the catalog/search layer feeding this daemon
 - [Backends](backends.md) — the audio/video/web playback plugins
 - [Configuration](configuration.md) — the `media` config block

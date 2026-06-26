@@ -33,7 +33,7 @@ class MediaService(Thread):
     def __init__(self, ready_hook=on_ready, error_hook=on_error,
                  stopping_hook=on_stopping, alive_hook=on_alive,
                  started_hook=on_started, watchdog=lambda: None,
-                 bus=None, validate_source=True):
+                 bus=None, validate_source=None):
         super(MediaService, self).__init__()
 
         LOG.info("Starting Media Service")
@@ -47,6 +47,16 @@ class MediaService(Thread):
         self.config = Configuration().get("media", {})
         self.native_sources = self.config.get("native_sources", ["debug_cli", "audio"]) or []
 
+        # Only act on playback commands from the local/"default" session.
+        # In a HiveMind split the OCP pipeline (on the server) forwards
+        # commands stamped with the originating satellite session; a
+        # server-side ovos-media must ignore those (the satellite runs its
+        # own embedded ovos-media). The constructor argument wins; otherwise
+        # read `media.validate_source` from config (default True). A satellite
+        # that is not getting default-NAT'd sessions sets this False to act on
+        # all sessions.
+        if validate_source is None:
+            validate_source = self.config.get("validate_source", True)
         self.validate_source = validate_source
 
         if not bus:
@@ -56,7 +66,7 @@ class MediaService(Thread):
         self.status.bind(self.bus)
         self.status.set_alive()
         self.init_messagebus()
-        self.ocp = OCPMediaPlayer(self.bus)
+        self.ocp = OCPMediaPlayer(self.bus, validate_source=self.validate_source)
         self.bus.on('ovos.common_play.home', self.handle_home)
         self.bus.on("ovos.common_play.ping", self.handle_ping)
         self.bus.on("ovos.common_play.search.start", self.handle_search_start)
