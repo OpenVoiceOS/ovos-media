@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.0a1) (2026-06-26)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.2.0a4...0.3.0a1)
+
+**Merged pull requests:**
+
+- feat: only act on the default/local session \(validate\_source\) [\#58](https://github.com/OpenVoiceOS/ovos-media/pull/58) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.2.0a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.2.0a4) (2026-06-25)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.2.0a3...0.2.0a4)
