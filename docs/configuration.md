@@ -109,6 +109,7 @@ plugin's own `config` dict. See [backends.md](backends.md) for the backend API.
 | `merge_search` | bool | `true` | Merge incoming search results into the playback queue alongside the user playlist rather than ignoring them. |
 | `force_audioservice` | bool | `false` | Force audio-only playback even when a GUI is connected; bypasses video/web backend selection. |
 | `playback_mode` | enum | unset | Set to `PlaybackMode.FORCE_AUDIO` to always use audio backends regardless of GUI availability. |
+| `validate_source` | bool | `true` | Only act on playback commands from the local/`"default"` session. Leave `true` on a server-side daemon so it ignores HiveMind satellite sessions; set `false` on a satellite not getting default-NAT'd sessions. See [Sessions](sessions.md). |
 
 ---
 

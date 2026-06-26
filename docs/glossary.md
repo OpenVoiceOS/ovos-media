@@ -50,6 +50,8 @@ Each is a separate, swappable plugin. That separation is the whole design.
 | **deferred / deferred URI** | A `Release.uri` of the form `"{sei}//{realuri}"` resolved **at playback time** by an extractor, not at search time. |
 | **MPRIS** | The freedesktop D-Bus standard (`org.mpris.MediaPlayer2`) other Linux media apps speak. ovos-media both exposes itself over it and reacts to other players. See [mpris.md](mpris.md). |
 | **MessageBus** | The OVOS WebSocket event bus. Everything ovos-media does is observable/driveable as `ovos.common_play.*` messages. |
+| **Session** | A MessageBus conversation scope identified by `session_id`. The special id `"default"` means the local/single device. ovos-media only *acts* on the `"default"` session (a HiveMind server ignores satellite sessions); see [Sessions](sessions.md). |
+| **validate_source** | The `media` config flag (default `true`) that enables the default-session filter. Set `false` on a satellite that is not getting default-NAT'd sessions so it acts on every session. See [Sessions](sessions.md). |
 | **GUI** | The OVOS GUI client; ovos-media pushes the now-playing screen to it via `GUIInterface`. |
 | **OCP search skill** *(legacy)* | The old way to provide *searchable catalog media* (`OVOSCommonPlaybackSkill` + `@ocp_search`), now **replaced by MediaProviders**. See [ocp-skills.md](ocp-skills.md). |
 | **OCP game / interactive skill** | A skill that *is* the experience (interactive fiction, quizzes, "play a game") rather than a searchable catalog. These stay as **skills** — they are **not** deprecated and have no MediaProvider equivalent. See [ocp-skills.md](ocp-skills.md). |
@@ -62,4 +64,5 @@ Each is a separate, swappable plugin. That separation is the whole design.
 - *I'm writing a player plugin* → [Backends](backends.md)
 - *I want desktop / `playerctl` control* → [MPRIS](mpris.md)
 - *I want to understand the internals* → [Architecture](architecture.md)
+- *I'm running HiveMind satellites / a server* → [Sessions](sessions.md)
 - *I'm coming from the old stack* → [Migration guide](migration-guide.md)
