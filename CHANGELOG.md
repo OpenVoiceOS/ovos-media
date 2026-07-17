@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.0a3) (2026-07-17)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.0a2...0.3.0a3)
+
+**Merged pull requests:**
+
+- docs: add pre-release WIP notice to README [\#62](https://github.com/OpenVoiceOS/ovos-media/pull/62) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.3.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.0a2) (2026-06-26)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.0a1...0.3.0a2)
