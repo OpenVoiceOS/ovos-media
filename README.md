@@ -1,5 +1,9 @@
 # ovos-media
 
+> ⚠️ Work in progress — pre-release software. Under active development, not yet
+> deployed in OpenVoiceOS, APIs may change without notice. Published in the open
+> for transparency; do not depend on it in production yet.
+
 **The OVOS Virtual Media Player** — a standalone daemon that plays audio, video and
 web content on behalf of OpenVoiceOS, with per-session playback state, MPRIS/D-Bus
 integration and a pluggable backend architecture.
