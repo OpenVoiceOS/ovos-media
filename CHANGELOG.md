@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.1a1) (2026-07-18)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.0a3...0.3.1a1)
+
+**Merged pull requests:**
+
+- fix: consistent MediaEntry representation and live GUI search results [\#64](https://github.com/OpenVoiceOS/ovos-media/pull/64) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.3.0a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.0a3) (2026-07-17)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.0a2...0.3.0a3)
