@@ -71,33 +71,37 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
                 "match_confidence": min(base_score + 35, 100),
                 "media_type": MediaType.MUSIC,
                 "playback": PlaybackType.AUDIO,
-                "playlist": self.liked_songs_playlist,  # return full playlist result
+                "playlist": [e.as_dict for e in self.liked_songs_playlist],
                 "skill_icon": self.skill_icon,
                 "title": "Liked Songs",
                 "skill_id": self.skill_id
             }
 
         if entities.get("song_name"):
-            title = entities["song_name"]
-            candidates = [song for song in self.liked_songs_playlist
-                          if title.lower() in song["title"].lower()]
-            for c in candidates:
-                c["match_confidence"] = min(base_score + 40, 100)
-                c["media_type"] = MediaType.MUSIC
-                c["playback"] = PlaybackType.AUDIO
-                c["skill_id"] = self.skill_id
-                c["skill_icon"] = self.skill_icon
-                yield c
+            title = entities["song_name"].lower()
+            for entry in self.liked_songs_playlist:
+                if title not in entry.title.lower():
+                    continue
+                result = entry.as_dict
+                result["match_confidence"] = min(base_score + 40, 100)
+                result["skill_id"] = self.skill_id
+                result["skill_icon"] = self.skill_icon
+                yield result
 
     @property
-    def liked_songs_playlist(self):
-        pl = list(self.liked_songs.values())
-        for idx, p in enumerate(pl):
-            pl[idx]["media_type"] = MediaType.MUSIC
-            pl[idx]["playback"] = PlaybackType.AUDIO
-            # HACK to allow sort_by_conf to work once this is in a Playlist object
-            pl[idx]["match_confidence"] = p.get("play_count", 0) + 50
-        return sorted(pl, key=lambda k: k.get("play_count", 0), reverse=True)
+    def liked_songs_playlist(self) -> List[MediaEntry]:
+        # canonicalize the persisted liked-songs store (raw dicts) into
+        # MediaEntry objects; match_confidence tracks play_count so the entries
+        # sort most-played-first once handed to a Playlist.
+        entries = [MediaEntry(uri=uri,
+                              title=song.get("title", ""),
+                              artist=song.get("artist", ""),
+                              image=song.get("image", ""),
+                              media_type=MediaType.MUSIC,
+                              playback=PlaybackType.AUDIO,
+                              match_confidence=song.get("play_count", 0) + 50)
+                   for uri, song in self.liked_songs.items()]
+        return sorted(entries, key=lambda e: e.match_confidence, reverse=True)
 
     def handle_skill_announce(self, message):
         skill_id = message.data.get("skill_id")
@@ -172,21 +176,9 @@ class NowPlaying(MediaEntry):
         """
         return MediaEntry(**self.as_dict)
 
-    @property
-    def as_dict(self) -> dict:
-        """
-        Return a dict representation of this MediaEntry
-        """
-        return {"uri": self.uri,
-                "title": self.title,
-                "artist": self.artist,
-                "image": self.image,
-                "playback": self.playback,
-                "status": self.status,
-                "media_type": self.media_type,
-                "length": self.length,
-                "skill_id": self.skill_id,
-                "skill_icon": self.skill_icon}
+    # as_dict is inherited from MediaEntry: it serializes every dataclass field,
+    # so fields added to MediaEntry survive the round-trip to the GUI/bus instead
+    # of being dropped by a hand-maintained key list.
 
     def shutdown(self):
         """
@@ -376,7 +368,6 @@ class OCPMediaPlayer:
         self.shuffle: bool = False
         self.track_history: dict = {}  # Dict of track URI to play count
         self._paused_on_duck: bool = False
-        self._last_search_results: list = []
 
         self.now_playing: NowPlaying = NowPlaying(bus, player=self)
         self.media: OCPMediaCatalog = OCPMediaCatalog(bus=bus, skill_id=OCP_ID + ".favorites")
@@ -459,7 +450,7 @@ class OCPMediaPlayer:
         self.gui.show_media_player(
             now_playing=np.as_dict if np and np.uri else None,
             playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
-            search_results=self._last_search_results or [],
+            search_results=[e.as_dict for e in self.search_results],
             state=state_map.get(self.state, "stopped"),
         )
 
@@ -823,7 +814,7 @@ class OCPMediaPlayer:
         self.gui.show_media_player(
             now_playing=None,
             playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
-            search_results=self._last_search_results or [],
+            search_results=[e.as_dict for e in self.search_results],
             state="error",
         )
         LOG.warning(f"Failed to play: {self.now_playing}")
@@ -1166,7 +1157,7 @@ class OCPMediaPlayer:
         self.gui.show_media_player(
             now_playing=None,
             playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
-            search_results=self._last_search_results or [],
+            search_results=[e.as_dict for e in self.search_results],
             state="error",
         )
 

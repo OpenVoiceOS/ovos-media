@@ -29,7 +29,6 @@ def _make_player():
         p.shuffle = False
         p.track_history = {}
         p._paused_on_duck = False
-        p._last_search_results = []
         p.now_playing = MagicMock()
         p.now_playing.uri = "http://example.com/track.mp3"
         p.playlist = MagicMock()
@@ -84,9 +83,15 @@ class TestUpdateGuiCallsShowMediaPlayer(unittest.TestCase):
         self.assertEqual(kwargs["playlist"], [{"title": "Track A"}])
 
     def test_update_gui_passes_search_results(self):
-        """_update_gui() passes _last_search_results as search_results."""
+        """_update_gui() serializes live search_playlist entries as search_results.
+
+        Regression: search_results used to read a dead `_last_search_results`
+        field that was never assigned, so the GUI always saw an empty list.
+        """
         p = _make_player()
-        p._last_search_results = [{"title": "Result 1"}]
+        entry = MagicMock()
+        entry.as_dict = {"title": "Result 1"}
+        p.media.search_playlist.entries = [entry]
         p._update_gui()
         kwargs = p.gui.show_media_player.call_args[1]
         self.assertEqual(kwargs["search_results"], [{"title": "Result 1"}])
