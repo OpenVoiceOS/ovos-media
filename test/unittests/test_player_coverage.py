@@ -70,7 +70,6 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
         p.shuffle = False
         p.track_history = {}
         p._paused_on_duck = False
-        p._last_search_results = []
         p.now_playing = MagicMock()
         p.now_playing.playback = playback_type
         p.now_playing.skill_id = "test.skill"

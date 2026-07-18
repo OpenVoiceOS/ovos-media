@@ -29,7 +29,6 @@ def _make_player():
         p.shuffle = False
         p.track_history = {}
         p._paused_on_duck = False
-        p._last_search_results = []
         p.now_playing = MagicMock()
         p.playlist = MagicMock()
         p.playlist.as_list.return_value = []
