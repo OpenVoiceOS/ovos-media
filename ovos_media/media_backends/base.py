@@ -463,3 +463,4 @@ class BaseMediaService:
         self.bus.remove(f'ovos.{self.namespace}.service.list_backends', self.handle_list_backends)
         self.bus.remove(f'ovos.{self.namespace}.service.duck', self.lower_volume)
         self.bus.remove(f'ovos.{self.namespace}.service.unduck', self.restore_volume)
+        self.bus.remove("ovos.common_play.media.state", self.handle_media_state_change)
