@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.2a1) (2026-07-26)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.1a1...0.3.2a1)
+
+**Merged pull requests:**
+
+- fix: remove the media.state listener in remove\_listeners\(\) \(leaked handler\) [\#70](https://github.com/OpenVoiceOS/ovos-media/pull/70) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.3.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.1a1) (2026-07-18)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.0a3...0.3.1a1)
