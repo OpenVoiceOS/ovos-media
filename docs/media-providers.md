@@ -43,7 +43,7 @@ def search(self, signals: Signals, lang: str = "en-us", *,
 ```
 
 There is nothing else to implement. There is no `is_available`, no `matches`, no
-`serves`, no routing class attributes, and no `QueryContext` object — a provider
+`serves`, no routing class attributes, and no `QueryContext` object, a provider
 decides for itself whether it can serve a query and returns an empty list when it
 cannot. Availability and routing are the provider's own concern.
 
@@ -57,19 +57,19 @@ class MediaProvider(metaclass=ABCMeta):
     @abstractmethod
     def search(self, signals, lang="en-us", *, supported_playback_types=None, blocked_genres=None, region=None, session_id=None) -> list[Release]: ...
 
-    def shutdown(self) -> None:     # optional — release resources
+    def shutdown(self) -> None:     # optional, release resources
         ...
 ```
 
 ### Arguments
 
-- **`signals`** is a `mediavocab.Signals` — the parsed request. The fields a
+- **`signals`** is a `mediavocab.Signals`, the parsed request. The fields a
   provider usually reads are `signals.title` (the search phrase) and
   `signals.artist` (artist, or director for video). `signals.medium` carries the
   classified `MediaType` and `signals.content_genres` the requested genres.
 - **`lang`** is the BCP-47 language tag for the request (default `"en-us"`).
 - the remaining **keyword-only arguments** carry what the pipeline knows about
-  the request environment (explicitly named, not `**kwargs`); a provider reads the
+  the request environment (explicitly named, not `**kwargs`). A provider reads the
   ones it cares about and ignores the rest:
 
   | Context kwarg | Meaning |
@@ -83,12 +83,12 @@ class MediaProvider(metaclass=ABCMeta):
 
 Return zero or more `mediavocab.Release` objects. Each `Release` is a typed,
 playable catalog entry shared across the whole media ecosystem. A provider
-returns **playables**, not identities — drop artist/label hits. Return an empty
+returns **playables**, not identities, drop artist/label hits. Return an empty
 list `[]` whenever the provider cannot serve the query: wrong media type, the
 device can't render the result, a blocked genre, no network or API key, no
 match, and so on.
 
-**Ranking** rides on each result via `Release.match_confidence` (`0.0`–`1.0`).
+**Ranking** rides on each result via `Release.match_confidence` (`0.0-1.0`).
 The pipeline filters and ranks *across* all providers, so a provider only needs
 to score within its own results.
 
@@ -103,7 +103,7 @@ A `Release` is a manifestation of a `Work`. The fields most relevant to playback
 | `work.content_genres` | `Release.work` | Genre tags |
 | `uri` | `Release` | Stream URL or deferred stream identifier (see below) |
 | `image` | `Release` | Cover / thumbnail art URL |
-| `match_confidence` | `Release` | `0.0`–`1.0` relevance score |
+| `match_confidence` | `Release` | `0.0-1.0` relevance score |
 
 Most provider authors never build a `Release` by hand: the client library a
 provider wraps (`py_bandcamp`, `tutubo`, `radiosoma`, …) already emits typed
@@ -114,7 +114,7 @@ client's search API.
 
 A `Release.uri` may be a real URL or a deferred stream identifier of the form
 `"{sei}//{uri}"` (for example `youtube//https://youtube.com/watch?v=…`). These
-are resolved at playback time by the `opm.ocp.extractor` plugins — provider code
+are resolved at playback time by the `opm.ocp.extractor` plugins, provider code
 does not resolve streams itself. See [Architecture](architecture.md) and
 [Backends](backends.md).
 
@@ -133,7 +133,7 @@ At query time the pipeline:
    session) from the requesting session's state.
 3. Calls `search(signals, lang, *, ...)` on each loaded provider
    **concurrently** (thread pool). A provider that cannot serve the request
-   returns `[]`; a misbehaving provider that raises is caught and treated as `[]`
+   returns `[]`. A misbehaving provider that raises is caught and treated as `[]`,
    so it cannot abort a multi-provider dispatch.
 4. Collects, filters, and ranks the returned `Release` objects across providers,
    then hands the winner(s) to the `ovos-media` daemon to play.
@@ -184,10 +184,10 @@ class BandcampMediaProvider(MediaProvider):
                                         max_pages=self.max_pages):
                 if isinstance(item, Release):
                     results.append(item)
-                # Entity (artist/label identity) hits are not playable — skip
+                # Entity (artist/label identity) hits are not playable, skip
         except Exception:
             LOG.exception("Bandcamp search failed")
-            return []  # no network / API failure — serve nothing
+            return []  # no network / API failure, serve nothing
         return results
 ```
 
@@ -225,7 +225,7 @@ objects, and each replaces a legacy OCP search skill.
 
 Per-provider settings live under the top-level `media_providers` key of
 `mycroft.conf`, keyed by the provider's entry-point name. Any keys are passed
-through to the provider's `config` dict; `enabled: false` disables a provider
+through to the provider's `config` dict. Setting `enabled: false` disables a provider
 without uninstalling it.
 
 ```json
@@ -252,16 +252,16 @@ See [Configuration reference](configuration.md) for the daemon-side `media` bloc
 ## Migration: from OCP search skills
 
 Providers replace the catalog/search half of the old OCP design. The control and
-playback halves are unchanged — those live in the OCP pipeline and the
+playback halves are unchanged, those live in the OCP pipeline and the
 `ovos-media` daemon.
 
 | Old (OCP search skill) | New (MediaProvider) |
 |---|---|
 | Subclass `OVOSCommonPlaybackSkill` | Subclass `MediaProvider` |
 | `@ocp_search` method returning `MediaEntry`/`Playlist` | `search(signals, lang, *, ...)` returning `list[Release]` |
-| Registered as a skill; replies to `ovos.common_play.query` over the bus | Registered under `opm.media.provider`; called in-process |
+| Registered as a skill, replies to `ovos.common_play.query` over the bus | Registered under `opm.media.provider`, called in-process |
 | Routing implied by the skill's vocab and per-result `media_type` | The provider decides per call and returns `[]` when it can't serve |
-| Match score `0`–`100` on each `MediaEntry` | `match_confidence` `0.0`–`1.0` on each `Release` |
+| Match score `0-100` on each `MediaEntry` | `match_confidence` `0.0-1.0` on each `Release` |
 | Provider-specific result dicts | Typed `mediavocab.Release`, shared across the ecosystem |
 
 The legacy approach is documented in [OCP Skills](ocp-skills.md) and still works
@@ -272,8 +272,11 @@ MediaProviders.
 
 ## See also
 
-- [Architecture](architecture.md) — where providers sit in the full flow
-- [Backends](backends.md) — the playback plugins that consume provider results
-- [OCP Skills](ocp-skills.md) — the legacy search-skill approach this supersedes
-- [Configuration](configuration.md) — daemon-side configuration
-- [mediavocab](https://github.com/TigreGotico/mediavocab) — the `Release`/`Signals` data model
+- [Architecture](architecture.md), where providers sit in the full flow
+- [Backends](backends.md), the playback plugins that consume provider results
+- [OCP Skills](ocp-skills.md), the legacy search-skill approach this supersedes
+- [Configuration](configuration.md), daemon-side configuration
+- [mediavocab](https://github.com/TigreGotico/mediavocab), the `Release`/`Signals` data model
+
+---
+[← Sessions](sessions.md) · [Home](../README.md) · [Backends →](backends.md)

@@ -1,19 +1,19 @@
 # ovos-media
 
-> ⚠️ Work in progress — pre-release software. Under active development, not yet
-> deployed in OpenVoiceOS, APIs may change without notice. Published in the open
-> for transparency; do not depend on it in production yet.
+> **Warning:** this is pre-release software. It is under active development, is
+> not yet deployed in OpenVoiceOS, and its APIs may change without notice. It is
+> published in the open for transparency. Do not depend on it in production yet.
 
-**The OVOS Virtual Media Player** — a standalone daemon that plays audio, video and
-web content on behalf of OpenVoiceOS, with per-session playback state, MPRIS/D-Bus
-integration and a pluggable backend architecture.
+**The OVOS Virtual Media Player** is a standalone daemon. It plays audio, video, and
+web content for OpenVoiceOS. It tracks playback state per session, integrates with
+MPRIS/D-Bus, and uses a pluggable backend architecture.
 
-`ovos-media` implements **OCP — OVOS Common Playback**: one logical media player per
-session that *every* media voice command targets. It arbitrates both OVOS-initiated
-playback ("play jazz") and transport control ("pause", "next", "stop the music"), and
-because it bridges to the host OS over MPRIS, even playback OVOS did **not** start — a
-browser tab, a desktop player — is controllable by voice as long as it speaks the open
-standard. The concept is specified in
+`ovos-media` implements **OCP** (OVOS Common Playback): one logical media player per
+session that every media voice command targets. It handles both OVOS-initiated
+playback ("play jazz") and transport control ("pause", "next", "stop the music"). It
+also bridges to the host OS over MPRIS, so it can control playback OVOS did **not**
+start, such as a browser tab or a desktop player, as long as that player speaks the
+open standard. The concept is specified in
 [OVOS-OCP-1](https://github.com/OpenVoiceOS/architecture/blob/dev/ovos-ocp-1.md).
 
 `ovos-media` is the modern replacement for the legacy audio service (the
@@ -54,8 +54,8 @@ Every arrow is a plugin boundary, so each piece can be replaced independently:
 | **Resolve a stream URI** | `opm.ocp.extractor` | youtube, m3u, rss, files |
 
 Search results flow as [`mediavocab.Release`](https://github.com/TigreGotico/mediavocab)
-objects — a typed catalog model shared across the whole media ecosystem — so a
-provider written once works for playback, MPRIS metadata and the GUI alike.
+objects: a typed catalog model shared across the whole media ecosystem. A
+provider written once works for playback, MPRIS metadata, and the GUI alike.
 
 ---
 
@@ -87,7 +87,7 @@ legacy audio service and run the daemon:
 ovos-media          # start the daemon
 ```
 
-That's it — ask OVOS to play something and the OCP pipeline will route it here.
+Ask OVOS to play something and the OCP pipeline routes the request here.
 
 ---
 
@@ -130,10 +130,10 @@ config, MPRIS roles, GUI update interval, queue behaviour).
 
 Start at **[docs/index.md](docs/index.md)**.
 
-- [Getting started](docs/getting-started.md) — install, enable, first playback
-- [Architecture](docs/architecture.md) — the daemon, the bus API, the plugin boundaries
-- [Media providers](docs/media-providers.md) — write a catalog/search plugin (`opm.media.provider`)
-- [Playback backends](docs/backends.md) — audio/video/web backend plugins
+- [Getting started](docs/getting-started.md): install, enable, first playback
+- [Architecture](docs/architecture.md): the daemon, the bus API, the plugin boundaries
+- [Media providers](docs/media-providers.md): write a catalog/search plugin (`opm.media.provider`)
+- [Playback backends](docs/backends.md): audio/video/web backend plugins
 - [Configuration reference](docs/configuration.md)
 - [MPRIS / D-Bus](docs/mpris.md)
 - [Migrating from the legacy audio service](docs/migration-guide.md)
@@ -144,7 +144,7 @@ Start at **[docs/index.md](docs/index.md)**.
 
 `ovos-media` is the OCP-native playback stack and is opt-in today (enable it by
 turning off the legacy audio service). Catalogs are supplied by
-[`MediaProvider` plugins](docs/media-providers.md) (`opm.media.provider`); the
+[`MediaProvider` plugins](docs/media-providers.md) (`opm.media.provider`). The
 legacy OCP *search skills* still work during the transition.
 
 ---

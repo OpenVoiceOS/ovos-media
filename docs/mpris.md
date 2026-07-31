@@ -1,19 +1,24 @@
 # MPRIS Integration
 
-MPRIS (Media Player Remote Interfacing Specification) is a D-Bus standard that allows external media controllers — KDE Connect, Plasma media widget, `playerctl`, GNOME Shell, and others — to discover and control any compliant media player on the same desktop session. `ovos-media` participates in MPRIS in three ways:
+MPRIS (Media Player Remote Interfacing Specification) is a D-Bus standard. It lets
+external media controllers, such as KDE Connect, the Plasma media widget,
+`playerctl`, and GNOME Shell, discover and control any compliant media player on the
+same desktop session. `ovos-media` participates in MPRIS in three ways:
 
 1. **OCP as an MPRIS server (Role A, outbound).** OCP exposes itself as a controllable `org.mpris.MediaPlayer2.OCP` player so desktop tools and media keys can drive it.
-2. **External player → OCP now-playing (inbound reflection).** What another MPRIS player is playing is mirrored *into* OCP as its now-playing, without OCP driving any backend, so the GUI and voice queries reflect reality.
+2. **External player to OCP now-playing (inbound reflection).** What another MPRIS player is playing is mirrored *into* OCP as its now-playing, without OCP driving any backend, so the GUI and voice queries reflect reality.
 3. **OCP managing external players (Role B, opt-in).** OCP polls the session bus and proxies its transport controls onto a chosen external player.
 
-All three are gated behind `enable_mpris: true`. Roles B and the in-process reflection additionally require `manage_external_players: true`; the inbound reflection also arrives over the bus from the standalone [`ovos-media-plugin-mpris`](https://github.com/OpenVoiceOS/ovos-media-plugin-mpris) watcher.
+All three are gated behind `enable_mpris: true`. Roles B and the in-process reflection
+also require `manage_external_players: true`. The inbound reflection also arrives over
+the bus from the standalone [`ovos-media-plugin-mpris`](https://github.com/OpenVoiceOS/ovos-media-plugin-mpris) watcher.
 
 ## Architecture
 
 The entry point is `OcpMprisExporter` (`ovos_media/mpris.py`). It is a `Thread` subclass that runs an `asyncio` event loop and owns two D-Bus service interfaces:
 
-- `_MediaPlayer2Interface` (`org.mpris.MediaPlayer2`) — identity, MIME type list, URI scheme list
-- `_MediaPlayer2PlayerInterface` (`org.mpris.MediaPlayer2.Player`) — playback state, metadata, transport controls
+- `_MediaPlayer2Interface` (`org.mpris.MediaPlayer2`), identity, MIME type list, URI scheme list
+- `_MediaPlayer2PlayerInterface` (`org.mpris.MediaPlayer2.Player`), playback state, metadata, transport controls
 
 Both interfaces are exported at the object path `/org/mpris/MediaPlayer2` and the well-known name `org.mpris.MediaPlayer2.OCP` is requested from the session bus (`OcpMprisExporter.export_ocp`).
 
@@ -28,10 +33,10 @@ This role is always active when `enable_mpris: true`. Any MPRIS controller on th
 | `PlaybackStatus` | Maps `PlayerState.PLAYING` → `"Playing"`, `PlayerState.PAUSED` → `"Paused"`, anything else → `"Stopped"` |
 | `Metadata` | Returns `now_playing.mpris_metadata` when a track is loaded, otherwise an empty dict |
 | `Position` | Returns `now_playing.position * 1e6` (microseconds, as required by the MPRIS spec) when a track is loaded, otherwise `0` |
-| `Volume` | Read via `mycroft.volume.get` bus message with a 0.5-second timeout; falls back to `1.0` if no reply. Writable (`mycroft.volume.set`) |
-| `Shuffle` | Mirrors `OCPMediaPlayer.shuffle`; writable |
-| `LoopStatus` | See mapping table below; writable |
-| `Rate` | Always returns `1.0`; not writable |
+| `Volume` | Read via `mycroft.volume.get` bus message with a 0.5-second timeout, falls back to `1.0` if no reply. Writable (`mycroft.volume.set`) |
+| `Shuffle` | Mirrors `OCPMediaPlayer.shuffle`. Writable |
+| `LoopStatus` | See mapping table below. Writable |
+| `Rate` | Always returns `1.0`. Not writable |
 | `CanSeek` | Always returns `False` |
 | `CanPlay` | `True` when `PlayerState.PAUSED` |
 | `CanPause` | `True` when `PlayerState.PLAYING` |
@@ -58,27 +63,27 @@ Volume reads and writes are delegated to the OCP bus rather than a direct audio 
 ## Inbound reflection: an external player as OCP now-playing
 
 Independent of who *controls* whom, OCP can mirror what an external MPRIS player
-is playing into its own now-playing state — title, artist, art, and player/media
-state — **without driving any OCP backend**. This is the playback-less path: it
+is playing into its own now-playing state, title, artist, art, and player/media
+state, **without driving any OCP backend**. This is the playback-less path: it
 exists so the OCP GUI and voice queries ("what song is this?") reflect a player
 that OCP did not itself start, such as Spotify, a browser, or VLC.
 
 The entry point is `OCPMediaPlayer.set_external_now_playing(data)`, reachable two
 ways:
 
-- **Over the bus** — the `ovos.common_play.mpris.now_playing` message (handled by
+- **Over the bus**, the `ovos.common_play.mpris.now_playing` message (handled by
   `OCPMediaPlayer.handle_mpris_now_playing`). The standalone
   [`ovos-media-plugin-mpris`](https://github.com/OpenVoiceOS/ovos-media-plugin-mpris)
   watcher runs out-of-process, observes external MPRIS players, and emits this
   message. This is the recommended way to watch external players.
-- **In-process** — the inline Role B below calls `set_external_now_playing`
+- **In-process**, the inline Role B below calls `set_external_now_playing`
   directly via `_update_ocp` when `manage_external_players` is enabled.
 
 `set_external_now_playing` recognises these keys in `data`:
 
 | Key | Meaning |
 |---|---|
-| `external_player` (or `skill_id`) | the external player's MPRIS bus name — required |
+| `external_player` (or `skill_id`) | the external player's MPRIS bus name, required |
 | `title` / `artist` / `image` / `length` | track metadata (`length` in ms) |
 | `state` | `"Playing"` (default), `"Paused"`, or `"Stopped"` |
 | `skill_icon` | optional player icon |
@@ -86,13 +91,13 @@ ways:
 The reflection sets `playback_type = PlaybackType.MPRIS`, status
 `TrackState.PLAYING_MPRIS`, and updates now-playing + player/media state to match
 `state`. When a *new* external player starts playing (a different player than the
-one currently reflected), it first calls `OCPMediaPlayer.handle_MPRIS_takeover()`
-— stopping OCP's own audio/video/web backends and any active skill — so OCP and
+one currently reflected), it first calls `OCPMediaPlayer.handle_MPRIS_takeover()`.
+This stops OCP's own audio/video/web backends and any active skill, so OCP and
 the external player do not overlap.
 
 ## Role B: External player management
 
-When `manage_external_players: true`, `OcpMprisExporter` additionally scans the session bus for other MPRIS players and coordinates playback between them and OCP. The dedicated, recommended home for this is the standalone [`ovos-media-plugin-mpris`](https://github.com/OpenVoiceOS/ovos-media-plugin-mpris) plugin, which also provides a player backend that drives an external MPRIS player. The inline implementation below mirrors that behaviour.
+When `manage_external_players: true`, `OcpMprisExporter` also scans the session bus for other MPRIS players and coordinates playback between them and OCP. The dedicated, recommended home for this is the standalone [`ovos-media-plugin-mpris`](https://github.com/OpenVoiceOS/ovos-media-plugin-mpris) plugin, which also provides a player backend that drives an external MPRIS player. The inline implementation below mirrors that behaviour.
 
 ### Discovery
 
@@ -168,16 +173,19 @@ playerctl --player=OCP previous
 
 ## Behaviour notes
 
-- `CanSeek` always reports `False`; seeking is not exposed over MPRIS.
-- `Rate` always reports `1.0`; variable playback speed is not exposed over MPRIS.
-- Volume read uses a 0.5-second bus timeout; if the volume service is unavailable the getter returns `1.0`.
+- `CanSeek` always reports `False`. Seeking is not exposed over MPRIS.
+- `Rate` always reports `1.0`. Variable playback speed is not exposed over MPRIS.
+- Volume read uses a 0.5-second bus timeout. If the volume service is unavailable, the getter returns `1.0`.
 - The `dbus_next` library is patched at import time (`patch_dbus_next`) to ignore malformed introspection XML. This accommodates players that expose invalid D-Bus introspection data.
 
 ---
 
 ## See also
 
-- [Architecture](architecture.md) — the MPRIS exporter inside the daemon
-- [Configuration](configuration.md) — the `media` config block
-- [Backends](backends.md) — the playback plugins MPRIS controls
-- [`ovos-media-plugin-mpris`](https://github.com/OpenVoiceOS/ovos-media-plugin-mpris) — the standalone external-player watcher and MPRIS player backend
+- [Architecture](architecture.md), the MPRIS exporter inside the daemon
+- [Configuration](configuration.md), the `media` config block
+- [Backends](backends.md), the playback plugins MPRIS controls
+- [`ovos-media-plugin-mpris`](https://github.com/OpenVoiceOS/ovos-media-plugin-mpris), the standalone external-player watcher and MPRIS player backend
+
+---
+[← Configuration](configuration.md) · [Home](../README.md) · [Migration guide →](migration-guide.md)

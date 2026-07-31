@@ -17,7 +17,7 @@ the **server**. The pipeline already tracks one player proxy per MessageBus
 session and forwards playback commands **stamped with the originating session**
 (the satellite's `session_id`). If the server-side `ovos-media` blindly acted on
 every `ovos.common_play.*` message it received, a satellite asking to play music
-would start playback on the **server's** speakers — the wrong device.
+would start playback on the **server's** speakers, the wrong device.
 
 ## The rule
 
@@ -42,7 +42,7 @@ A `require_default_session()` decorator
 runs only if:
 
 - the message is internal/synthetic (`message is None`), **or**
-- `validate_source` is False (act on everything — see below), **or**
+- `validate_source` is False (act on everything, see below), **or**
 - `SessionManager.get(message).session_id == "default"`.
 
 Otherwise it logs at debug level and returns without acting.
@@ -55,7 +55,7 @@ Gated handlers (the ones that change playback or persistent state):
 | `NowPlaying` (`player.py`) | `handle_external_play` (so a non-default play does not bleed metadata into the local now-playing) |
 | `LegacyAudioServiceCompat` (`legacy_api.py`) | `mycroft.audio.service.*`: play, queue, pause, resume, stop, next, prev, set/seek position |
 
-**Read-only query handlers are *not* gated** — `status`, `track_info`,
+**Read-only query handlers are *not* gated**, `status`, `track_info`,
 `get_track_length`, `get_track_position`, `list_backends`. These reply to the
 asker (via `message.response`), so answering a remote query is harmless and
 useful (e.g. the server-side pipeline can read state).
@@ -72,10 +72,10 @@ The filter is on by default. Set it per instance:
 }
 ```
 
-- `validate_source: true` (default) — only act on the local/`"default"` session.
+- `validate_source: true` (default), only act on the local/`"default"` session.
   Correct for a **server-side** `ovos-media` and for any satellite whose sessions
   are NAT'd to `"default"` by hivemind-core.
-- `validate_source: false` — act on **every** session. Use this on a satellite
+- `validate_source: false`, act on **every** session. Use this on a satellite
   that is **not** getting default-NAT'd sessions, so its embedded `ovos-media`
   still executes the playback meant for it.
 
@@ -96,6 +96,9 @@ keeps the daemon simple and routes correctly in a split.
 
 ## See also
 
-- [Architecture](architecture.md) — the daemon's layers and bus API
-- [Glossary](glossary.md) — session, OCP, provider/backend/extractor
-- [Configuration](configuration.md) — the full `media` config block
+- [Architecture](architecture.md), the daemon's layers and bus API
+- [Glossary](glossary.md), session, OCP, provider/backend/extractor
+- [Configuration](configuration.md), the full `media` config block
+
+---
+[← Architecture](architecture.md) · [Home](../README.md) · [Media providers →](media-providers.md)

@@ -19,13 +19,13 @@ TTS. The two run side by side.
 | Search/catalog layer | OCP search skills (`@ocp_search`) | [MediaProvider plugins](media-providers.md) (in-process) |
 | Playback backends | OPM audio plugins | `opm.media.audio` / `.video` / `.web` plugins |
 | Bus namespace | mixed `ocp.audio.*` / `mycroft.audio.service.*` | unified `ovos.common_play.*` |
-| MPRIS | bolted on | first-class (Roles A and B) |
+| MPRIS | bolted on | built in (Roles A and B) |
 | Web/webview playback | not supported | supported |
 | Remote backends | not supported | supported |
 
 ---
 
-## Step 1 — disable the legacy audio service
+## Step 1, disable the legacy audio service
 
 Turn off the in-process audio service so it does not contend with `ovos-media`:
 
@@ -38,14 +38,14 @@ Turn off the in-process audio service so it does not contend with `ovos-media`:
 Place this in `~/.config/mycroft/mycroft.conf` (or `~/.config/ovos/ovos.conf`).
 `ovos-audio` keeps running for TTS.
 
-## Step 2 — install ovos-media and a backend
+## Step 2, install ovos-media and a backend
 
 ```bash
 pip install ovos-media
 pip install ovos-media-plugin-vlc        # at least one audio backend
 ```
 
-## Step 3 — configure ovos-media
+## Step 3, configure ovos-media
 
 ```json
 {
@@ -61,7 +61,7 @@ pip install ovos-media-plugin-vlc        # at least one audio backend
 
 See [configuration.md](configuration.md) for every key.
 
-## Step 4 — install media providers (catalogs)
+## Step 4, install media providers (catalogs)
 
 The OCP pipeline finds media through [MediaProvider plugins](media-providers.md).
 Install the catalogs you want and, if needed, configure them under
@@ -71,7 +71,7 @@ Install the catalogs you want and, if needed, configure them under
 pip install ovos-media-provider-youtube ovos-media-provider-bandcamp
 ```
 
-## Step 5 — run and test
+## Step 5, run and test
 
 ```bash
 ovos-media
@@ -172,10 +172,10 @@ callers keep working.
 | Media state | `ocp.media.state` | `ovos.common_play.media.state` |
 | Track info | `ocp.audio.track_info` | `ovos.common_play.track_info` |
 | Backend discovery | `opm.audio.query` | `opm.audio.query` (unchanged) |
-| Full status snapshot | — | `ovos.common_play.status` |
-| Like / unlike track | — | `ovos.common_play.like` / `ovos.common_play.unlike` |
-| Reflect external MPRIS player | — | `ovos.common_play.mpris.now_playing` (see [mpris.md](mpris.md)) |
-| Supported stream extractors | — | `ovos.common_play.SEI.get` |
+| Full status snapshot |, | `ovos.common_play.status` |
+| Like / unlike track |, | `ovos.common_play.like` / `ovos.common_play.unlike` |
+| Reflect external MPRIS player |, | `ovos.common_play.mpris.now_playing` (see [mpris.md](mpris.md)) |
+| Supported stream extractors |, | `ovos.common_play.SEI.get` |
 
 See [architecture.md](architecture.md) for the complete handler and emitted-event
 tables.
@@ -192,7 +192,7 @@ The catalog/search layer changes from OCP *skills* to *providers*:
   typed `mediavocab.Release` results.
 
 Skills still work during the transition. New catalog integrations should be
-written as providers — see [media-providers.md](media-providers.md) for the
+written as providers, see [media-providers.md](media-providers.md) for the
 contract, a worked example, and the list of existing providers.
 
 ---
@@ -232,9 +232,12 @@ playerctl --player=OCP status
 
 ## See also
 
-- [Getting started](getting-started.md) — install and enable
-- [Configuration](configuration.md) — full config reference
-- [Architecture](architecture.md) — layers and bus events
-- [Backends](backends.md) — playback plugins and writing your own
-- [Media providers](media-providers.md) — the catalog/search layer
-- [MPRIS integration](mpris.md) — D-Bus and `playerctl`
+- [Getting started](getting-started.md), install and enable
+- [Configuration](configuration.md), full config reference
+- [Architecture](architecture.md), layers and bus events
+- [Backends](backends.md), playback plugins and writing your own
+- [Media providers](media-providers.md), the catalog/search layer
+- [MPRIS integration](mpris.md), D-Bus and `playerctl`
+
+---
+[← MPRIS](mpris.md) · [Home](../README.md) · [OCP skills →](ocp-skills.md)
