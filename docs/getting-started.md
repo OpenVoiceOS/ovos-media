@@ -2,7 +2,7 @@
 
 `ovos-media` is the OCP-native media daemon for OpenVoiceOS. It plays the
 audio/video/web half of the media stack while `ovos-audio` continues to handle
-TTS — the two run side by side. Apache-2.0, Python 3.10+.
+TTS, the two run side by side. Apache-2.0, Python 3.10+.
 
 ---
 
@@ -22,7 +22,7 @@ uv pip install ovos-media
 
 ### Install at least one playback backend
 
-`ovos-media` does not play media itself — it delegates to a backend plugin.
+`ovos-media` does not play media itself, it delegates to a backend plugin.
 Install at least an audio backend so something can be heard:
 
 ```bash
@@ -54,8 +54,8 @@ the legacy audio service so the two don't both try to play media:
 Place this in `~/.config/mycroft/mycroft.conf` (or `~/.config/ovos/ovos.conf`).
 Keep `ovos-audio` running for TTS, and start `ovos-media` as its own process.
 
-A complete migration walkthrough — including configuration mapping from the old
-audio service — is in the [migration guide](migration-guide.md).
+A complete migration walkthrough, including configuration mapping from the old
+audio service, is in the [migration guide](migration-guide.md).
 
 ---
 
@@ -94,7 +94,7 @@ console entry point (`ovos_media/__main__.py`) does.
 ## First playback
 
 Once `ovos-media` is running and at least one backend is installed, ask OVOS to
-play something — the OCP pipeline classifies the request, queries the installed
+play something, the OCP pipeline classifies the request, queries the installed
 [media providers](media-providers.md), and routes the winning result here:
 
 > "play some jazz"
@@ -124,12 +124,12 @@ bus.emit(Message("ovos.common_play.ping"))
 
 ## Where things live next
 
-- **Find media** — install [media providers](media-providers.md)
+- **Find media**, install [media providers](media-providers.md)
   (`opm.media.provider`) to give OVOS catalogs to search.
-- **Play media** — install [backends](backends.md)
+- **Play media**, install [backends](backends.md)
   (`opm.media.audio` / `.video` / `.web`) and pick preferences in
   [configuration](configuration.md).
-- **Control from the desktop** — enable [MPRIS](mpris.md) to drive playback from
+- **Control from the desktop**, enable [MPRIS](mpris.md) to drive playback from
   `playerctl`, KDE Connect, or the GNOME media widget.
 
 ---
@@ -156,3 +156,6 @@ plugins for YouTube, M3U, RSS, local files, and news feeds.
 
 Python 3.10 and above, enforced by `requires-python = ">=3.10"` in
 `pyproject.toml`.
+
+---
+[← Glossary](glossary.md) · [Home](../README.md) · [Architecture →](architecture.md)

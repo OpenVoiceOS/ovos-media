@@ -2,8 +2,8 @@
 
 `ovos-media` reads two top-level keys from the OVOS/Mycroft configuration file:
 
-- **`media`** — the daemon: backends, playback behaviour, MPRIS. Documented here.
-- **`media_providers`** — per-provider catalog/search settings. Documented in
+- **`media`**, the daemon: backends, playback behaviour, MPRIS. Documented here.
+- **`media_providers`**, per-provider catalog/search settings. Documented in
   [media-providers.md](media-providers.md#configuration) and summarised
   [below](#media-providers).
 
@@ -17,9 +17,9 @@ flag (see [getting started](getting-started.md) and the
 
 OVOS reads configuration from (in ascending priority order):
 
-1. `/etc/mycroft/mycroft.conf` — system-wide defaults
-2. `~/.config/mycroft/mycroft.conf` — user overrides (Mycroft-compat path)
-3. `~/.config/ovos/ovos.conf` — user overrides (OVOS-native path)
+1. `/etc/mycroft/mycroft.conf`, system-wide defaults
+2. `~/.config/mycroft/mycroft.conf`, user overrides (Mycroft-compat path)
+3. `~/.config/ovos/ovos.conf`, user overrides (OVOS-native path)
 
 Place your `media` block in the user config file for the path appropriate to
 your installation. Both paths are equivalent at runtime.
@@ -200,8 +200,11 @@ Provider settings and the full provider list are documented in
 
 ## See also
 
-- [Getting started](getting-started.md) — install and enable the daemon
-- [Backends](backends.md) — the `audio_players` / `video_players` / `web_players` plugins
-- [Media providers](media-providers.md) — the `media_providers` catalog/search plugins
-- [MPRIS integration](mpris.md) — all MPRIS-specific options in depth
-- [Migration guide](migration-guide.md) — mapping legacy audio-service config to `media`
+- [Getting started](getting-started.md), install and enable the daemon
+- [Backends](backends.md), the `audio_players` / `video_players` / `web_players` plugins
+- [Media providers](media-providers.md), the `media_providers` catalog/search plugins
+- [MPRIS integration](mpris.md), all MPRIS-specific options in depth
+- [Migration guide](migration-guide.md), mapping legacy audio-service config to `media`
+
+---
+[← Backends](backends.md) · [Home](../README.md) · [MPRIS →](mpris.md)

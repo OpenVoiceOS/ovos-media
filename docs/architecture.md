@@ -1,7 +1,7 @@
 # Architecture
 
-This document describes the runtime architecture of `ovos-media` — the playback
-daemon — and how it sits inside the wider OCP media flow.
+This document describes the runtime architecture of `ovos-media`, the playback
+daemon, and how it sits inside the wider OCP media flow.
 
 ---
 
@@ -43,19 +43,19 @@ The rest of this document focuses on the daemon itself.
 
 `ovos-media` is structured as three cooperating layers:
 
-1. **`MediaService`** (`ovos_media/service.py`) — the process entry point. It runs
+1. **`MediaService`** (`ovos_media/service.py`), the process entry point. It runs
    as a `Thread`, owns the `MessageBusClient` connection, instantiates
    `OCPMediaPlayer`, installs the `LegacyAudioServiceCompat` shim, and registers a
    small set of top-level bus handlers.
 
-2. **`OCPMediaPlayer`** (`ovos_media/player.py`) — the virtual media player. It is
+2. **`OCPMediaPlayer`** (`ovos_media/player.py`), the virtual media player. It is
    a plain bus-connected class (it is *not* a skill or an `OVOSAbstractApplication`)
    that manages the playback state machine (`PlayerState`, `MediaState`), owns the
    `NowPlaying` tracker and three backend service objects (`AudioService`,
    `VideoService`, `WebService`), drives the GUI via `GUIInterface`, and optionally
    drives MPRIS. All of this is wired up in `OCPMediaPlayer.__init__`.
 
-3. **Backend services** (`ovos_media/media_backends/`) — three concrete
+3. **Backend services** (`ovos_media/media_backends/`), three concrete
    `BaseMediaService` subclasses (`AudioService`, `VideoService`, `WebService`).
    Each loads OPM plugins at startup and delegates actual playback to the selected
    plugin instance.
@@ -67,7 +67,7 @@ services handle low-level playback over namespaced bus events.
 
 ### NowPlaying
 
-`OCPMediaPlayer.now_playing` is a `NowPlaying` instance — a `MediaEntry` subclass
+`OCPMediaPlayer.now_playing` is a `NowPlaying` instance, a `MediaEntry` subclass
 that subscribes to bus events to keep the currently-playing track's metadata,
 status (`TrackState`), and seek position live. It updates on
 `ovos.common_play.track.state`, `ovos.common_play.media.state`,
@@ -132,11 +132,11 @@ Registered in `OCPMediaPlayer.register_bus_handlers` (`ovos_media/player.py`).
 | `ovos.common_play.search.start` | `handle_search_start` | Shows the GUI loading state. |
 | `ovos.common_play.like` / `.unlike` | `handle_like` / `handle_unlike` | Add/remove the current track in the liked-songs store. |
 | `ovos.common_play.status` | `handle_status` | Replies with full player status (state, media type, position, shuffle, loop). |
-| `ovos.common_play.mpris.now_playing` | `handle_mpris_now_playing` | Reflects an **external** MPRIS player as OCP now-playing — see [MPRIS](#mpris-integration). |
-| `recognizer_loop:audio_output_start` / `:audio_output_end` | `handle_duck_request` / `handle_unduck_request` | Legacy ducking aliases — same semantics as `ovos.common_play.duck` / `.unduck`. |
+| `ovos.common_play.mpris.now_playing` | `handle_mpris_now_playing` | Reflects an **external** MPRIS player as OCP now-playing, see [MPRIS](#mpris-integration). |
+| `recognizer_loop:audio_output_start` / `:audio_output_end` | `handle_duck_request` / `handle_unduck_request` | Legacy ducking aliases, same semantics as `ovos.common_play.duck` / `.unduck`. |
 | `recognizer_loop:record_begin` / `:record_end` | `handle_cork_request` / `handle_record_end` | Legacy cork alias; `record_end` auto-uncorks if no `speak` arrives within 8 s. |
 | `ovos.utterance.handled` | `handle_utterance_handled` | Restores volume once speech finishes. |
-| `mycroft.stop` | `handle_mycroft_stop` | Global stop — stops all backends, resets state, replies `mycroft.stop.handled`. |
+| `mycroft.stop` | `handle_mycroft_stop` | Global stop, stops all backends, resets state, replies `mycroft.stop.handled`. |
 
 ### Emitted events
 
@@ -293,7 +293,7 @@ device's player rather than the hub's. `ovos-media` participates by reporting it
 state through `handle_status`, which the pipeline associates with the originating
 session.
 
-`ovos-media` itself stays a **single** player bound to its own device — the
+`ovos-media` itself stays a **single** player bound to its own device, the
 `"default"` session. Its playback-executing handlers are gated by
 `require_default_session()` (`ovos_media/utils.py`), so a server-side daemon
 **ignores** a satellite's forwarded command (`session_id != "default"`) while
@@ -306,9 +306,12 @@ ungated so a remote pipeline can still read state. See
 
 ## See also
 
-- [Sessions](sessions.md) — the default/local session filter (HiveMind topology)
-- [Media providers](media-providers.md) — the catalog/search layer feeding this daemon
-- [Backends](backends.md) — the audio/video/web playback plugins
-- [Configuration](configuration.md) — the `media` config block
-- [MPRIS integration](mpris.md) — the D-Bus exporter and external-player reflection
-- [Migration guide](migration-guide.md) — moving from the legacy audio service
+- [Sessions](sessions.md), the default/local session filter (HiveMind topology)
+- [Media providers](media-providers.md), the catalog/search layer feeding this daemon
+- [Backends](backends.md), the audio/video/web playback plugins
+- [Configuration](configuration.md), the `media` config block
+- [MPRIS integration](mpris.md), the D-Bus exporter and external-player reflection
+- [Migration guide](migration-guide.md), moving from the legacy audio service
+
+---
+[← Getting started](getting-started.md) · [Home](../README.md) · [Sessions →](sessions.md)

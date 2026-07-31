@@ -241,7 +241,10 @@ Remote backends (servers, casting targets) subclass `RemoteAudioPlayerBackend` /
 
 ## See also
 
-- [Architecture](architecture.md) — where backends sit in the daemon
-- [Media providers](media-providers.md) — the search/catalog layer that supplies playables
-- [Configuration](configuration.md) — `audio_players` / `video_players` / `web_players` and the preferred-service keys
-- [MPRIS integration](mpris.md) — controlling playback from the desktop
+- [Architecture](architecture.md), where backends sit in the daemon
+- [Media providers](media-providers.md), the search/catalog layer that supplies playables
+- [Configuration](configuration.md), `audio_players` / `video_players` / `web_players` and the preferred-service keys
+- [MPRIS integration](mpris.md), controlling playback from the desktop
+
+---
+[← Media providers](media-providers.md) · [Home](../README.md) · [Configuration →](configuration.md)
