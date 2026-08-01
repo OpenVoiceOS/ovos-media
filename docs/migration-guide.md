@@ -1,6 +1,7 @@
 # Migration guide: legacy audio service → ovos-media
 
-This guide covers moving media playback from the legacy audio service (the
+See the [OVOS technical manual](https://tigregotico.github.io/ovos-technical-manual/ovos-media/)
+for the high level overview of `ovos-media`. This guide covers moving media playback from the legacy audio service (the
 `ovos-ocp-audio-plugin` hosted inside `ovos-audio`) to the `ovos-media` daemon:
 what to turn off, what to install, and how the configuration and bus messages map
 across.
