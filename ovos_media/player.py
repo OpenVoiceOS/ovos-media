@@ -1,3 +1,4 @@
+import dataclasses
 import random
 import threading
 import time
@@ -176,9 +177,26 @@ class NowPlaying(MediaEntry):
         """
         return MediaEntry(**self.as_dict)
 
-    # as_dict is inherited from MediaEntry: it serializes every dataclass field,
-    # so fields added to MediaEntry survive the round-trip to the GUI/bus instead
-    # of being dropped by a hand-maintained key list.
+    @property
+    def as_dict(self) -> dict:
+        """
+        Return a dict representation of this object's MediaEntry fields.
+
+        NowPlaying is not itself decorated with @dataclass and carries plain
+        instance attributes (bus, _player, stream_xtract, ...) alongside the
+        MediaEntry dataclass fields it inherits. orjson only recognizes a
+        type as a dataclass via that exact class's own __dict__, not an
+        inherited one, so serializing a NowPlaying instance directly (as the
+        inherited MediaEntry.as_dict does) raises
+        "TypeError: Type is not JSON serializable: NowPlaying".
+
+        Build a genuine MediaEntry from just the declared dataclass fields
+        and delegate serialization to it; fields added to MediaEntry keep
+        surviving the round-trip automatically since they are read from
+        `dataclasses.fields(MediaEntry)` rather than a hand-maintained list.
+        """
+        fields = {f.name: getattr(self, f.name) for f in dataclasses.fields(MediaEntry)}
+        return MediaEntry(**fields).as_dict
 
     def shutdown(self):
         """

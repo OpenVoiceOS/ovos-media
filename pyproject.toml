@@ -36,6 +36,7 @@ extras = [
 test = [
     "pytest",
     "pytest-cov",
+    "orjson",
     "ovoscope[media]>=0.21.0a1",
 ]
 
