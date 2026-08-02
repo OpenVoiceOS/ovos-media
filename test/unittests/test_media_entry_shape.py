@@ -1,15 +1,24 @@
 """Regression tests for MediaEntry representation consistency.
 
-Covers two defects surfaced by the ecosystem audit:
+Covers defects surfaced by the ecosystem audit:
 
 * NowPlaying used to override ``as_dict`` with a hard-coded key list, so any
   field added to MediaEntry was silently dropped from the GUI/bus payload.
+* NowPlaying subclasses the ``@dataclass``-decorated MediaEntry but is not
+  itself decorated and adds plain instance attributes (bus, _player, ...) in
+  a custom ``__init__``. orjson only recognizes a type as a dataclass via
+  that exact class's own ``__dict__``, not an inherited one, so serializing
+  a NowPlaying instance directly used to raise
+  ``TypeError: Type is not JSON serializable: NowPlaying`` whenever orjson
+  was installed (the GUI-update/bus payload path via ``as_dict``).
 * ``OCPMediaCatalog.liked_songs_playlist`` used to return (and mutate) the raw
   persisted store dicts, mixing plain dicts with the MediaEntry objects the
   playback path expects and polluting the on-disk store.
 """
 import unittest
 from unittest.mock import patch
+
+import orjson
 
 from ovos_utils.fakebus import FakeBus
 from ovos_utils.ocp import MediaEntry, MediaType, PlaybackType
@@ -36,6 +45,25 @@ class TestNowPlayingSerializesAllFields(unittest.TestCase):
         np.javascript = "play();"
         self.assertEqual(np.as_dict["match_confidence"], 73)
         self.assertEqual(np.as_dict["javascript"], "play();")
+
+    def test_as_dict_is_orjson_serializable(self):
+        # NowPlaying is not itself @dataclass-decorated, so orjson can't
+        # serialize the instance directly; as_dict must return a plain dict
+        # built from a real MediaEntry, which orjson.dumps happily accepts.
+        np = self._make_now_playing()
+        np.uri = "file://track.mp3"
+        as_dict = np.as_dict
+        self.assertEqual(orjson.loads(orjson.dumps(as_dict))["uri"],
+                          "file://track.mp3")
+
+    def test_now_playing_used_in_gui_payload_is_orjson_serializable(self):
+        # exercises the same path OCPMediaPlayer._update_gui uses:
+        # now_playing=np.as_dict passed straight into the GUI/bus payload
+        np = self._make_now_playing()
+        np.uri = "file://track.mp3"
+        payload = {"now_playing": np.as_dict}
+        self.assertEqual(orjson.loads(orjson.dumps(payload))["now_playing"]["uri"],
+                          "file://track.mp3")
 
 
 class TestLikedSongsPlaylistShape(unittest.TestCase):
