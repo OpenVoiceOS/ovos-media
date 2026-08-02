@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a1) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.2a2...0.3.3a1)
+
+**Merged pull requests:**
+
+- fix: NowPlaying orjson serialization TypeError [\#76](https://github.com/OpenVoiceOS/ovos-media/pull/76) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.3.2a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.2a2) (2026-07-31)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.2a1...0.3.2a2)
