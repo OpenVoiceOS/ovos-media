@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a2)
+
+**Merged pull requests:**
+
+- ci: fire alpha release on merged PRs, publish to PyPI [\#81](https://github.com/OpenVoiceOS/ovos-media/pull/81) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.3.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a1) (2026-08-02)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.2a2...0.3.3a1)
