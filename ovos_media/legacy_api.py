@@ -144,6 +144,7 @@ class LegacyAudioServiceCompat:
         """
         tracks: List = message.data.get("tracks", [])
         repeat: bool = message.data.get("repeat", False)
+        utterance: str = message.data.get("utterance", "")
 
         if not tracks:
             LOG.warning("mycroft.audio.service.play: no tracks provided")
@@ -159,6 +160,7 @@ class LegacyAudioServiceCompat:
             "playlist": playlist,
             "disambiguation": playlist,
             "repeat": repeat,
+            "utterance": utterance,
         }))
 
     @require_default_session()

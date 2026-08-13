@@ -67,11 +67,20 @@ class BaseMediaService:
             LOG.info(f'New {self.namespace} track coming up!')
             self.bus.emit(Message(f'ovos.{self.namespace}.playing_track',
                                   data={'track': track}))
+            if self.namespace == "audio":
+                # legacy ovos-audio twin — some skills still block on this
+                # exact message type waiting for playback to start
+                self.bus.emit(Message('mycroft.audio.playing_track',
+                                      data={'track': track}))
         else:
             # If no track is about to start last track of the queue has been
             # played.
             LOG.debug('End of playlist!')
             self.bus.emit(Message(f'ovos.{self.namespace}.queue_end'))
+            if self.namespace == "audio":
+                # legacy ovos-audio twin — some skills block forever waiting
+                # on this exact message type at the end of playback
+                self.bus.emit(Message('mycroft.audio.queue_end'))
 
     def load_services(self):
         """Method for loading services.
@@ -336,6 +345,19 @@ class BaseMediaService:
             return
         with self.service_lock:
             tracks = message.data['tracks']
+            if not tracks:
+                LOG.warning(f"ovos.{self.namespace}.service.play: no tracks provided")
+                return
+
+            # self.play() takes a single uri, not a tracklist — mirror how
+            # ovos-audio's legacy service resolves the first playable track.
+            # 'tracks' may be a bare uri string, a list of uri strings, or a
+            # list of (uri, mime) tuples.
+            if isinstance(tracks, str):
+                uri = tracks
+            else:
+                first = tracks[0]
+                uri = first[0] if isinstance(first, (list, tuple)) else first
 
             # Find if the user wants to use a specific backend
             query = message.data.get("utterance", "").lower()
@@ -353,7 +375,7 @@ class BaseMediaService:
 
             try:
                 # Use a timer to avoid blocking the bus event loop
-                threading.Timer(0.5, self.play, args=[tracks, preferred_service]).start()
+                threading.Timer(0.5, self.play, args=[uri, preferred_service]).start()
             except Exception as e:
                 LOG.exception(e)
 

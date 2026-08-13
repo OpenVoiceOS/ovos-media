@@ -48,10 +48,18 @@ def require_default_session():
         @wraps(func)
         def func_wrapper(self, message=None):
             validate = getattr(self, "validate_source", True)
-            validated = message is None or \
-                        not validate or \
-                        SessionManager.get(message).session_id == "default"
-            if validated:
+            if message is None or not validate:
+                return func(self, message)
+            try:
+                is_default = SessionManager.get(message).session_id == "default"
+            except Exception as e:
+                # malformed session context (eg. empty/non-str session_id) —
+                # a hostile or buggy peer must never be able to crash a
+                # gated handler; treat it as NOT the default/local session
+                LOG.warning(f"ignoring '{message.msg_type}' message, "
+                           f"malformed session context: {e}")
+                return None
+            if is_default:
                 return func(self, message)
             LOG.debug(f"ignoring '{message.msg_type}' message, "
                       f"not from the default/local session")

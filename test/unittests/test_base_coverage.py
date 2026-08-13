@@ -411,5 +411,109 @@ class TestHandleSeekBackward(unittest.TestCase):
         svc.current.seek_backward.assert_called_with(10)
 
 
+class TestTrackStartLegacyTwins(unittest.TestCase):
+    """C1: track_start must emit mycroft.audio.* twins alongside ovos.audio.*
+    so legacy skills blocking on mycroft.audio.playing_track /
+    mycroft.audio.queue_end do not hang forever."""
+
+    def test_track_start_emits_ovos_and_mycroft_playing_track(self):
+        svc, bus = _make_service()
+        svc.namespace = "audio"
+
+        received = {"ovos": [], "mycroft": []}
+        bus.on("ovos.audio.playing_track", lambda m: received["ovos"].append(m))
+        bus.on("mycroft.audio.playing_track", lambda m: received["mycroft"].append(m))
+
+        svc.track_start("http://example.com/track.mp3")
+
+        self.assertEqual(len(received["ovos"]), 1)
+        self.assertEqual(len(received["mycroft"]), 1)
+        self.assertEqual(received["mycroft"][0].data["track"],
+                         "http://example.com/track.mp3")
+
+    def test_track_start_none_emits_ovos_and_mycroft_queue_end(self):
+        svc, bus = _make_service()
+        svc.namespace = "audio"
+
+        received = {"ovos": [], "mycroft": []}
+        bus.on("ovos.audio.queue_end", lambda m: received["ovos"].append(m))
+        bus.on("mycroft.audio.queue_end", lambda m: received["mycroft"].append(m))
+
+        svc.track_start(None)
+
+        self.assertEqual(len(received["ovos"]), 1)
+        self.assertEqual(len(received["mycroft"]), 1)
+
+    def test_track_start_video_namespace_does_not_emit_mycroft_twin(self):
+        """mycroft.audio.* is audio-specific legacy — video/web must not
+        emit it (there is no mycroft.video.*/mycroft.web.* legacy type)."""
+        svc, bus = _make_service()
+        svc.namespace = "video"
+
+        received = []
+        bus.on("mycroft.audio.playing_track", lambda m: received.append(m))
+
+        svc.track_start("http://example.com/movie.mp4")
+
+        self.assertEqual(len(received), 0)
+
+    def test_track_start_video_namespace_does_not_emit_mycroft_queue_end(self):
+        svc, bus = _make_service()
+        svc.namespace = "video"
+
+        received = []
+        bus.on("mycroft.audio.queue_end", lambda m: received.append(m))
+
+        svc.track_start(None)
+
+        self.assertEqual(len(received), 0)
+
+
+class TestHandlePlayUriExtraction(unittest.TestCase):
+    """C3: handle_play must pass a single uri string to self.play(), not the
+    raw tracks list — self.play() does uri.split(':') and would raise
+    AttributeError on a list, killing the Timer thread silently."""
+
+    def _run_handle_play(self, svc, data):
+        """Call handle_play with threading.Timer patched to fire synchronously
+        so we can inspect what was passed to self.play()."""
+        from ovos_bus_client.message import Message
+        with patch("threading.Timer") as mock_timer:
+            svc.handle_play(Message("ovos.audio.service.play", data))
+            self.assertTrue(mock_timer.called)
+            _args, kwargs = mock_timer.call_args
+            # threading.Timer(0.5, self.play, args=[...])
+            target = mock_timer.call_args[0][1]
+            call_args = mock_timer.call_args[1].get("args") or mock_timer.call_args[0][2]
+            return target, call_args
+
+    def test_handle_play_extracts_uri_from_string_track(self):
+        svc, bus = _make_service()
+        svc.services = []
+
+        target, call_args = self._run_handle_play(
+            svc, {"tracks": ["http://example.com/a.mp3"]})
+
+        self.assertEqual(target, svc.play)
+        self.assertEqual(call_args[0], "http://example.com/a.mp3")
+
+    def test_handle_play_extracts_uri_from_tuple_track(self):
+        svc, bus = _make_service()
+        svc.services = []
+
+        target, call_args = self._run_handle_play(
+            svc, {"tracks": [("http://example.com/b.mp3", "audio/mpeg")]})
+
+        self.assertEqual(call_args[0], "http://example.com/b.mp3")
+
+    def test_handle_play_with_no_tracks_does_not_start_timer(self):
+        svc, bus = _make_service()
+        svc.services = []
+        from ovos_bus_client.message import Message
+        with patch("threading.Timer") as mock_timer:
+            svc.handle_play(Message("ovos.audio.service.play", {"tracks": []}))
+            mock_timer.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -55,6 +55,37 @@ class TestLegacyPlayTranslation(unittest.TestCase):
 
         self.assertEqual(len(received[0].data["playlist"]), 2)
 
+    def test_play_carries_utterance_through(self):
+        """C2: legacy 'utterance' field (used for by-name backend selection)
+        must survive translation into ovos.common_play.play."""
+        compat, bus, player = _make_compat()
+        received = []
+        bus.on("ovos.common_play.play", lambda m: received.append(m))
+
+        from ovos_bus_client.message import Message
+        bus.emit(Message("mycroft.audio.service.play", {
+            "tracks": ["http://example.com/track.mp3"],
+            "utterance": "play track.mp3 using vlc",
+        }))
+
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0].data.get("utterance"),
+                         "play track.mp3 using vlc")
+
+    def test_play_without_utterance_forwards_empty_string(self):
+        """utterance key is always present (empty default) so downstream
+        by-name selection logic never KeyErrors."""
+        compat, bus, player = _make_compat()
+        received = []
+        bus.on("ovos.common_play.play", lambda m: received.append(m))
+
+        from ovos_bus_client.message import Message
+        bus.emit(Message("mycroft.audio.service.play", {
+            "tracks": ["http://example.com/track.mp3"],
+        }))
+
+        self.assertEqual(received[0].data.get("utterance"), "")
+
     def test_play_with_no_tracks_does_not_emit(self):
         compat, bus, player = _make_compat()
         received = []
