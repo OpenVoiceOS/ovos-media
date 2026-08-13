@@ -348,7 +348,15 @@ class BaseMediaService:
         """
         if not self._is_message_for_service(message):
             return
-        if self.on_stop is not None:
+        # W4: the on_stop callback is player-wide (shared _stop_requested
+        # across audio/video/web), but this service instance may have no
+        # active backend at all — eg. a skill calls the video interface's
+        # stop() while only audio is playing. Firing on_stop unconditionally
+        # in that case flags a stop the player never asked for, which then
+        # swallows the NEXT unrelated END_OF_MEDIA from whichever service is
+        # actually playing. Only a real stop (self.current is not None) is
+        # allowed to signal it.
+        if self.on_stop is not None and self.current is not None:
             # W3: tell the owning player this end-of-playback is a stop, before
             # the backend's ocp_stop() emits END_OF_MEDIA.
             try:
