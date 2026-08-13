@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.10a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.10a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.9a1...0.4.10a1)
+
+**Merged pull requests:**
+
+- fix: UX quick wins — help flag, spoken failures, honest error messages, provider docs [\#113](https://github.com/OpenVoiceOS/ovos-media/pull/113) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.9a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.9a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.8a1...0.4.9a1)
@@ -83,7 +91,7 @@
 
 ## [0.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.0a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.4.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.4.0a1)
 
 **Implemented enhancements:**
 
@@ -93,13 +101,13 @@
 
 - feat: now-playing voice intents \(WhatSong/WhatAlbum/WhatArtist\) + shuffle on/off [\#90](https://github.com/OpenVoiceOS/ovos-media/pull/90) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.3.4a1)
-
 ## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.3.3a5)
+
+## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.4a1)
 
 **Closed issues:**
 
