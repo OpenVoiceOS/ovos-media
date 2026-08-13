@@ -1,20 +1,34 @@
 # Changelog
 
+## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
+
+**Closed issues:**
+
+- The OCP Sprint [\#15](https://github.com/OpenVoiceOS/ovos-media/issues/15)
+
+**Merged pull requests:**
+
+- fix\(deps\): bump ecosystem dependency floors to current majors [\#87](https://github.com/OpenVoiceOS/ovos-media/pull/87) ([JarbasAl](https://github.com/JarbasAl))
+- chore: drop uv.lock [\#86](https://github.com/OpenVoiceOS/ovos-media/pull/86) ([JarbasAl](https://github.com/JarbasAl))
+- docs: cross-link the technical manual [\#75](https://github.com/OpenVoiceOS/ovos-media/pull/75) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a4)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a4)
 
 **Merged pull requests:**
 
 - chore: remove duplicate publish-alpha workflow [\#84](https://github.com/OpenVoiceOS/ovos-media/pull/84) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a3)
-
 ## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a2)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a2)
+
+## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a3)
 
 **Merged pull requests:**
 
