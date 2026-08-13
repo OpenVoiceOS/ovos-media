@@ -622,6 +622,16 @@ class TestInternalPlayerControl(unittest.IsolatedAsyncioTestCase):
         # Should not raise
         await ctl._stop_player("nonexistent")
 
+    async def test_stop_player_skips_when_in_players_but_not_yet_in_player_meta(self):
+        # race window: scan_players() adds to self.players before query_player()
+        # has populated player_meta for that name
+        ctl, _ = _make_exporter()
+        proxy, iface = self._make_player_proxy()
+        ctl.players["new_player"] = proxy
+        # deliberately NOT setting ctl.player_meta["new_player"]
+        await ctl._stop_player("new_player")  # must not raise KeyError
+        iface.call_stop.assert_not_awaited()
+
     async def test_shuffle_enable_calls_set_shuffle_true(self):
         ctl, iface, name = self._make_ctl_with_player()
         await ctl._shuffle_enable(name)
