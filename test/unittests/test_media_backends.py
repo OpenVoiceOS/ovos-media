@@ -66,6 +66,9 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
             svc.volume_is_low = False
             svc.validate_source = True
             svc.service_lock = __import__("threading").Lock()
+            svc._pending_playlist = []
+            svc._pending_repeat = False
+            svc._last_full_playlist = []
             from ovos_utils.process_utils import MonotonicEvent
             svc._loaded = MonotonicEvent()
         return svc
@@ -358,6 +361,9 @@ def _make_base_svc(namespace="audio", config=None, services=None, validate_sourc
     svc.volume_is_low = False
     svc.validate_source = validate_source
     svc.service_lock = threading.Lock()
+    svc._pending_playlist = []
+    svc._pending_repeat = False
+    svc._last_full_playlist = []
     svc._loaded = MonotonicEvent()
     svc._loaded.set()
     return svc, bus

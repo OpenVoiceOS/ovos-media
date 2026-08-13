@@ -408,6 +408,10 @@ class NowPlaying(MediaEntry):
         self.media_type = MediaType.GENERIC
         self.skill_icon = ""
         self.image = ""
+        # F4: without clearing these, a stopped/home'd player still reports
+        # the previous track's uri via now_playing.as_dict / GUI payload
+        self.uri = ""
+        self.original_uri = ""
 
     def update(self, entry: MediaEntry, skipkeys: list = None, newonly: bool = False):
         """
@@ -525,6 +529,22 @@ class NowPlaying(MediaEntry):
             raise ValueError(f"Expected int or TrackState, but got: {state}")
 
         if state == MediaState.END_OF_MEDIA:
+            # F1: NowPlaying is constructed (and subscribes to this same
+            # 'ovos.common_play.media.state' topic) BEFORE
+            # OCPMediaPlayer.register_bus_handlers runs, so this handler
+            # fires FIRST and resets playback -> PlaybackType.UNDEFINED
+            # before OCPMediaPlayer.handle_playback_ended ever gets to
+            # check what was playing. Stash the pre-reset type on the
+            # player so handle_playback_ended does not depend on a value
+            # this very reset() call is about to wipe out from under it.
+            if self._player is not None:
+                self._player._last_playback_type = self.playback
+                # F4 clears now_playing.uri in reset() below, which
+                # _queue_index() (used by play_next() to locate the track
+                # that just finished, in the merged queue) reads. Stash it
+                # too so the F1 autoplay chain can still find its place —
+                # see _queue_index()'s fallback.
+                self._player._last_playback_uri = self.uri
             # playback ended, allow next track to change metadata again
             self.reset()
 
@@ -572,6 +592,10 @@ class OCPMediaPlayer:
         self.shuffle: bool = False
         self.track_history: dict = {}  # Dict of track URI to play count
         self._paused_on_duck: bool = False
+        # F1: last known-good playback type, stashed by NowPlaying right
+        # before it resets itself on END_OF_MEDIA. See handle_playback_ended.
+        self._last_playback_type: PlaybackType = PlaybackType.UNDEFINED
+        self._last_playback_uri: str = ""
 
         self.now_playing: NowPlaying = NowPlaying(bus, player=self)
         self.media: OCPMediaCatalog = OCPMediaCatalog(bus=bus, skill_id=OCP_ID + ".favorites",
@@ -653,8 +677,15 @@ class OCPMediaPlayer:
             PlayerState.STOPPED: "stopped",
         }
         np = self.now_playing
+        now_playing = None
+        if np and np.uri:
+            # F2/C3: MediaEntry.as_dict has no 'position' field (it is a
+            # plain attribute, not a dataclass field) and reports 'length'
+            # rather than 'duration' — the GUI seekbar contract needs both
+            # 'position' and 'duration' (milliseconds), so merge them in.
+            now_playing = {**np.as_dict, "position": np.position, "duration": np.length}
         self.gui.show_media_player(
-            now_playing=np.as_dict if np and np.uri else None,
+            now_playing=now_playing,
             playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
             search_results=[e.as_dict for e in self.search_results],
             state=state_map.get(self.state, "stopped"),
@@ -699,6 +730,13 @@ class OCPMediaPlayer:
             self.media.liked_songs.store()
             LOG.info(f"unliked song: {uri}")
 
+    # F7/F8: this and service.py's MediaService.handle_search_start both
+    # registered on 'ovos.common_play.search.start' unconditionally, so a
+    # satellite/non-default session's search double-pushed the "loading" GUI
+    # state (once from each handler). Gate this one to the default session
+    # (mirrors every other playback-affecting handler in this class) and the
+    # redundant registration in service.py was deleted outright.
+    @require_default_session()
     def handle_search_start(self, message):
         self.gui.show_media_player(
             now_playing=None,
@@ -774,6 +812,12 @@ class OCPMediaPlayer:
     def _queue_index(self, queue: List[MediaEntry]) -> int:
         """Return the index of ``now_playing`` in *queue*, or -1 if not found."""
         uri = self.now_playing.uri if self.now_playing else None
+        if not uri:
+            # F1/F4: right after an END_OF_MEDIA reset, now_playing.uri is
+            # already cleared (F4), but play_next()/can_next/can_prev still
+            # need to know where the just-finished track was in the queue —
+            # fall back to the uri NowPlaying stashed just before resetting.
+            uri = self._last_playback_uri
         if not uri:
             return -1
         for i, entry in enumerate(queue):
@@ -1071,6 +1115,32 @@ class OCPMediaPlayer:
         if self.mpris and not self.mpris.stop_event.is_set():
             self.mpris.stop()
 
+        # C1: handle_player_media_update dedups on `state == self.media_state`
+        # (see below). Without resetting here, two unplayable tracks in a
+        # row both land on MediaState.INVALID_MEDIA, so the second INVALID_MEDIA
+        # is silently swallowed by the dedup guard and the bad-track skip
+        # chain (on_invalid_stream -> play_next -> play -> ... ) stops dead,
+        # wedging the player mid-PLAYING. Resetting to LOADING_MEDIA at the
+        # start of every play() attempt guarantees the next real state
+        # (whatever it is) always differs from the just-reset value.
+        self.media_state = MediaState.LOADING_MEDIA
+
+        # C4: switching playback types must not leave the previously active
+        # backend's BaseMediaService.current set — otherwise a later,
+        # unrelated global LOADED_MEDIA event revives the stale backend and
+        # two backends end up playing at once. Stop/clear every backend that
+        # is not the one about to be used.
+        for svc, ptype in ((self.audio_service, PlaybackType.AUDIO),
+                           (self.video_service, PlaybackType.VIDEO),
+                           (self.web_service, PlaybackType.WEBVIEW)):
+            if self.playback_type != ptype and svc.current is not None:
+                try:
+                    svc.current.stop()
+                except Exception as e:
+                    LOG.exception(f"Failed to stop inactive {svc.namespace} "
+                                  f"backend on playback-type switch: {e}")
+                svc.current = None
+
         # track play count
         if self.now_playing.uri in self.media.liked_songs:
             if "play_count" not in self.media.liked_songs[self.now_playing.uri]:
@@ -1180,6 +1250,10 @@ class OCPMediaPlayer:
             self.set_now_playing(queue[0])
         else:
             LOG.info("Requested next, but there are no more tracks in the queue")
+            # F3: end of queue with repeat off previously left the player
+            # state untouched (still PLAYING from the just-ended track) —
+            # nothing ever told the GUI/MPRIS/bus that playback stopped.
+            self.set_player_state(PlayerState.STOPPED)
             return
         self.play()
 
@@ -1319,7 +1393,14 @@ class OCPMediaPlayer:
             self.set_media_state(MediaState.NO_MEDIA)
         self.shuffle = False
         self.loop_state = LoopState.NONE
-        self.state: PlayerState = PlayerState.STOPPED
+        # F4: use the authoritative setter (emits ovos.common_play.player.state,
+        # updates MPRIS) instead of a bare attribute assignment that bypassed it.
+        self.set_player_state(PlayerState.STOPPED)
+        # F4: stop -> home (reset) previously left a zombie now_playing entry
+        # on the GUI — now_playing.reset() above already clears uri/original_uri,
+        # but set_player_state() above is a no-op (incl. no _update_gui) when
+        # the player was already STOPPED, so push explicitly here too.
+        self._update_gui()
 
     def shutdown(self):
         """
@@ -1374,8 +1455,14 @@ class OCPMediaPlayer:
         )
 
     def handle_playback_ended(self, message):
+        # F1: self.playback_type reads now_playing.playback, which
+        # NowPlaying.handle_media_state_change already reset to UNDEFINED
+        # for this very END_OF_MEDIA event (it is subscribed to the same
+        # topic and runs first — see the comment there). Use the type it
+        # stashed just before resetting instead of the now-wiped live value.
+        playback_type = self._last_playback_type
         if len(self.playlist) and self.ocp_config.get("autoplay", True) and \
-                self.playback_type not in [PlaybackType.MPRIS, PlaybackType.UNDEFINED]:
+                playback_type not in [PlaybackType.MPRIS, PlaybackType.UNDEFINED]:
             # PlaybackType.UNDEFINED -> no media loaded, eg stop called explicitly
             # PlaybackType.MPRIS -> can't load media in MPRIS players
             LOG.debug(f"Playing next track")
@@ -1429,7 +1516,10 @@ class OCPMediaPlayer:
 
         # from audio player GUI
         position = message.data.get("seekValue")
-        if not position:
+        # F5: `seekValue: 0` (seek to the very start) is falsy, so `if not
+        # position` misread it as "no seekValue given" and fell through to
+        # the relative-seek path instead of seeking to 0.
+        if position is None:
             position = self.now_playing.position or 0
             if self.playback_type in [PlaybackType.AUDIO,
                                       PlaybackType.UNDEFINED]:
@@ -1489,12 +1579,19 @@ class OCPMediaPlayer:
 
     @require_default_session()
     def handle_playlist_set_request(self, message):
+        # F6: validate (and default to []) BEFORE clearing the existing
+        # playlist — the old code cleared first and then KeyError'd on a
+        # missing 'tracks' key inside handle_playlist_queue_request, leaving
+        # the player with an empty playlist for no reason on a malformed
+        # request.
+        tracks = message.data.get("tracks") or []
         self.playlist.clear()
-        self.handle_playlist_queue_request(message)
+        for track in tracks:
+            self.playlist.add_entry(track)
 
     @require_default_session()
     def handle_playlist_queue_request(self, message):
-        for track in message.data["tracks"]:
+        for track in message.data.get("tracks") or []:
             self.playlist.add_entry(track)
 
     @require_default_session()

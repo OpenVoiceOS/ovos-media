@@ -218,18 +218,16 @@ class TestMediaServicePing(unittest.TestCase):
 
 
 class TestMediaServiceSearchHandlers(unittest.TestCase):
-    """Search lifecycle handlers."""
+    """Search lifecycle handlers.
 
-    def test_search_start_shows_loading_gui(self) -> None:
-        """search.start must call gui.show_media_player with state='loading'."""
-        with MediaServiceHarness() as h:
-            h.search_start()
-            h.assert_gui_show_media_player_called(
-                now_playing=None,
-                playlist=[],
-                search_results=[],
-                state="loading",
-            )
+    F7/F8: 'ovos.common_play.search.start' -> GUI "loading" state is now
+    handled solely by OCPMediaPlayer.handle_search_start (player.py),
+    session-gated. MediaService's own (ungated, redundant, double-pushing)
+    registration/handler was deleted. This harness replaces OCPMediaPlayer
+    with a MagicMock entirely, so it cannot exercise that real handler —
+    see test_wave2_defect_fixes.py::TestF7F8SearchStartSessionGating for
+    the real-player coverage (gating behavior + exactly-one-push assertion).
+    """
 
     def test_search_end_does_not_raise(self) -> None:
         """search.end handler must not raise even when not yet implemented."""
