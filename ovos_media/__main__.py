@@ -23,14 +23,16 @@ from ovos_media.version import __version__
 
 
 def main(ready_hook=on_ready, error_hook=on_error, stopping_hook=on_stopping,
-         watchdog=lambda: None, argv=()):
+         watchdog=lambda: None, argv=None):
     """Start the Media Service and connect to the Message Bus
 
-    @param argv: CLI arguments to parse (defaults to an empty tuple, NOT
-        sys.argv — callers such as tests invoke main() directly under a test
-        runner whose own argv must never leak in here). The `if __name__ ==
-        '__main__'` entry point below is the only caller that passes the
-        real process argv.
+    @param argv: CLI arguments to parse. Defaults to None, which means
+        "parse the real process argv" (sys.argv[1:]) — this is what makes
+        the installed `ovos-media` console script (entry point:
+        ovos_media.__main__:main) actually parse --help/--version/unknown
+        flags instead of silently booting the daemon. Pass an explicit
+        list (e.g. []) to override, e.g. from tests that must not leak the
+        test runner's own argv in here.
     """
     parser = argparse.ArgumentParser(prog="ovos-media",
                                      description="OCP-native audio/video/web "
@@ -39,7 +41,7 @@ def main(ready_hook=on_ready, error_hook=on_error, stopping_hook=on_stopping,
                         version=f"%(prog)s {__version__}")
     # parse_args exits the process (SystemExit) on --help/--version/bad args
     # before any service/socket is touched, matching every other OVOS daemon
-    parser.parse_args(list(argv))
+    parser.parse_args(sys.argv[1:] if argv is None else list(argv))
 
     reset_sigint_handler()
     init_service_logger("media")

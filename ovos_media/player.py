@@ -524,6 +524,21 @@ class NowPlaying(MediaEntry):
             # backend confirmed playback started — mark player as PLAYING
             if hasattr(self, '_player') and self._player is not None:
                 self._player.set_player_state(PlayerState.PLAYING)
+                # W4-followup: reset the per-queue failure guards on evidence
+                # of PLAYBACK, not on LOADED_MEDIA. base.py's
+                # handle_media_state_change emits LOADED_MEDIA and THEN, for
+                # a track that loads fine but raises out of current.play(),
+                # INVALID_MEDIA — with the guard reset on LOADED_MEDIA that
+                # sequence reset both _failed_uris and _track_failed_spoken
+                # on every single failing track (rate limit degraded to
+                # per-track chatter, and a REPEAT queue where every track
+                # loads-ok-but-fails-to-play never accumulated enough of
+                # _failed_uris to trip _all_tracks_failed(), looping without
+                # bound). This TrackState.PLAYING_* branch only fires after
+                # current.play() returns without raising, ie. real evidence
+                # of playback — see base.py's handle_media_state_change.
+                self._player._failed_uris.clear()
+                self._player._track_failed_spoken = False
         elif state in (TrackState.QUEUED_SKILL, TrackState.QUEUED_VIDEO,
                        TrackState.QUEUED_AUDIO, TrackState.QUEUED_AUDIOSERVICE,
                        TrackState.QUEUED_WEBVIEW):
@@ -1462,6 +1477,27 @@ class OCPMediaPlayer:
             # state untouched (still PLAYING from the just-ended track) —
             # nothing ever told the GUI/MPRIS/bus that playback stopped.
             self.set_player_state(PlayerState.STOPPED)
+            # This is the ONLY place a natural end-of-queue is detected:
+            # every track played through in order and none remain. Speak
+            # here, not in handle_playback_ended — that call site fires on
+            # every autoplay-off track end and on MPRIS-external track
+            # ends too, neither of which is really "the queue finished".
+            # FOLLOW-UP (certification round, item 6): this always speaks
+            # into the default session. play_next() is reached from an
+            # END_OF_MEDIA bus event (or the invalid-stream retry timer),
+            # neither of which carries the session of whatever
+            # 'ovos.common_play.play' request originally started this
+            # queue — so a satellite-triggered playback's queue.finished
+            # announces on the default/local session instead of the
+            # satellite's. Fixing this needs the player to stash the
+            # triggering message's session at play time (handle_play_request)
+            # and thread it through to speak_dialog here and at the
+            # track.failed site below; that plumbing was out of scope for
+            # this round and needs its own PR + tests.
+            try:
+                self.media.speak_dialog("queue.finished")
+            except Exception as e:
+                LOG.exception(f"Failed to speak queue.finished dialog: {e}")
             return
         self.play()
 
@@ -1644,6 +1680,12 @@ class OCPMediaPlayer:
         self.audio_service.shutdown()
         self.video_service.shutdown()
         self.web_service.shutdown()
+        # self.gui is a GUIInterface("ovos.common_play", bus=bus) — its own
+        # shutdown() removes the 'ovos.common_play.set' listener it
+        # registers on construction. Without this call, every OCPMediaPlayer
+        # created (eg. in a test loop, or a real service restart) leaked one
+        # such bus listener for the lifetime of the process.
+        self.gui.shutdown()
         # L1: register_bus_handlers() above bound ~35 handlers directly via
         # self.bus.on() (not add_event(), since OCPMediaPlayer is not an
         # OVOSSkill) — remove exactly what was registered so a shut-down
@@ -1684,10 +1726,13 @@ class OCPMediaPlayer:
                 playback_uri = self.now_playing.uri
                 stop_requested = self._stop_requested
                 self.now_playing.on_end_of_media()
-            elif state in (MediaState.LOADED_MEDIA, MediaState.BUFFERED_MEDIA):
-                # a track loaded successfully: the queue is not wholly broken
-                self._failed_uris.clear()
-                self._track_failed_spoken = False
+            # NOTE: _failed_uris/_track_failed_spoken are reset on evidence
+            # of PLAYBACK (NowPlaying.handle_track_state_change's
+            # TrackState.PLAYING_* branch), not here on LOADED_MEDIA/
+            # BUFFERED_MEDIA — a track that loads fine but fails to play
+            # emits LOADED_MEDIA then INVALID_MEDIA (see base.py's
+            # handle_media_state_change), and resetting on LOADED_MEDIA
+            # cleared both guards on every single failing track.
 
         if ended:
             # handle_playback_ended manages its own _update_gui() call
@@ -1720,6 +1765,9 @@ class OCPMediaPlayer:
         # does not talk over itself
         if not self._track_failed_spoken:
             self._track_failed_spoken = True
+            # FOLLOW-UP (certification round, item 6): same default-session
+            # gap as queue.finished above — see that comment. INVALID_MEDIA
+            # carries no session either.
             try:
                 self.media.speak_dialog("track.failed")
             except Exception as e:
@@ -1761,15 +1809,12 @@ class OCPMediaPlayer:
 
         LOG.info("Playback ended")
         self._update_gui()
-        # a natural end-of-queue: a track actually finished (playback_uri is
-        # set) rather than "nothing was ever loaded" (PlaybackType.UNDEFINED,
-        # eg. an explicit stop already handled above, or handle_playback_ended
-        # invoked with no track ever played)
-        if playback_uri and playback_type != PlaybackType.UNDEFINED:
-            try:
-                self.media.speak_dialog("queue.finished")
-            except Exception as e:
-                LOG.exception(f"Failed to speak queue.finished dialog: {e}")
+        # NOTE: no queue.finished speak here. This branch is reached
+        # whenever play_next() is NOT invoked automatically — autoplay
+        # disabled after any track, or an MPRIS-external player's track
+        # ending — neither of which is the queue actually finishing.
+        # The real "no more tracks" detection, and the single speak site
+        # for it, lives in play_next()'s end-of-queue branch.
 
     # ovos common play bus api requests
     @require_default_session()
