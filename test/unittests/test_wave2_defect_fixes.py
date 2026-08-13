@@ -39,6 +39,7 @@ bus.emit()/FakeBus — calling the handler methods directly was the
 false-green mechanism that let both defects through the first audit wave.
 """
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -98,6 +99,10 @@ class TestC1InvalidMediaSkipChain(unittest.TestCase):
         # synchronously emits INVALID_MEDIA (BaseMediaService.play(), "no
         # service found for uri_type")
         player.audio_service.services = []
+        # W3: the skip-to-next-track retry is now deferred (on_invalid_stream)
+        # instead of recursing inline, so shorten the delay and wait for the
+        # chain rather than expecting it to complete inside bus.emit().
+        player.invalid_stream_delay = 0.01
 
         tracks = [_track(f"http://example.com/t{i}.mp3", f"T{i}")
                  for i in range(3)]
@@ -120,6 +125,14 @@ class TestC1InvalidMediaSkipChain(unittest.TestCase):
             "media": tracks[0].as_dict,
             "playlist": [t.as_dict for t in tracks],
         }))
+
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if sum(1 for s in invalid_media_events
+                   if s == MediaState.INVALID_MEDIA) >= 3:
+                break
+            time.sleep(0.02)
+        time.sleep(0.2)  # let the chain settle past the last track
 
         invalid_count = sum(1 for s in invalid_media_events
                             if s == MediaState.INVALID_MEDIA)
@@ -326,6 +339,7 @@ class TestC6TracklistAndRepeat(unittest.TestCase):
     def _make_service(self):
         from ovos_media.media_backends.base import BaseMediaService
         svc = BaseMediaService.__new__(BaseMediaService)
+        svc._init_runtime_state()
         svc.bus = FakeBus()
         svc.services = []
         svc.current = None
@@ -379,7 +393,9 @@ class TestC6TracklistAndRepeat(unittest.TestCase):
         svc = self._make_service()
         svc._pending_playlist = ["http://example.com/b.mp3"]
         svc._last_full_playlist = ["http://example.com/a.mp3", "http://example.com/b.mp3"]
-        with patch.object(svc, "play") as mock_play:
+        # W3: the internal advance goes through _play, which (unlike the
+        # public play()) preserves the pending tracklist it is consuming.
+        with patch.object(svc, "_play") as mock_play:
             svc.track_start(None)
         mock_play.assert_called_once_with("http://example.com/b.mp3")
         self.assertEqual(svc._pending_playlist, [])
@@ -389,7 +405,7 @@ class TestC6TracklistAndRepeat(unittest.TestCase):
         svc._pending_playlist = []
         svc._pending_repeat = True
         svc._last_full_playlist = ["http://example.com/a.mp3", "http://example.com/b.mp3"]
-        with patch.object(svc, "play") as mock_play:
+        with patch.object(svc, "_play") as mock_play:
             svc.track_start(None)
         mock_play.assert_called_once_with("http://example.com/a.mp3")
         self.assertEqual(svc._pending_playlist, ["http://example.com/b.mp3"])

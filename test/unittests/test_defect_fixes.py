@@ -59,6 +59,7 @@ class TestA1DaemonStartup(unittest.TestCase):
 def _make_base_service(current=None):
     from ovos_media.media_backends.base import BaseMediaService
     svc = BaseMediaService.__new__(BaseMediaService)
+    svc._init_runtime_state()
     svc.bus = FakeBus()
     svc.services = []
     svc.current = current
@@ -172,6 +173,7 @@ class TestA4ConfigRobustness(unittest.TestCase):
     def _make_service_for_load(self, players_cfg):
         from ovos_media.media_backends.base import BaseMediaService
         svc = BaseMediaService.__new__(BaseMediaService)
+        svc._init_runtime_state()
         svc.bus = FakeBus()
         svc.namespace = "audio"
         svc.config = {"audio_players": players_cfg}

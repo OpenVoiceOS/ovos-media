@@ -16,6 +16,7 @@ def _make_service():
     from ovos_media.media_backends.base import BaseMediaService
     bus = FakeBus()
     svc = BaseMediaService.__new__(BaseMediaService)
+    svc._init_runtime_state()
     svc.bus = bus
     svc.services = []
     svc.current = None
@@ -498,7 +499,9 @@ class TestHandlePlayUriExtraction(unittest.TestCase):
         target, call_args = self._run_handle_play(
             svc, {"tracks": ["http://example.com/a.mp3"]})
 
-        self.assertEqual(target, svc.play)
+        # W3: handle_play defers to _play so the tracklist it just queued
+        # is not cleared by the public play() entry point.
+        self.assertEqual(target, svc._play)
         self.assertEqual(call_args[0], "http://example.com/a.mp3")
 
     def test_handle_play_extracts_uri_from_tuple_track(self):
