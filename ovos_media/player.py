@@ -627,10 +627,13 @@ class OCPMediaPlayer:
         means.
         """
         self._paused_on_duck: bool = False
-        # W3: guards every read-modify-write of media_state/player_state so the
-        # END_OF_MEDIA compare-and-set cannot be executed twice concurrently
-        # (two racing END_OF_MEDIA events used to double-advance the queue).
-        # Reentrant because play() -> on_invalid_stream() re-enters.
+        # W3/W4: guards every read-modify-write of media_state/player_state
+        # (including the compare-and-set in set_media_state/set_player_state)
+        # so the END_OF_MEDIA compare-and-set cannot be executed twice
+        # concurrently (two racing END_OF_MEDIA events used to double-advance
+        # the queue). Reentrant because play() -> on_invalid_stream()
+        # re-enters, and because set_player_state() calls handle_status()
+        # which may itself touch player/media state.
         self._state_lock = RLock()
         # W3: True between a stop request and the next play(). An explicit stop
         # must NOT advance the queue, but OPM backends emit END_OF_MEDIA from
@@ -848,8 +851,17 @@ class OCPMediaPlayer:
         Called from OCPMediaPlayer.stop() and, via the ``on_stop`` callback,
         from BaseMediaService.stop() (the 'ovos.{ns}.service.stop' bus handler)
         before the backend's ocp_stop() emits END_OF_MEDIA.
+
+        W4: also cancels any pending invalid-stream retry timer. Without this,
+        a stop arriving during the post-INVALID_MEDIA retry window left the
+        timer armed, and it fired play_next() after the stop had already
+        settled the player into STOPPED — spontaneously resuming playback.
         """
-        self._stop_requested = True
+        with self._state_lock:
+            self._stop_requested = True
+            if self._invalid_timer is not None:
+                self._invalid_timer.cancel()
+                self._invalid_timer = None
 
     def _queue_index(self, queue: List[MediaEntry], uri: str = None) -> int:
         """Return the index of the currently selected track in *queue*, or -1.
@@ -916,9 +928,14 @@ class OCPMediaPlayer:
         """
         if not isinstance(state, MediaState):
             raise TypeError(f"Expected MediaState and got: {state}")
-        if state == self.media_state:
-            return
-        self.media_state = state
+        # W4: the compare-and-set must happen under _state_lock, same as
+        # every other read-modify-write of media_state; the emit stays
+        # outside the critical section to avoid lock-order risk with any
+        # bus handler that re-enters and takes the lock itself.
+        with self._state_lock:
+            if state == self.media_state:
+                return
+            self.media_state = state
         self.bus.emit(Message("ovos.common_play.media.state",
                               {"state": state}))
 
@@ -930,9 +947,13 @@ class OCPMediaPlayer:
         """
         if not isinstance(state, PlayerState):
             raise TypeError(f"Expected PlayerState and got: {state}")
-        if state == self.state:
-            return
-        self.state = state
+        # W4: same rationale as set_media_state() — compare-and-set under
+        # _state_lock, emit (and the MPRIS/GUI/status side effects below)
+        # outside the critical section.
+        with self._state_lock:
+            if state == self.state:
+                return
+            self.state = state
         self.bus.emit(Message("ovos.common_play.player.state",
                               {"state": state}))
         state2str = {PlayerState.PLAYING: "Playing",
