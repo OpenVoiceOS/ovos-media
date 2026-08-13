@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.2a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.1a1...0.4.2a1)
+
+**Merged pull requests:**
+
+- fix: legacy audio API coexistence gaps [\#93](https://github.com/OpenVoiceOS/ovos-media/pull/93) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.1a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.0a1...0.4.1a1)
