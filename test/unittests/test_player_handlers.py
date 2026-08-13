@@ -282,6 +282,15 @@ class TestHandleSeekRequest(unittest.TestCase):
         p.seek(60000)
         p.audio_service.set_track_position.assert_called_once_with(60000)
 
+    def test_seek_with_non_numeric_seconds_is_ignored(self):
+        """A non-numeric 'seconds' payload must not raise TypeError from the
+        `* 1000` multiplication — it should be logged and ignored instead."""
+        p = _make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        msg = Message("ovos.common_play.seek", {"seconds": "not-a-number"})
+        p.handle_seek_request(msg)
+        p.seek.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # handle_shuffle_toggle_request / handle_set_shuffle / handle_unset_shuffle
@@ -485,6 +494,15 @@ class TestHandleTrackLengthPositionRequests(unittest.TestCase):
         msg = Message("ovos.common_play.set_track_position", {"position": 20000})
         p.handle_set_track_position_request(msg)
         p.seek.assert_called_once_with(20000)
+
+    def test_set_track_position_with_none_is_not_forwarded(self):
+        """A missing/None 'position' must not be forwarded to seek() (which
+        forwards it straight to the backend's set_track_position)."""
+        p = _make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        msg = Message("ovos.common_play.set_track_position", {"position": None})
+        p.handle_set_track_position_request(msg)
+        p.seek.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
