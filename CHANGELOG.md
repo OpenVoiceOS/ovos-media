@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.5a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.5a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.4a1...0.4.5a1)
+
+**Merged pull requests:**
+
+- fix: playback state machine, autoplay, GUI seekbar payload, session-gated search [\#101](https://github.com/OpenVoiceOS/ovos-media/pull/101) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.4a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.3a2...0.4.4a1)
