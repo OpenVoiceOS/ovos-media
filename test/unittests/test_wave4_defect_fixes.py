@@ -44,6 +44,18 @@ def _load(player, entries):
     player.set_now_playing(player.playlist[0])
 
 
+def _wait_for_timer(player, deadline=3.0):
+    """Poll until the invalid-stream retry timer is armed (bounded).
+
+    Handler dispatch runs on the bus executor pool; a fixed sleep races it
+    under full-suite load, so wait on the observable state instead."""
+    end = time.monotonic() + deadline
+    while time.monotonic() < end:
+        if player._invalid_timer is not None:
+            return
+        time.sleep(0.01)
+
+
 class _StubBackend:
     """Minimal MediaBackend stand-in mirroring the OPM template's stop path."""
 
@@ -199,7 +211,7 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
 
         player.play()
         # let INVALID_MEDIA propagate and on_invalid_stream() arm the timer
-        time.sleep(0.05)
+        _wait_for_timer(player)
         self.assertIsNotNone(player._invalid_timer,
                              "invalid-stream retry timer was not armed")
 
@@ -237,7 +249,7 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
         bus, player, backend, a, b = self._player_with_invalid_backend()
 
         player.play()
-        time.sleep(0.05)
+        _wait_for_timer(player)
         self.assertIsNotNone(player._invalid_timer,
                              "invalid-stream retry timer was not armed")
 
@@ -279,7 +291,7 @@ class TestPlayCancelsStaleInvalidRetry(unittest.TestCase):
         _load(player, [bad])
 
         player.play()
-        time.sleep(0.05)
+        _wait_for_timer(player)
         self.assertIsNotNone(player._invalid_timer,
                              "invalid-stream retry timer was not armed")
 

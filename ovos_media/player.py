@@ -71,9 +71,26 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         # ImportError there prevents the emit from ever running. We
         # replicate the (NER-independent) emit here directly so the
         # classifier still learns the keywords even without the "ner" extra.
+        # L2: liked-songs is a persisted JSON store editable outside this
+        # process (GUI, manual edits, older/newer schema versions). A single
+        # malformed entry (a non-dict value, or a dict missing "title") used
+        # to raise here and kill daemon startup entirely. Skip and warn
+        # instead — mirrors the defensive .get() style liked_songs_playlist
+        # already uses.
+        liked_titles = []
+        for uri, song in self.liked_songs.items():
+            if not isinstance(song, dict):
+                LOG.warning(f"Skipping malformed liked song entry {uri!r}: "
+                           f"expected a dict, got {type(song).__name__}")
+                continue
+            title = song.get("title", "")
+            if not title:
+                LOG.warning(f"Skipping liked song entry {uri!r}: missing/empty title")
+                continue
+            liked_titles.append(norm_name(title))
+
         try:
-            self.register_ocp_keyword(MediaType.MUSIC, "song_name",
-                                      [norm_name(n["title"]) for n in self.liked_songs.values()])
+            self.register_ocp_keyword(MediaType.MUSIC, "song_name", liked_titles)
             self.register_ocp_keyword(MediaType.MUSIC, "playlist_name",
                                       ["favorite", "liked", "favorites",
                                        "favorite songs", "favorite tracks",
@@ -90,8 +107,7 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
                        "via the bus so media-type disambiguation still "
                        "works.")
             self._emit_ocp_keyword_registration(
-                MediaType.MUSIC, "song_name",
-                [norm_name(n["title"]) for n in self.liked_songs.values()])
+                MediaType.MUSIC, "song_name", liked_titles)
             self._emit_ocp_keyword_registration(
                 MediaType.MUSIC, "playlist_name",
                 ["favorite", "liked", "favorites",
@@ -617,6 +633,11 @@ class OCPMediaPlayer:
                                           manage_players=manage_players)
 
         self.gui = GUIInterface("ovos.common_play", bus=bus)
+        # tracks every (event, handler) pair registered via self._register()
+        # below so unregister_bus_handlers() can remove exactly what was
+        # added, without hand-maintaining a second list that can drift out
+        # of sync with register_bus_handlers().
+        self._bus_events: List[tuple] = []
         self.register_bus_handlers()
 
     def _init_runtime_state(self) -> None:
@@ -653,6 +674,22 @@ class OCPMediaPlayer:
         # retry delay after an invalid stream, seconds (overridable in tests)
         self.invalid_stream_delay: float = 3.0
 
+    def _register(self, event: str, handler) -> None:
+        """Register a bus handler and remember it for unregister_bus_handlers().
+
+        Every handler added by register_bus_handlers() must go through this
+        method — it is the single source of truth for what needs to be torn
+        down again, so add/remove can never drift out of sync.
+        """
+        self.bus.on(event, handler)
+        self._bus_events.append((event, handler))
+
+    def unregister_bus_handlers(self) -> None:
+        """Remove every bus handler registered via self._register()."""
+        for event, handler in self._bus_events:
+            self.bus.remove(event, handler)
+        self._bus_events.clear()
+
     def register_bus_handlers(self) -> None:
         """Register all OCP bus event handlers."""
         # ovos common play bus api
@@ -660,48 +697,48 @@ class OCPMediaPlayer:
         # 'ovos.common_play.player.state' event — set_player_state() is the
         # single authoritative writer of self.state; external subscribers
         # (MPRIS, GUI clients) may still listen on the bus.
-        self.bus.on('ovos.common_play.media.state', self.handle_player_media_update)
-        self.bus.on('ovos.common_play.play', self.handle_play_request)
-        self.bus.on('ovos.common_play.pause', self.handle_pause_request)
-        self.bus.on('ovos.common_play.play_pause', self.handle_pause_toggle_request)
-        self.bus.on('ovos.common_play.resume', self.handle_resume_request)
-        self.bus.on('ovos.common_play.stop', self.handle_stop_request)
-        self.bus.on('ovos.common_play.next', self.handle_next_request)
-        self.bus.on('ovos.common_play.previous', self.handle_prev_request)
-        self.bus.on('ovos.common_play.seek', self.handle_seek_request)
-        self.bus.on('ovos.common_play.get_track_length', self.handle_track_length_request)
-        self.bus.on('ovos.common_play.set_track_position', self.handle_set_track_position_request)
-        self.bus.on('ovos.common_play.get_track_position', self.handle_track_position_request)
-        self.bus.on('ovos.common_play.track_info', self.handle_track_info_request)
-        self.bus.on('ovos.common_play.list_backends', self.handle_list_backends_request)
-        self.bus.on('ovos.common_play.playlist.set', self.handle_playlist_set_request)
-        self.bus.on('ovos.common_play.playlist.clear', self.handle_playlist_clear_request)
-        self.bus.on('ovos.common_play.playlist.queue', self.handle_playlist_queue_request)
-        self.bus.on('ovos.common_play.duck', self.handle_duck_request)
-        self.bus.on('ovos.common_play.unduck', self.handle_unduck_request)
-        self.bus.on('ovos.common_play.cork', self.handle_cork_request)
-        self.bus.on('ovos.common_play.uncork', self.handle_uncork_request)
+        self._register('ovos.common_play.media.state', self.handle_player_media_update)
+        self._register('ovos.common_play.play', self.handle_play_request)
+        self._register('ovos.common_play.pause', self.handle_pause_request)
+        self._register('ovos.common_play.play_pause', self.handle_pause_toggle_request)
+        self._register('ovos.common_play.resume', self.handle_resume_request)
+        self._register('ovos.common_play.stop', self.handle_stop_request)
+        self._register('ovos.common_play.next', self.handle_next_request)
+        self._register('ovos.common_play.previous', self.handle_prev_request)
+        self._register('ovos.common_play.seek', self.handle_seek_request)
+        self._register('ovos.common_play.get_track_length', self.handle_track_length_request)
+        self._register('ovos.common_play.set_track_position', self.handle_set_track_position_request)
+        self._register('ovos.common_play.get_track_position', self.handle_track_position_request)
+        self._register('ovos.common_play.track_info', self.handle_track_info_request)
+        self._register('ovos.common_play.list_backends', self.handle_list_backends_request)
+        self._register('ovos.common_play.playlist.set', self.handle_playlist_set_request)
+        self._register('ovos.common_play.playlist.clear', self.handle_playlist_clear_request)
+        self._register('ovos.common_play.playlist.queue', self.handle_playlist_queue_request)
+        self._register('ovos.common_play.duck', self.handle_duck_request)
+        self._register('ovos.common_play.unduck', self.handle_unduck_request)
+        self._register('ovos.common_play.cork', self.handle_cork_request)
+        self._register('ovos.common_play.uncork', self.handle_uncork_request)
         # legacy recognizer_loop ducking — same semantics as the ocp equivalents
-        self.bus.on('recognizer_loop:audio_output_start', self.handle_duck_request)
-        self.bus.on('recognizer_loop:audio_output_end', self.handle_unduck_request)
-        self.bus.on('recognizer_loop:record_begin', self.handle_cork_request)
-        self.bus.on('recognizer_loop:record_end', self.handle_record_end)
-        self.bus.on('ovos.utterance.handled', self.handle_utterance_handled)
+        self._register('recognizer_loop:audio_output_start', self.handle_duck_request)
+        self._register('recognizer_loop:audio_output_end', self.handle_unduck_request)
+        self._register('recognizer_loop:record_begin', self.handle_cork_request)
+        self._register('recognizer_loop:record_end', self.handle_record_end)
+        self._register('ovos.utterance.handled', self.handle_utterance_handled)
         # global stop
-        self.bus.on('mycroft.stop', self.handle_mycroft_stop)
-        self.bus.on('ovos.common_play.shuffle.toggle', self.handle_shuffle_toggle_request)
-        self.bus.on('ovos.common_play.shuffle.set', self.handle_set_shuffle)
-        self.bus.on('ovos.common_play.shuffle.unset', self.handle_unset_shuffle)
-        self.bus.on('ovos.common_play.repeat.toggle', self.handle_repeat_toggle_request)
-        self.bus.on('ovos.common_play.repeat.set', self.handle_set_repeat)
-        self.bus.on('ovos.common_play.repeat.unset', self.handle_unset_repeat)
-        self.bus.on('ovos.common_play.SEI.get', self.handle_get_SEIs)
-        self.bus.on('ovos.common_play.search.start', self.handle_search_start)
-        self.bus.on("ovos.common_play.like", self.handle_like)
-        self.bus.on("ovos.common_play.unlike", self.handle_unlike)
-        self.bus.on("ovos.common_play.status", self.handle_status)
+        self._register('mycroft.stop', self.handle_mycroft_stop)
+        self._register('ovos.common_play.shuffle.toggle', self.handle_shuffle_toggle_request)
+        self._register('ovos.common_play.shuffle.set', self.handle_set_shuffle)
+        self._register('ovos.common_play.shuffle.unset', self.handle_unset_shuffle)
+        self._register('ovos.common_play.repeat.toggle', self.handle_repeat_toggle_request)
+        self._register('ovos.common_play.repeat.set', self.handle_set_repeat)
+        self._register('ovos.common_play.repeat.unset', self.handle_unset_repeat)
+        self._register('ovos.common_play.SEI.get', self.handle_get_SEIs)
+        self._register('ovos.common_play.search.start', self.handle_search_start)
+        self._register("ovos.common_play.like", self.handle_like)
+        self._register("ovos.common_play.unlike", self.handle_unlike)
+        self._register("ovos.common_play.status", self.handle_status)
         # external MPRIS player → reflect as OCP now_playing (no local backend)
-        self.bus.on("ovos.common_play.mpris.now_playing", self.handle_mpris_now_playing)
+        self._register("ovos.common_play.mpris.now_playing", self.handle_mpris_now_playing)
         self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))  # report to ovos-core
         self.handle_status(Message("ovos.common_play.status"))  # report to ovos-core
 
@@ -746,6 +783,16 @@ class OCPMediaPlayer:
     def handle_like(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
+        if not uri:
+            # L3: nothing playing and no uri in the request — persisting
+            # under the empty-string key would create an unremovable store
+            # entry (handle_unlike keys off "uri or now_playing.original_uri"
+            # too, so it would never be able to target it), pollute the
+            # liked-songs playlist, and broadcast an empty-string keyword
+            # sample to the NER matcher on the next boot.
+            LOG.warning("Cannot like: nothing is playing and no uri was given")
+            self.media.speak_dialog("nothing.playing")
+            return
         title = message.data.get("title") or self.now_playing.title
         image = message.data.get("image") or message.data.get("thumbnail") or self.now_playing.image
         artist = message.data.get("artist") or self.now_playing.artist
@@ -1566,10 +1613,20 @@ class OCPMediaPlayer:
         if self.mpris:
             self.mpris.shutdown()
         self.now_playing.shutdown()
-        self.media.shutdown()
+        # L1: self.media.shutdown() is the no-op OVOSSkill.shutdown() hook —
+        # it does NOT remove the bus handlers add_event() registered
+        # (ovos.common_play.skills.detach, .announce, the OCP intents, ...).
+        # default_shutdown() is the real OVOSSkill teardown that removes
+        # them; without it a "shut down" service kept answering intents.
+        self.media.default_shutdown()
         self.audio_service.shutdown()
         self.video_service.shutdown()
         self.web_service.shutdown()
+        # L1: register_bus_handlers() above bound ~35 handlers directly via
+        # self.bus.on() (not add_event(), since OCPMediaPlayer is not an
+        # OVOSSkill) — remove exactly what was registered so a shut-down
+        # player stops answering ping/status/search/like/etc.
+        self.unregister_bus_handlers()
 
     def handle_player_media_update(self, message):
         """
