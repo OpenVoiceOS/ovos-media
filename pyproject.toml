@@ -33,6 +33,12 @@ extras = [
     "ovos-ocp-files-plugin",
     "ovos-ocp-news-plugin",
 ]
+# optional: faster Aho-Corasick OCP keyword matching for large catalogs
+# (liked-songs entity registration). Absence is tolerated at runtime -
+# see OCPMediaCatalog.__init__ in ovos_media/player.py.
+ner = [
+    "ahocorasick_ner",
+]
 test = [
     "pytest",
     "pytest-cov",
@@ -48,6 +54,9 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 include = ["ovos_media*"]
+
+[tool.setuptools.package-data]
+ovos_media = ["locale/*/*", "qt5/**/*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "ovos_media.version.__version__"}

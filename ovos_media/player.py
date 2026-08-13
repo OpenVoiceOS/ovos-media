@@ -29,8 +29,13 @@ from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 
 
 class OCPMediaCatalog(OVOSCommonPlaybackSkill):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, validate_source: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
+        # mirrors NowPlaying.handle_external_play / require_default_session:
+        # gates playback-affecting intent handlers (shuffle on/off) to the
+        # local/"default" session, unless the owning service was configured
+        # with media.validate_source: false (satellite acting on everything)
+        self.validate_source = validate_source
         self.skill_icon = f"{dirname(__file__)}/qt5/images/liked.svg"
 
         self.liked_songs = JsonStorageXDG("OCP_liked_songs",
@@ -49,15 +54,128 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         def norm_name(n):
             return n.split("|")[0].split("(")[0].split("[")[0].split("{")[0].split("-")[0].strip()
 
-        self.register_ocp_keyword(MediaType.MUSIC, "song_name",
-                                  [norm_name(n["title"]) for n in self.liked_songs.values()])
-        self.register_ocp_keyword(MediaType.MUSIC, "playlist_name",
-                                  ["favorite", "liked", "favorites",
-                                   "favorite songs", "favorite tracks",
-                                   "favorite music", "my favorite songs",
-                                   "my favorite tracks", "my favorite music",
-                                   "liked songs", "liked tracks", "liked music",
-                                   "my liked songs", "my liked tracks", "my liked music"])
+        # ahocorasick_ner is an OPTIONAL speed optimization (only useful for
+        # huge liked-songs catalogs) - install the "ner" extra to enable it.
+        # Its absence must not break skill startup or any of the five voice
+        # intents registered below, which do not depend on OCP NER matching.
+        try:
+            self.register_ocp_keyword(MediaType.MUSIC, "song_name",
+                                      [norm_name(n["title"]) for n in self.liked_songs.values()])
+            self.register_ocp_keyword(MediaType.MUSIC, "playlist_name",
+                                      ["favorite", "liked", "favorites",
+                                       "favorite songs", "favorite tracks",
+                                       "favorite music", "my favorite songs",
+                                       "my favorite tracks", "my favorite music",
+                                       "liked songs", "liked tracks", "liked music",
+                                       "my liked songs", "my liked tracks", "my liked music"])
+        except ImportError:
+            LOG.info("ahocorasick_ner not installed - OCP keyword matching "
+                     "disabled (optional, only useful for huge catalogs)")
+
+        # intents about the currently playing media, see issue #23
+        self.register_intent_file("WhatSong.intent", self.handle_what_song)
+        self.register_intent_file("WhatAlbum.intent", self.handle_what_album)
+        self.register_intent_file("WhatArtist.intent", self.handle_what_artist)
+        self.register_intent_file("ShuffleOn.intent", self.handle_shuffle_on)
+        self.register_intent_file("ShuffleOff.intent", self.handle_shuffle_off)
+
+    def _get_status(self, message: Message) -> Optional[dict]:
+        """Query current player status via the existing status bus API.
+
+        Reuses the 'ovos.common_play.status' request/response messages that
+        OCPMediaPlayer.handle_status already answers; this avoids adding any
+        new bus message types or coupling this skill directly to the
+        OCPMediaPlayer instance.
+
+        The request is forwarded from the triggering intent message so the
+        session context (session_id, lang, etc) is preserved on the wire.
+
+        Returns None if no response was received within the timeout (player
+        not responding), as opposed to an empty dict, which means the player
+        answered but nothing is currently playing.
+        """
+        response = self.bus.wait_for_response(message.forward("ovos.common_play.status"),
+                                               timeout=3)
+        return response.data if response else None
+
+    # WhatSong/WhatAlbum/WhatArtist are deliberately UN-gated by session:
+    # they mirror OCPMediaPlayer.handle_status, which itself answers every
+    # session's "ovos.common_play.status" query with the single shared
+    # player's state (it is not decorated with @require_default_session()).
+    # The consistency rule this repo follows is that each intent front-end
+    # mirrors its backing handler's own gating - handle_status is global
+    # read-only state, so these read handlers stay global too. Only the
+    # shuffle on/off handlers below are gated, because they mirror
+    # handle_set_shuffle/handle_unset_shuffle, which ARE gated.
+    def handle_what_song(self, message):
+        status = self._get_status(message)
+        if status is None:
+            self.speak_dialog("player.not.responding")
+            return
+        title = status.get("title")
+        artist = status.get("artist")
+        if not title:
+            self.speak_dialog("nothing.playing")
+        elif artist:
+            self.speak_dialog("now.playing.song", {"title": title, "artist": artist})
+        else:
+            self.speak_dialog("now.playing.song.no.artist", {"title": title})
+
+    def handle_what_album(self, message):
+        status = self._get_status(message)
+        if status is None:
+            self.speak_dialog("player.not.responding")
+            return
+        if not status.get("title"):
+            self.speak_dialog("nothing.playing")
+        else:
+            # NowPlaying/MediaEntry does not track album metadata, so this
+            # always falls back gracefully instead of guessing or crashing.
+            self.speak_dialog("no.album.info")
+
+    def handle_what_artist(self, message):
+        status = self._get_status(message)
+        if status is None:
+            self.speak_dialog("player.not.responding")
+            return
+        title = status.get("title")
+        artist = status.get("artist")
+        if not title:
+            self.speak_dialog("nothing.playing")
+        elif artist:
+            self.speak_dialog("now.playing.artist", {"artist": artist})
+        else:
+            self.speak_dialog("no.artist.info")
+
+    def _is_default_session(self, message: Message) -> bool:
+        """Mirror ovos_media.utils.require_default_session in full, including
+        the validate_source short-circuit (utils.py ~50-52): only the
+        local/"default" session may trigger playback-affecting actions here,
+        UNLESS this catalog's owning service was configured with
+        media.validate_source: false (satellite acting on every session).
+        OCPMediaPlayer.handle_set_shuffle/handle_unset_shuffle are gated by
+        that same decorator/config value, so on a non-default (e.g. HiveMind
+        satellite) session with validate_source left True, the emitted
+        shuffle.set/unset message is silently dropped by the player - this
+        must not be reported back as a success. When validate_source is
+        False the player WILL act on it, so this front-end must agree."""
+        if not self.validate_source:
+            return True
+        return SessionManager.get(message).session_id == "default"
+
+    def handle_shuffle_on(self, message):
+        if not self._is_default_session(message):
+            self.speak_dialog("cannot.control.device")
+            return
+        self.bus.emit(message.forward("ovos.common_play.shuffle.set"))
+        self.speak_dialog("shuffle.on")
+
+    def handle_shuffle_off(self, message):
+        if not self._is_default_session(message):
+            self.speak_dialog("cannot.control.device")
+            return
+        self.bus.emit(message.forward("ovos.common_play.shuffle.unset"))
+        self.speak_dialog("shuffle.off")
 
     @ocp_search()
     def search_db(self, phrase, media_type):
@@ -272,7 +390,7 @@ class NowPlaying(MediaEntry):
         # server-side OCP pipeline) must not bleed its metadata into the local
         # now_playing. Mirror require_default_session() using the owning
         # player's validate_source flag.
-        validate = getattr(self._player, "validate_source", True)
+        validate = self._player.validate_source if self._player else True
         if validate and SessionManager.get(message).session_id != "default":
             LOG.debug(f"ignoring '{message.msg_type}' now_playing update, "
                       f"not from the default/local session")
@@ -388,7 +506,8 @@ class OCPMediaPlayer:
         self._paused_on_duck: bool = False
 
         self.now_playing: NowPlaying = NowPlaying(bus, player=self)
-        self.media: OCPMediaCatalog = OCPMediaCatalog(bus=bus, skill_id=OCP_ID + ".favorites")
+        self.media: OCPMediaCatalog = OCPMediaCatalog(bus=bus, skill_id=OCP_ID + ".favorites",
+                                                       validate_source=self.validate_source)
         self.audio_service = AudioService(bus)
         self.video_service = VideoService(bus)
         self.web_service = WebService(bus)
