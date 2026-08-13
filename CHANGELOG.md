@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.11a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.11a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.10a1...0.4.11a1)
+
+**Merged pull requests:**
+
+- fix: certification round — console script argv, honest queue.finished, playback-evidence resets, gui teardown [\#115](https://github.com/OpenVoiceOS/ovos-media/pull/115) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.10a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.10a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.9a1...0.4.10a1)
