@@ -145,7 +145,7 @@ Registered in `OCPMediaPlayer.register_bus_handlers` (`ovos_media/player.py`).
 | `ovos.common_play.player.state` | `OCPMediaPlayer.set_player_state` | `{"state": PlayerState}` |
 | `ovos.common_play.media.state` | `OCPMediaPlayer.set_media_state` | `{"state": MediaState}` |
 | `ovos.common_play.track.state` | `BaseMediaService.handle_media_state_change` (and the backend templates) | `{"state": TrackState}` |
-| `ovos.common_play.status` (response) | `OCPMediaPlayer.handle_status` | full status snapshot |
+| `ovos.common_play.status.response` | `OCPMediaPlayer.handle_status` (reply to `ovos.common_play.status`) | full status snapshot |
 | `ovos.common_play.pong` | `MediaService.handle_ping` | empty data |
 | `mycroft.audio.play_sound` | `OCPMediaPlayer.on_invalid_stream` / `handle_like` | `{"uri": "snd/…"}` |
 | `mycroft.stop.handled` | `OCPMediaPlayer.handle_mycroft_stop` | `{"by": "ovos-media"}` |
