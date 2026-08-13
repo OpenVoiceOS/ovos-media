@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.4a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.3a2...0.4.4a1)
+
+**Merged pull requests:**
+
+- fix: mpris Position unit \(ms-\>us\) and honest \_stop\_player failure handling [\#99](https://github.com/OpenVoiceOS/ovos-media/pull/99) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.3a2) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.2a1...0.4.3a2)
