@@ -7,6 +7,7 @@ pause, stop, and related state changes.
 import unittest
 from unittest.mock import MagicMock, patch, call
 
+from ovos_bus_client.message import Message
 from ovos_utils.ocp import PlayerState, LoopState, MediaState, PlaybackType
 from ovos_utils.fakebus import FakeBus
 
@@ -182,25 +183,25 @@ class TestShuffleRepeatCallsUpdateGui(unittest.TestCase):
     def test_set_shuffle_calls_update_gui(self):
         p = _make_player()
         p._update_gui = MagicMock()
-        p.handle_set_shuffle(MagicMock())
+        p.handle_set_shuffle(Message("ocp.set_shuffle"))
         p._update_gui.assert_called_once()
 
     def test_unset_shuffle_calls_update_gui(self):
         p = _make_player()
         p._update_gui = MagicMock()
-        p.handle_unset_shuffle(MagicMock())
+        p.handle_unset_shuffle(Message("ocp.unset_shuffle"))
         p._update_gui.assert_called_once()
 
     def test_set_repeat_calls_update_gui(self):
         p = _make_player()
         p._update_gui = MagicMock()
-        p.handle_set_repeat(MagicMock())
+        p.handle_set_repeat(Message("ocp.set_repeat"))
         p._update_gui.assert_called_once()
 
     def test_unset_repeat_calls_update_gui(self):
         p = _make_player()
         p._update_gui = MagicMock()
-        p.handle_unset_repeat(MagicMock())
+        p.handle_unset_repeat(Message("ocp.unset_repeat"))
         p._update_gui.assert_called_once()
 
 
