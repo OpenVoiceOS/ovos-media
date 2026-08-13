@@ -519,7 +519,8 @@ class OCPMediaPlayer:
         if self.ocp_config.get("enable_mpris", False) is False:
             LOG.info("MPRIS integration is disabled")
         else:
-            self.mpris = OcpMprisExporter(self, manage_players=manage_players)
+            self.mpris = OcpMprisExporter(self, config=self.ocp_config,
+                                          manage_players=manage_players)
 
         self.gui = GUIInterface("ovos.common_play", bus=bus)
         self.register_bus_handlers()

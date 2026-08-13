@@ -486,6 +486,68 @@ class TestMeta2Dict(unittest.TestCase):
         # no title and no state → state remains None (falsy) and not overridden
         self.assertIsNone(result["state"])
 
+    def test_artist_empty_list_does_not_raise_and_is_skipped(self):
+        # browsers/podcast apps send an empty xesam:artist list
+        result = self._call({"xesam:artist": self._make_variant([])})
+        self.assertNotIn("artist", result)
+
+    def test_artist_plain_string_kept_whole(self):
+        # a plain string must not be truncated to its first character
+        result = self._call({"xesam:artist": self._make_variant("Solo")})
+        self.assertEqual(result["artist"], "Solo")
+
+    def test_artist_normal_list_takes_first_element(self):
+        result = self._call({"xesam:artist": self._make_variant(["A", "B"])})
+        self.assertEqual(result["artist"], "A")
+
+    def test_artist_none_is_skipped(self):
+        result = self._call({"xesam:artist": self._make_variant(None)})
+        self.assertNotIn("artist", result)
+
+
+class TestRunRetryBound(unittest.TestCase):
+    """run() must bound its retry loop and never recurse unboundedly."""
+
+    def test_run_retries_bounded_and_does_not_recurse(self):
+        ctl, _ = _make_exporter()
+        ctl.shutdown_event = MagicMock()
+        ctl.shutdown_event.is_set.return_value = False
+
+        loop = MagicMock()
+        loop.run_until_complete = MagicMock(side_effect=RuntimeError("boom"))
+        ctl.loop = loop
+
+        with patch("ovos_media.mpris.LOG") as mock_log:
+            ctl.run()  # must return, not raise RecursionError
+            mock_log.error.assert_called_with("MPRIS exited")
+
+        # initial attempt + 5 retries = 6 calls
+        self.assertEqual(loop.run_until_complete.call_count, 6)
+
+    def test_run_stops_immediately_once_shutdown_event_is_set(self):
+        ctl, _ = _make_exporter()
+        ctl.shutdown_event = MagicMock()
+        ctl.shutdown_event.is_set.return_value = True
+
+        loop = MagicMock()
+        loop.run_until_complete = MagicMock(side_effect=RuntimeError("boom"))
+        ctl.loop = loop
+
+        ctl.run()
+        loop.run_until_complete.assert_called_once()
+
+    def test_run_returns_cleanly_on_success(self):
+        ctl, _ = _make_exporter()
+        ctl.shutdown_event = MagicMock()
+        ctl.shutdown_event.is_set.return_value = False
+
+        loop = MagicMock()
+        loop.run_until_complete = MagicMock(return_value=None)
+        ctl.loop = loop
+
+        ctl.run()
+        loop.run_until_complete.assert_called_once()
+
 
 class TestHandleLostPlayer(unittest.IsolatedAsyncioTestCase):
     """handle_lost_player must remove player from players and player_meta."""

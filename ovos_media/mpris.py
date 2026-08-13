@@ -397,6 +397,10 @@ class OcpMprisExporter(Thread):
         if name not in self.players:
             LOG.error(f"Invalid player: {name}")
             return
+        if name not in self.player_meta:
+            # not yet queried (race with scan_players), nothing to stop
+            LOG.debug(f"player {name} has no metadata yet, skipping stop")
+            return
         try:
             if self.player_meta[name]["state"] == "Playing":
                 LOG.info(f"Stopping MPRIS player: {name}")
@@ -512,7 +516,12 @@ class OcpMprisExporter(Thread):
             if k == "xesam:title":
                 ocp_data["title"] = v.value
             elif k == "xesam:artist":
-                ocp_data["artist"] = v.value[0]
+                artist = v.value
+                if isinstance(artist, (list, tuple)):
+                    if artist:
+                        ocp_data["artist"] = artist[0]
+                elif isinstance(artist, str):
+                    ocp_data["artist"] = artist
             elif k == "xesam:album":
                 ocp_data["album"] = v.value
             elif k == "mpris:artUrl":
@@ -647,17 +656,20 @@ class OcpMprisExporter(Thread):
     def run(self):
         count = 0
         max_count = 5
-        try:
-            self.loop.run_until_complete(self.event_loop())
-        except Exception as e:
-            if not self.shutdown_event.is_set():
+        while True:
+            try:
+                self.loop.run_until_complete(self.event_loop())
+                return
+            except Exception as e:
+                if self.shutdown_event.is_set():
+                    return
                 LOG.exception(e)
                 count += 1
                 if count <= max_count:
                     LOG.warning(f"MPRIS daemon crashed, restarting: retry {count} out of {max_count}")
-                    self.run()
-                else:
-                    LOG.error("MPRIS exited")
+                    continue
+                LOG.error("MPRIS exited")
+                return
 
     def play_prev(self):
         self.prev_event.set()
