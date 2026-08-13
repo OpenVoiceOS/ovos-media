@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.7a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.7a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.6a1...0.4.7a1)
+
+**Merged pull requests:**
+
+- fix: scope stop signalling to the active service and cancel the invalid retry on stop [\#105](https://github.com/OpenVoiceOS/ovos-media/pull/105) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.6a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.6a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.5a1...0.4.6a1)
