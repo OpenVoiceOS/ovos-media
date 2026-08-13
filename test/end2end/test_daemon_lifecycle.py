@@ -311,23 +311,24 @@ class TestSeekAndPosition(unittest.TestCase):
     """seek / set_track_position / get_track_position bus APIs."""
 
     def test_set_track_position_seeks_audio_backend(self) -> None:
-        """set_track_position must seek the audio service (ms→seconds)."""
+        """set_track_position must seek the audio service (milliseconds passthrough,
+        per the OPM MediaBackend contract)."""
         with OCPPlayerHarness() as h:
             h.play(_audio("http://example.com/song.mp3"))
             h.bus.emit(Message("ovos.common_play.set_track_position",
                                {"position": 5000}))
             time.sleep(0.05)
-            h.player.audio_service.set_track_position.assert_called_with(5.0)
+            h.player.audio_service.set_track_position.assert_called_with(5000)
 
     def test_seek_request_moves_audio_position(self) -> None:
         """A seek request must reach audio_service.set_track_position."""
         with OCPPlayerHarness() as h:
             h.play(_audio("http://example.com/song.mp3"))
             # seekValue takes the absolute-position branch (ms passed straight
-            # through to seek() -> set_track_position(seconds))
+            # through to seek() -> set_track_position(ms))
             h.bus.emit(Message("ovos.common_play.seek", {"seekValue": 8000}))
             time.sleep(0.05)
-            h.player.audio_service.set_track_position.assert_called_with(8.0)
+            h.player.audio_service.set_track_position.assert_called_with(8000)
 
     def test_get_track_position_returns_backend_position(self) -> None:
         """get_track_position must reply with the audio backend's position."""
