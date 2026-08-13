@@ -79,6 +79,11 @@ class MediaService(Thread):
         # duplicated it here, unconditionally (no session gating), so every
         # search.start double-pushed the "loading" GUI state.
         self.bus.on("ovos.common_play.search.end", self.handle_search_end)
+        # L4: opm.audio.query's handler reads self.ocp.audio_service — it
+        # must not be reachable until self.ocp exists. Registered here
+        # (after OCPMediaPlayer's plugin-loading construction above), not in
+        # init_messagebus() which runs before self.ocp is assigned.
+        self.bus.on("opm.audio.query", self.handle_opm_audio_query)
         self.legacy_compat = LegacyAudioServiceCompat(self.ocp, self.bus)
 
     def handle_home(self, message):
@@ -122,10 +127,16 @@ class MediaService(Thread):
         self.status.set_stopping()
         self.legacy_compat.shutdown()
         self.ocp.shutdown()
+        # L1: remove the four handlers registered directly on MediaService
+        # (not on self.ocp) so a shut-down service stops answering
+        # home/ping/search.end/opm.audio.query.
+        self.bus.remove('ovos.common_play.home', self.handle_home)
+        self.bus.remove("ovos.common_play.ping", self.handle_ping)
+        self.bus.remove("ovos.common_play.search.end", self.handle_search_end)
+        self.bus.remove("opm.audio.query", self.handle_opm_audio_query)
 
     def init_messagebus(self):
         """
         Start speech related handlers.
         """
         Configuration.set_config_update_handlers(self.bus)
-        self.bus.on("opm.audio.query", self.handle_opm_audio_query)
