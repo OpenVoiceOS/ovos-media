@@ -673,6 +673,14 @@ class OCPMediaPlayer:
         self._invalid_timer: Optional[threading.Timer] = None
         # retry delay after an invalid stream, seconds (overridable in tests)
         self.invalid_stream_delay: float = 3.0
+        # rate-limit "track.failed" to once per queue (cleared alongside
+        # _failed_uris, ie. whenever a track successfully loads or the
+        # player is reset) rather than once per skipped track
+        self._track_failed_spoken: bool = False
+        # True once "no.playback.backend" has been spoken for the lifetime
+        # of this player — spoken only at the very first play attempt that
+        # finds zero backends loaded, never again
+        self._no_backend_dialog_spoken: bool = False
 
     def _register(self, event: str, handler) -> None:
         """Register a bus handler and remember it for unregister_bus_handlers().
@@ -1247,6 +1255,19 @@ class OCPMediaPlayer:
         if self.mpris:
             self.mpris.stop()
 
+        # spoken once, at the very first play attempt, when zero backends of
+        # any kind are loaded (no.playback.backend). Never repeated after
+        # that — an install with no backend plugin fails every play request
+        # the same way, so nagging on every subsequent attempt is just noise.
+        if not self._no_backend_dialog_spoken and not (
+                self.audio_service.services or self.video_service.services or
+                self.web_service.services):
+            self._no_backend_dialog_spoken = True
+            try:
+                self.media.speak_dialog("no.playback.backend")
+            except Exception as e:
+                LOG.exception(f"Failed to speak no.playback.backend dialog: {e}")
+
         if disambiguation:
             self.media.search_playlist.replace([t for t in disambiguation
                                                 if t not in self.media.search_playlist])
@@ -1582,6 +1603,7 @@ class OCPMediaPlayer:
         self.now_playing.reset()
         self._current_entry = None
         self._failed_uris.clear()
+        self._track_failed_spoken = False
         with self._state_lock:
             if self._invalid_timer is not None:
                 self._invalid_timer.cancel()
@@ -1665,6 +1687,7 @@ class OCPMediaPlayer:
             elif state in (MediaState.LOADED_MEDIA, MediaState.BUFFERED_MEDIA):
                 # a track loaded successfully: the queue is not wholly broken
                 self._failed_uris.clear()
+                self._track_failed_spoken = False
 
         if ended:
             # handle_playback_ended manages its own _update_gui() call
@@ -1692,6 +1715,15 @@ class OCPMediaPlayer:
             search_results=[e.as_dict for e in self.search_results],
             state="error",
         )
+        # rate-limited to once per queue (see _track_failed_spoken), not once
+        # per skipped track, so a queue of several broken tracks in a row
+        # does not talk over itself
+        if not self._track_failed_spoken:
+            self._track_failed_spoken = True
+            try:
+                self.media.speak_dialog("track.failed")
+            except Exception as e:
+                LOG.exception(f"Failed to speak track.failed dialog: {e}")
 
     def handle_playback_ended(self, message, playback_type: PlaybackType = None,
                               playback_uri: str = None,
@@ -1729,6 +1761,15 @@ class OCPMediaPlayer:
 
         LOG.info("Playback ended")
         self._update_gui()
+        # a natural end-of-queue: a track actually finished (playback_uri is
+        # set) rather than "nothing was ever loaded" (PlaybackType.UNDEFINED,
+        # eg. an explicit stop already handled above, or handle_playback_ended
+        # invoked with no track ever played)
+        if playback_uri and playback_type != PlaybackType.UNDEFINED:
+            try:
+                self.media.speak_dialog("queue.finished")
+            except Exception as e:
+                LOG.exception(f"Failed to speak queue.finished dialog: {e}")
 
     # ovos common play bus api requests
     @require_default_session()

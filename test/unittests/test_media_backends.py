@@ -79,6 +79,27 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
         svc.load_services()
         self.assertEqual(svc.services, [])
 
+    def test_no_backend_error_names_real_plugin_packages(self):
+        """Quick-win #3: the no-backend error must name the real published
+        packages (ovos-media-plugin-vlc / ovos-media-plugin-mplayer), not the
+        stale ovos-vlc-plugin / ovos-mplayer-plugin names that never
+        existed on PyPI.
+
+        Asserts directly against the LOG.error call args (not captured
+        stdout) so the test is not sensitive to logging-handler setup done
+        by other tests earlier in the same run."""
+        from ovos_media.media_backends import base as base_mod
+        svc = self._make_service(config={"audio_players": {}})
+        with patch.object(base_mod, "LOG") as mock_log:
+            svc.load_services()
+        joined = "\n".join(
+            " ".join(str(a) for a in c.args) for c in mock_log.error.call_args_list
+        )
+        self.assertIn("ovos-media-plugin-vlc", joined)
+        self.assertIn("ovos-media-plugin-mplayer", joined)
+        self.assertNotIn("ovos-vlc-plugin,", joined)
+        self.assertNotIn("ovos-mplayer-plugin)", joined)
+
     def test_inactive_plugin_is_skipped(self):
         plugins = {"fake-audio": _FakeBackend}
         config = {
