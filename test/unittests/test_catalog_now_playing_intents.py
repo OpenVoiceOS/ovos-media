@@ -29,7 +29,7 @@ from unittest.mock import MagicMock, patch
 from ovos_bus_client.message import Message
 from ovos_bus_client.session import Session, SessionManager
 from ovos_utils.fakebus import FakeBus
-from ovos_utils.ocp import LoopState, MediaState, PlaybackType, PlayerState
+from ovos_utils.ocp import LoopState, MediaState, MediaType, PlaybackType, PlayerState
 
 from ovos_media.player import OCPMediaCatalog, OCPMediaPlayer
 
@@ -371,13 +371,20 @@ class TestShuffleSessionGate(unittest.TestCase):
 
 
 class TestConstructsWithoutAhocorasickNer(unittest.TestCase):
-    """ahocorasick_ner is an OPTIONAL dependency (only a matching-speed
-    optimization for huge catalogs, see the "ner" extra in pyproject.toml).
-    Simulates its absence by patching ovos_workshop's already-imported
-    AhocorasickNER symbol to None (the same state ovos_workshop.skills.
-    common_play ends up in when the real import fails), then constructs
-    OCPMediaCatalog and asserts no exception and that the five voice intents
-    still register normally."""
+    """ahocorasick_ner ("ner" extra) is OPTIONAL, but it is NOT a pure
+    matching-speed optimization: OVOSCommonPlaybackSkill.ocp_voc_match hard
+    -depends on the local NER matcher it builds, so without it search_db
+    ("play my liked songs" / "play my favorites") finds nothing. The five
+    WhatSong/WhatAlbum/WhatArtist/ShuffleOn/ShuffleOff voice intents do not
+    depend on it and must keep registering normally. The OCP pipeline
+    classifier should still learn the keywords via the
+    'ovos.common_play.register_keyword' bus message even without local NER
+    (see OCPMediaCatalog._emit_ocp_keyword_registration).
+
+    Simulates ahocorasick_ner's absence by patching ovos_workshop's already-
+    imported AhocorasickNER symbol to None (the same state
+    ovos_workshop.skills.common_play ends up in when the real import
+    fails), then constructs OCPMediaCatalog."""
 
     def test_catalog_constructs_and_registers_intents_without_ner(self):
         with patch("ovos_workshop.skills.common_play.AhocorasickNER", None):
@@ -392,6 +399,30 @@ class TestConstructsWithoutAhocorasickNer(unittest.TestCase):
             names = {r.get("name", "").split(":")[-1] for r in registrations}
             self.assertIn("WhatSong.intent", names)
             self.assertIn("ShuffleOn.intent", names)
+
+    def test_search_db_finds_nothing_without_ner(self):
+        """search_db depends on the local NER matcher; without ahocorasick
+        it must not crash, but it also must not find liked-songs matches."""
+        with patch("ovos_workshop.skills.common_play.AhocorasickNER", None):
+            bus = FakeBus()
+            catalog = OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
+            results = list(catalog.search_db("play my liked songs", MediaType.MUSIC))
+            self.assertEqual(results, [])
+
+    def test_classifier_still_learns_keywords_without_ner(self):
+        """Even without local NER, the OCP pipeline classifier must still
+        be informed of the keywords via the bus, so media-type
+        disambiguation keeps working."""
+        with patch("ovos_workshop.skills.common_play.AhocorasickNER", None):
+            bus = FakeBus()
+            registered = []
+            bus.on("ovos.common_play.register_keyword",
+                  lambda m: registered.append(m.data))
+
+            OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
+
+            labels = {r["label"] for r in registered}
+            self.assertIn("playlist_name", labels)
 
 
 if __name__ == "__main__":

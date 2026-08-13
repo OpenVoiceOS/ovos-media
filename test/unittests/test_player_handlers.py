@@ -273,10 +273,13 @@ class TestHandleSeekRequest(unittest.TestCase):
         p.seek.assert_called_once_with(30000)
 
     def test_seek_audio_calls_audio_service(self):
-        """seek() with AUDIO type calls audio_service.set_track_position."""
+        """seek() with AUDIO type calls audio_service.set_track_position
+        with the position in milliseconds, unconverted (matching the
+        milliseconds contract documented on seek() and on
+        MediaBackend.set_track_position)."""
         p = _make_player(PlaybackType.AUDIO)
         p.seek(60000)
-        p.audio_service.set_track_position.assert_called_once_with(60.0)
+        p.audio_service.set_track_position.assert_called_once_with(60000)
 
 
 # ---------------------------------------------------------------------------
