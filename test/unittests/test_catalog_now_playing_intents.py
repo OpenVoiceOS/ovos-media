@@ -236,6 +236,7 @@ def _make_real_player(bus, title="Bohemian Rhapsody", artist="Queen"):
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
+        p._init_runtime_state()
         p.ocp_config = {}
         p.validate_source = True
         p.state = PlayerState.STOPPED

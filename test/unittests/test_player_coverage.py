@@ -24,6 +24,7 @@ Targets uncovered regions:
   stop_skill, handle_MPRIS_takeover, reset
 """
 import asyncio
+import time
 import unittest
 from unittest.mock import MagicMock, patch, call
 
@@ -64,6 +65,7 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
+        p._init_runtime_state()
         p.ocp_config = {}
         p.state = PlayerState.STOPPED
         p.loop_state = LoopState.NONE
@@ -730,10 +732,16 @@ class TestHandlePlayerMediaUpdateEndOfMedia(unittest.TestCase):
         p.play_next = MagicMock()
         p._update_gui = MagicMock()
         p.ocp_config = {"autoplay": True}
+        # W3: the skip is scheduled through on_invalid_stream() rather than
+        # called inline, so it lands on the next tick, not this one.
+        p.invalid_stream_delay = 0.01
         msg = Message("ovos.common_play.media.state",
                       {"state": int(MediaState.INVALID_MEDIA)})
         p.handle_player_media_update(msg)
         p.handle_invalid_media.assert_called_once()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not p.play_next.called:
+            time.sleep(0.01)
         p.play_next.assert_called_once()
 
 

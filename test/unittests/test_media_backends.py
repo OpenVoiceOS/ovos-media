@@ -55,6 +55,7 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
 
         with patch("ovos_media.media_backends.base.Configuration", return_value={"media": config}):
             svc = BaseMediaService.__new__(BaseMediaService)
+            svc._init_runtime_state()
             svc.bus = bus
             svc.namespace = "audio"
             svc.config = config
@@ -350,6 +351,7 @@ def _make_base_svc(namespace="audio", config=None, services=None, validate_sourc
 
     bus = FakeBus()
     svc = BaseMediaService.__new__(BaseMediaService)
+    svc._init_runtime_state()
     svc.bus = bus
     svc.namespace = namespace
     svc.config = config or {}

@@ -61,6 +61,7 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
+        p._init_runtime_state()
         p.ocp_config = {}
         p.state = PlayerState.STOPPED
         p.loop_state = LoopState.NONE

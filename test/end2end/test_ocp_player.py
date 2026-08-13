@@ -167,7 +167,14 @@ class TestInvalidStream(unittest.TestCase):
             time.sleep(0.05)
             # Enable autoplay so the player auto-skips
             h.player.ocp_config["autoplay"] = True
+            # W3: the skip is deferred (on_invalid_stream) rather than inline
+            h.player.invalid_stream_delay = 0.01
             h.simulate_invalid_stream()
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if h.player.now_playing.uri == "http://example.com/2.mp3":
+                    break
+                time.sleep(0.02)
             # Player should have skipped to track 2
             h.assert_now_playing_uri("http://example.com/2.mp3")
 
