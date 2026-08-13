@@ -31,7 +31,7 @@ backend), never by hand-calling the handler under test in isolation.
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from ovos_bus_client.message import Message
 from ovos_utils.fakebus import FakeBus
@@ -361,14 +361,122 @@ class TestBoundedInvalidRetries(unittest.TestCase):
         self.assertEqual(player.state, PlayerState.STOPPED)
         player.shutdown()
 
-    def test_successful_load_clears_the_failed_uri_memory(self):
+    def test_loaded_media_alone_does_not_clear_the_failed_uri_memory(self):
+        """LOADED_MEDIA is reached by a track that loads fine but then
+        fails to play (base.py's handle_media_state_change emits
+        LOADED_MEDIA then INVALID_MEDIA for exactly that case) — clearing
+        _failed_uris here degraded the rate limit to per-track chatter and
+        let a REPEAT queue of load-ok/play-fail tracks loop unbounded,
+        since _all_tracks_failed() never accumulated enough of
+        _failed_uris to trip. The guard is cleared only on evidence of
+        PLAYBACK (TrackState.PLAYING_* via NowPlaying, see the
+        certification-round follow-up test in test_wave4_defect_fixes.py /
+        test_spoken_failure_dialogs.py)."""
         bus = FakeBus()
         player = _make_player(bus)
         player._failed_uris.add("http://example.com/a.mp3")
         player.media_state = MediaState.LOADING_MEDIA
         bus.emit(Message("ovos.common_play.media.state",
                          {"state": MediaState.LOADED_MEDIA}))
+        self.assertEqual(player._failed_uris, {"http://example.com/a.mp3"})
+        player.shutdown()
+
+    def test_confirmed_playback_clears_the_failed_uri_memory(self):
+        """Real evidence of playback — TrackState.PLAYING_AUDIO on
+        'ovos.common_play.track.state', which base.py only emits after
+        current.play() returns without raising — DOES clear the guard."""
+        from ovos_utils.ocp import TrackState
+        bus = FakeBus()
+        player = _make_player(bus)
+        player._failed_uris.add("http://example.com/a.mp3")
+        bus.emit(Message("ovos.common_play.track.state",
+                         {"state": TrackState.PLAYING_AUDIO}))
         self.assertEqual(player._failed_uris, set())
+        player.shutdown()
+
+
+class TestLoadOkPlayFailQueue(unittest.TestCase):
+    """A queue where every track LOADS fine but FAILS TO PLAY (base.py emits
+    LOADED_MEDIA then INVALID_MEDIA for exactly this case — see
+    handle_media_state_change's try/except around current.play()). Since the
+    guards reset only on confirmed PLAYBACK, none of these tracks ever reset
+    them, so the rate limit and the bounded-repeat check behave correctly."""
+
+    def _four_track_queue(self, bus):
+        player = _make_player(bus)
+        player.media.speak_dialog = MagicMock()
+        player.invalid_stream_delay = 0.02
+        tracks = [_track(f"http://example.com/{n}.mp3", n)
+                  for n in ("a", "b", "c", "d")]
+        _load(player, tracks)
+
+        # patch play() itself to reproduce, for whichever track is current,
+        # "loaded fine but failed to play": emit LOADED_MEDIA then
+        # INVALID_MEDIA, exactly the sequence base.py's
+        # handle_media_state_change produces when current.play() raises
+        # after a successful load. Hooking play() (rather than manually
+        # driving bus events from the test) means the player's own
+        # on_invalid_stream -> _schedule_play_next -> play_next -> play()
+        # retry chain drives every advance itself, through the real
+        # deferred timer, with no test-side racing against it.
+        calls = []
+
+        def fake_play():
+            calls.append(player.now_playing.uri if player.now_playing else None)
+            # mirror real play(): mark PLAYING before the (here, simulated)
+            # backend dispatch — otherwise player.state never leaves its
+            # initial STOPPED and a test polling for "reached STOPPED"
+            # would trivially pass without the retry chain ever running.
+            player.set_player_state(PlayerState.PLAYING)
+            with player._state_lock:
+                player.media_state = MediaState.LOADING_MEDIA
+            player.bus.emit(Message("ovos.common_play.media.state",
+                                    {"state": MediaState.LOADED_MEDIA}))
+            with player._state_lock:
+                player.media_state = MediaState.BUFFERED_MEDIA
+            player.bus.emit(Message("ovos.common_play.media.state",
+                                    {"state": MediaState.INVALID_MEDIA}))
+
+        player.play = fake_play
+        return player, tracks, calls
+
+    def test_track_failed_spoken_exactly_once_across_four_failing_tracks(self):
+        bus = FakeBus()
+        player, tracks, calls = self._four_track_queue(bus)
+        player.play()  # kick off track a; on_invalid_stream's timer cascades
+        deadline = time.monotonic() + 5
+        while len(calls) < len(tracks) and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+        speak_calls = [c for c in player.media.speak_dialog.call_args_list
+                      if c.args and c.args[0] == "track.failed"]
+        self.assertEqual(len(speak_calls), 1,
+                        "track.failed must be spoken once per queue, not "
+                        "once per failing track")
+        player.shutdown()
+
+    def test_repeat_over_all_failing_queue_is_bounded_and_ends_stopped(self):
+        """LoopState.REPEAT over a queue where every track loads-ok/plays-fail
+        must not spin: _all_tracks_failed() must eventually trip and stop
+        the player, within a small bounded number of advances."""
+        bus = FakeBus()
+        player, tracks, calls = self._four_track_queue(bus)
+        player.loop_state = LoopState.REPEAT
+
+        player.play()  # kick off track a; the retry chain cascades itself
+        deadline = time.monotonic() + 5
+        while player.state != PlayerState.STOPPED and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+        self.assertEqual(player.state, PlayerState.STOPPED,
+                        f"REPEAT over an all-failing queue did not stop "
+                        f"within 5s — unbounded loop ({len(calls)} play() "
+                        f"attempts made)")
+        # bounded: at most a couple of full passes over the 4-track queue,
+        # not hundreds of attempts
+        self.assertLessEqual(len(calls), len(tracks) * 3,
+                            f"play() ran {len(calls)} times — not bounded")
+        self.assertTrue(player._all_tracks_failed(player._merged_queue()))
         player.shutdown()
 
 

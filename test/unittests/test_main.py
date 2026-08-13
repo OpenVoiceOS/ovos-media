@@ -11,12 +11,24 @@
 # limitations under the License.
 #
 """Unit tests for ovos_media.__main__.main()."""
+import sys
 import unittest
 from unittest.mock import patch, MagicMock, call
 
 
 class TestMainStartsService(unittest.TestCase):
-    """main() must create a MediaService, start it, and shut it down."""
+    """main() must create a MediaService, start it, and shut it down.
+
+    argv defaults to None -> sys.argv[1:] (so the real installed console
+    script actually parses its own CLI args). These tests call main() with
+    no explicit argv, so sys.argv is patched to a bare argv (no flags) for
+    the duration of the test class to avoid leaking the test runner's own
+    argv into argparse."""
+
+    def setUp(self):
+        self._argv_patcher = patch.object(sys, "argv", ["ovos-media"])
+        self._argv_patcher.start()
+        self.addCleanup(self._argv_patcher.stop)
 
     def _run_main(self, ready_hook=None, error_hook=None, stopping_hook=None,
                   watchdog=None):

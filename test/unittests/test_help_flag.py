@@ -11,7 +11,19 @@
 # limitations under the License.
 #
 """ovos_media.__main__ --help/--version must short-circuit before any
-service or socket is touched (Quick-win #1)."""
+service or socket is touched (Quick-win #1).
+
+The `ovos-media` console script (setuptools entry point
+`ovos_media.__main__:main`) invokes `main()` with NO arguments, so it only
+ever exercises the function's *default* argv handling — never a value
+supplied by a test. Any test that calls `main(argv=[...])` explicitly is
+exercising a path the installed script never takes, and would stay green
+even if the default silently ignored real process args (the exact bug this
+module guards against). The behavioral proof therefore MUST invoke the
+actual installed script via its real entry point, not `python -m
+ovos_media` (the module path bypasses the console-script argv wiring
+entirely) and not `main(argv=...)` with an explicit list."""
+import shutil
 import subprocess
 import sys
 import unittest
@@ -49,15 +61,16 @@ class TestHelpFlagInProcess(unittest.TestCase):
             mock_svc_cls.assert_not_called()
 
     def test_no_args_still_starts_service(self):
-        """Regression guard: adding the parser must not break normal
-        daemon startup (argv defaults to empty, not the test runner's
-        real sys.argv)."""
+        """Regression guard: the default argv=None path (what the real
+        console script uses) must still start the daemon when the actual
+        process argv is empty."""
         with patch("ovos_media.__main__.reset_sigint_handler"), \
              patch("ovos_media.__main__.init_service_logger"), \
              patch("ovos_media.__main__.LOG"), \
              patch("ovos_media.__main__.setup_locale"), \
              patch("ovos_media.__main__.wait_for_exit_signal"), \
-             patch("ovos_media.__main__.MediaService") as mock_svc_cls:
+             patch("ovos_media.__main__.MediaService") as mock_svc_cls, \
+             patch.object(sys, "argv", ["ovos-media"]):
             mock_svc_cls.return_value = MagicMock()
             from ovos_media.__main__ import main
             main()
@@ -65,14 +78,26 @@ class TestHelpFlagInProcess(unittest.TestCase):
 
 
 class TestHelpFlagSubprocess(unittest.TestCase):
-    """End-to-end: run the real entrypoint in a subprocess. This is the
-    behavioral proof — it exercises the real sys.argv path and confirms no
-    bus socket is bound (the process exits almost instantly instead of
-    blocking in wait_for_exit_signal)."""
+    """End-to-end: run the real INSTALLED `ovos-media` console script (not
+    `python -m ovos_media`, which never exercises the entry-point's own
+    argv wiring). This is the behavioral proof that
+    `ovos-media --help`/`--version` exit fast without binding a bus socket,
+    and that `ovos-media --bogus` is rejected instead of silently booting
+    the daemon."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.exe = shutil.which("ovos-media")
+        if not cls.exe:
+            raise unittest.SkipTest(
+                "ovos-media console script not found on PATH — package "
+                "must be installed (pip/uv install -e .), not just "
+                "importable, for this test to exercise the real "
+                "entry point")
 
     def test_help_subprocess_exits_zero_and_prints_usage(self):
         proc = subprocess.run(
-            [sys.executable, "-m", "ovos_media", "--help"],
+            [self.exe, "--help"],
             capture_output=True, text=True, timeout=15,
         )
         self.assertEqual(proc.returncode, 0)
@@ -81,11 +106,19 @@ class TestHelpFlagSubprocess(unittest.TestCase):
     def test_version_subprocess_exits_zero_and_prints_version(self):
         from ovos_media.version import __version__
         proc = subprocess.run(
-            [sys.executable, "-m", "ovos_media", "--version"],
+            [self.exe, "--version"],
             capture_output=True, text=True, timeout=15,
         )
         self.assertEqual(proc.returncode, 0)
         self.assertIn(__version__, proc.stdout + proc.stderr)
+
+    def test_bogus_flag_subprocess_exits_nonzero_and_does_not_hang(self):
+        proc = subprocess.run(
+            [self.exe, "--bogus-flag-that-does-not-exist"],
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("error", (proc.stdout + proc.stderr).lower())
 
 
 if __name__ == "__main__":

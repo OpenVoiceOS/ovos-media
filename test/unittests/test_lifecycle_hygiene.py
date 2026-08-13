@@ -90,6 +90,13 @@ class TestL1ZombieServiceShutdown(unittest.TestCase):
         self.assertTrue(registered_pairs, "construction should have registered handlers")
         self.assertEqual(registered_pairs - removed_pairs, set(),
                         "shutdown left some registered handlers un-removed")
+        # OCPMediaPlayer.shutdown() must also tear down its GUIInterface
+        # (self.gui = GUIInterface("ovos.common_play", bus=bus)), which
+        # registers its own 'ovos.common_play.set' listener on construction
+        # via bus.on() outside of register_bus_handlers()/_bus_events. Without
+        # gui.shutdown() that listener leaked for the lifetime of the process
+        # — one per OCPMediaPlayer ever constructed.
+        svc.ocp.gui.shutdown.assert_called_once()
 
     def test_ping_gets_no_pong_after_shutdown(self):
         bus = FakeBus()
