@@ -300,10 +300,13 @@ class TestFiveIntentsRegistered(unittest.TestCase):
 
         OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
 
-        names = {r.get("name", "").split(":")[-1] for r in registrations}
-        for expected in ("WhatSong.intent", "WhatAlbum.intent",
-                         "WhatArtist.intent", "ShuffleOn.intent",
-                         "ShuffleOff.intent"):
+        # ovos-workshop registers under the authoring name ("WhatSong.intent")
+        # on older versions and the canonical name ("WhatSong") after the
+        # canonical-topic switch — accept either spelling, reject absence.
+        names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
+                 for r in registrations}
+        for expected in ("WhatSong", "WhatAlbum", "WhatArtist",
+                         "ShuffleOn", "ShuffleOff"):
             self.assertIn(expected, names,
                           f"expected {expected} to be registered; got {names}")
         self.assertGreaterEqual(len(registrations), 5)
@@ -397,9 +400,12 @@ class TestConstructsWithoutAhocorasickNer(unittest.TestCase):
             catalog = OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
 
             self.assertIsNotNone(catalog)
-            names = {r.get("name", "").split(":")[-1] for r in registrations}
-            self.assertIn("WhatSong.intent", names)
-            self.assertIn("ShuffleOn.intent", names)
+            # accept both the authoring ("WhatSong.intent") and canonical
+            # ("WhatSong") registration spellings across workshop versions
+            names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
+                     for r in registrations}
+            self.assertIn("WhatSong", names)
+            self.assertIn("ShuffleOn", names)
 
     def test_search_db_finds_nothing_without_ner(self):
         """search_db depends on the local NER matcher; without ahocorasick

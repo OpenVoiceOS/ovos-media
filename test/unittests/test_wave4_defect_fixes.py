@@ -260,5 +260,106 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
         player.shutdown()
 
 
+# ---------------------------------------------------------------------------
+# W4-3: play() must cancel a pending invalid-stream retry from an EARLIER
+# track — otherwise a new play() request arriving inside the retry window
+# leaves the stale timer armed against the NEW track.
+# ---------------------------------------------------------------------------
+
+class TestPlayCancelsStaleInvalidRetry(unittest.TestCase):
+
+    def _arm_stale_timer(self, bus, player):
+        """Play an always-invalid track to arm player._invalid_timer, then
+        return once it is confirmed armed."""
+        backend = _InvalidBackend(bus)
+        player.invalid_stream_delay = 0.15
+        player.audio_service.services = [backend]
+        player.audio_service.current = backend
+        bad = _track("http://example.com/bad.mp3", "Bad")
+        _load(player, [bad])
+
+        player.play()
+        time.sleep(0.05)
+        self.assertIsNotNone(player._invalid_timer,
+                             "invalid-stream retry timer was not armed")
+
+    def test_new_play_cancels_stale_timer_before_it_skips_the_new_track(self):
+        """A new play() of a valid, multi-track queue arriving inside the
+        retry window must cancel the stale timer. If it does not, the timer
+        fires play_next() against the NEW now_playing (identity-matched via
+        _current_entry, not by uri) and silently skips it mid-playback.
+        """
+        bus = FakeBus()
+        player = _make_player(bus)
+        self._arm_stale_timer(bus, player)
+
+        # a genuinely new play request for an unrelated, valid, multi-track
+        # queue arrives while the stale timer from the earlier bad track is
+        # still pending
+        good_backend = _StubBackend(bus, name="good_stub")
+        player.audio_service.services = [good_backend]
+        player.audio_service.current = good_backend
+        c = _track("http://example.com/c.mp3", "C")
+        d = _track("http://example.com/d.mp3", "D")
+        _load(player, [c, d])
+        player.play()
+        player.set_player_state(PlayerState.PLAYING)
+
+        self.assertIsNone(player._invalid_timer,
+                          "play() did not cancel the stale invalid-stream "
+                          "retry timer left over from the earlier track")
+
+        # wait past the original retry window
+        time.sleep(0.3)
+
+        self.assertEqual(player.now_playing.uri, c.uri,
+                         "the stale timer fired and skipped the new track "
+                         "(now_playing advanced to the next queue entry)")
+        self.assertEqual(player.state, PlayerState.PLAYING,
+                         "the stale timer's play_next() disturbed player "
+                         "state for the unrelated new track")
+        self.assertEqual(good_backend.loaded, [c.uri],
+                         "the stale timer asked the backend to load another "
+                         "track that was never requested")
+        self.assertEqual(good_backend.stopped, 0,
+                         "the stale timer stopped the backend for the "
+                         "unrelated new track")
+        player.shutdown()
+
+    def test_new_play_last_in_queue_stays_playing_not_stopped(self):
+        """Same scenario, but the new play() is for a single-track (i.e.
+        last-in-queue) selection. If the stale timer is not cancelled, its
+        play_next() finds no next entry and drives PlayerState.STOPPED even
+        though the new track's audio keeps playing.
+        """
+        bus = FakeBus()
+        player = _make_player(bus)
+        self._arm_stale_timer(bus, player)
+
+        good_backend = _StubBackend(bus, name="good_stub_solo")
+        player.audio_service.services = [good_backend]
+        player.audio_service.current = good_backend
+        c = _track("http://example.com/c-solo.mp3", "C-solo")
+        _load(player, [c])
+        player.play()
+        player.set_player_state(PlayerState.PLAYING)
+
+        self.assertIsNone(player._invalid_timer,
+                          "play() did not cancel the stale invalid-stream "
+                          "retry timer left over from the earlier track")
+
+        time.sleep(0.3)
+
+        self.assertEqual(player.state, PlayerState.PLAYING,
+                         "the stale timer's play_next() drove the player to "
+                         "STOPPED even though the new (last-in-queue) track "
+                         "kept playing")
+        self.assertEqual(player.now_playing.uri, c.uri)
+        self.assertEqual(good_backend.stopped, 0,
+                         "the stale timer stopped the backend for the "
+                         "unrelated new track")
+        player.shutdown()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1233,6 +1233,12 @@ class OCPMediaPlayer:
             self.media_state = MediaState.LOADING_MEDIA
             # W3: a new play attempt supersedes any earlier stop request
             self._stop_requested = False
+            # a new play attempt supersedes any pending invalid-stream retry;
+            # otherwise the stale timer fires play_next() against this NEW
+            # track once the retry window elapses
+            if self._invalid_timer is not None:
+                self._invalid_timer.cancel()
+                self._invalid_timer = None
 
         # C4: switching playback types must not leave the previously active
         # backend's BaseMediaService.current set — otherwise a later,
@@ -1707,7 +1713,12 @@ class OCPMediaPlayer:
     @require_default_session()
     def handle_seek_request(self, message):
         # from bus api
-        miliseconds = message.data.get("seconds", 0) * 1000
+        seconds = message.data.get("seconds", 0)
+        if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
+            LOG.warning(f"Ignoring seek request with non-numeric 'seconds': "
+                        f"{seconds!r}")
+            return
+        miliseconds = seconds * 1000
 
         # from audio player GUI
         position = message.data.get("seekValue")
@@ -1917,7 +1928,11 @@ class OCPMediaPlayer:
     @require_default_session()
     def handle_set_track_position_request(self, message):
         miliseconds = message.data.get("position")
-        self.seek(miliseconds)
+        if isinstance(miliseconds, (int, float)) and not isinstance(miliseconds, bool):
+            self.seek(miliseconds)
+        elif miliseconds is not None:
+            LOG.warning(f"Ignoring set_track_position request with "
+                        f"non-numeric 'position': {miliseconds!r}")
 
     def handle_track_info_request(self, message):
         data = self.now_playing.as_dict
