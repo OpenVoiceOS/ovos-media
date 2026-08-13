@@ -2,7 +2,7 @@ import abc
 import threading
 import time
 from threading import Lock
-from typing import Callable
+from typing import Callable, Optional
 
 from ovos_plugin_manager.templates.media import MediaBackend, RemoteAudioPlayerBackend, RemoteVideoPlayerBackend, \
     RemoteWebPlayerBackend
@@ -92,7 +92,23 @@ class BaseMediaService:
         remote = []
 
         plugs = self.plugin_loader()
-        for player_name, plug_cfg in self.config.get(f"{self.namespace}_players", {}).items():
+        players_cfg = self.config.get(f"{self.namespace}_players", {})
+        if not isinstance(players_cfg, dict):
+            LOG.error(f"Expected a dict for '{self.namespace}_players' "
+                      f"config, got {type(players_cfg).__name__}: "
+                      f"{players_cfg!r} - ignoring")
+            players_cfg = {}
+        for player_name, plug_cfg in players_cfg.items():
+            if not isinstance(plug_cfg, dict):
+                LOG.error(f"Expected a dict for '{self.namespace}_players' "
+                          f"entry '{player_name}', got "
+                          f"{type(plug_cfg).__name__}: {plug_cfg!r} - "
+                          f"ignoring")
+                continue
+            if "module" not in plug_cfg:
+                LOG.error(f"'{self.namespace}_players' entry '{player_name}' "
+                          f"is missing the required 'module' key - ignoring")
+                continue
             plug_name = plug_cfg["module"]
             if plug_name not in plugs:
                 LOG.error(f"{plug_name} configured but not installed")
@@ -175,7 +191,15 @@ class BaseMediaService:
         """
         state = message.data["state"]
         if self.current and state == MediaState.LOADED_MEDIA:
-            self.current.play()
+            try:
+                self.current.play()
+            except Exception as e:
+                LOG.exception(f"Failed to start playback on "
+                              f"{self.current.__class__.__name__}: {e}")
+                self.bus.emit(Message("ovos.common_play.media.state",
+                                      {"state": MediaState.INVALID_MEDIA}))
+                self.current = None
+                return
             track_state = {
                 "audio": TrackState.PLAYING_AUDIO,
                 "video": TrackState.PLAYING_VIDEO,
@@ -319,13 +343,22 @@ class BaseMediaService:
                     break
             else:
                 LOG.info('No service found for uri_type: ' + uri_type)
+                self.bus.emit(Message("ovos.common_play.media.state",
+                                      {"state": MediaState.INVALID_MEDIA}))
                 return
 
         LOG.debug(f"Using {selected_service.__class__.__name__}")
         self.current = selected_service
         self.play_start_time = time.monotonic()
-        # once loaded self.handle_media_state_change is called
-        selected_service.load_track(uri)
+        try:
+            # once loaded self.handle_media_state_change is called
+            selected_service.load_track(uri)
+        except Exception as e:
+            LOG.exception(f"Failed to load track '{uri}' on "
+                          f"{selected_service.__class__.__name__}: {e}")
+            self.bus.emit(Message("ovos.common_play.media.state",
+                                  {"state": MediaState.INVALID_MEDIA}))
+            self.current = None
 
     def _is_message_for_service(self, message: Message):
         if not message or not self.validate_source:
@@ -461,6 +494,53 @@ class BaseMediaService:
         seconds = message.data.get("seconds", 1)
         if self.current:
             self.current.seek_backward(seconds)
+
+    def get_track_length(self) -> Optional[int]:
+        """
+        Get the duration of the currently loaded track, in milliseconds.
+
+        Mirrors the backend contract defined by
+        ``ovos_plugin_manager.templates.media.MediaBackend.get_track_length``,
+        which reports/consumes milliseconds throughout.
+
+        Returns:
+            (int) duration of the current track in milliseconds, or None if
+            no backend is currently active.
+        """
+        if self.current is None:
+            return None
+        return self.current.get_track_length()
+
+    def get_track_position(self) -> Optional[int]:
+        """
+        Get the current playback position, in milliseconds.
+
+        Mirrors the backend contract defined by
+        ``ovos_plugin_manager.templates.media.MediaBackend.get_track_position``,
+        which reports/consumes milliseconds throughout.
+
+        Returns:
+            (int) current position in milliseconds, or None if no backend is
+            currently active.
+        """
+        if self.current is None:
+            return None
+        return self.current.get_track_position()
+
+    def set_track_position(self, milliseconds: int) -> None:
+        """
+        Seek to a specific position in the currently loaded track.
+
+        Mirrors the backend contract defined by
+        ``ovos_plugin_manager.templates.media.MediaBackend.set_track_position``,
+        which reports/consumes milliseconds throughout.
+
+        Args:
+            milliseconds (int): position, in milliseconds, to seek to.
+        """
+        if self.current is None:
+            return
+        self.current.set_track_position(milliseconds)
 
     def shutdown(self):
         for s in self.services:

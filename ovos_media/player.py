@@ -54,10 +54,24 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         def norm_name(n):
             return n.split("|")[0].split("(")[0].split("[")[0].split("{")[0].split("-")[0].strip()
 
-        # ahocorasick_ner is an OPTIONAL speed optimization (only useful for
-        # huge liked-songs catalogs) - install the "ner" extra to enable it.
-        # Its absence must not break skill startup or any of the five voice
-        # intents registered below, which do not depend on OCP NER matching.
+        # ahocorasick_ner ("ner" extra) is OPTIONAL, but its absence is not
+        # a pure speed optimization: OVOSCommonPlaybackSkill.ocp_voc_match
+        # (used by search_db, see below) hard-depends on it, so without it
+        # "play my liked songs" / "play my favorites" style searches never
+        # match anything. It is still true that the five WhatSong/WhatAlbum/
+        # WhatArtist/ShuffleOn/ShuffleOff intents registered below do not
+        # depend on it and keep working.
+        #
+        # register_ocp_keyword() itself does two things: it registers the
+        # samples with the local Aho-Corasick NER matcher (raises
+        # ImportError without the "ner" extra), and it emits
+        # 'ovos.common_play.register_keyword' on the bus so the OCP pipeline
+        # classifier learns the keywords too - that emit does not need local
+        # NER. In the installed ovos-workshop, the emit happens *after* the
+        # per-language NER registration loop inside the same method, so an
+        # ImportError there prevents the emit from ever running. We
+        # replicate the (NER-independent) emit here directly so the
+        # classifier still learns the keywords even without the "ner" extra.
         try:
             self.register_ocp_keyword(MediaType.MUSIC, "song_name",
                                       [norm_name(n["title"]) for n in self.liked_songs.values()])
@@ -69,8 +83,24 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
                                        "liked songs", "liked tracks", "liked music",
                                        "my liked songs", "my liked tracks", "my liked music"])
         except ImportError:
-            LOG.info("ahocorasick_ner not installed - OCP keyword matching "
-                     "disabled (optional, only useful for huge catalogs)")
+            LOG.warning("ahocorasick_ner not installed - OCP local keyword "
+                       "NER matching disabled, and 'search_db' (eg. 'play "
+                       "my liked songs') will find nothing until it is "
+                       "installed. Install the 'ner' extra to fix this. "
+                       "The classifier is still informed of the keywords "
+                       "via the bus so media-type disambiguation still "
+                       "works.")
+            self._emit_ocp_keyword_registration(
+                MediaType.MUSIC, "song_name",
+                [norm_name(n["title"]) for n in self.liked_songs.values()])
+            self._emit_ocp_keyword_registration(
+                MediaType.MUSIC, "playlist_name",
+                ["favorite", "liked", "favorites",
+                 "favorite songs", "favorite tracks",
+                 "favorite music", "my favorite songs",
+                 "my favorite tracks", "my favorite music",
+                 "liked songs", "liked tracks", "liked music",
+                 "my liked songs", "my liked tracks", "my liked music"])
 
         # intents about the currently playing media, see issue #23
         self.register_intent_file("WhatSong.intent", self.handle_what_song)
@@ -78,6 +108,44 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         self.register_intent_file("WhatArtist.intent", self.handle_what_artist)
         self.register_intent_file("ShuffleOn.intent", self.handle_shuffle_on)
         self.register_intent_file("ShuffleOff.intent", self.handle_shuffle_off)
+
+    def _emit_ocp_keyword_registration(self, media_type: MediaType, label: str,
+                                       samples: List[str]) -> None:
+        """
+        Emit the 'ovos.common_play.register_keyword' bus message that
+        informs the OCP pipeline classifier about a set of keyword samples,
+        WITHOUT going through OVOSCommonPlaybackSkill.register_ocp_keyword
+        (which also registers the samples with the local Aho-Corasick NER
+        matcher and requires the optional "ner" extra to be installed).
+
+        This mirrors the (NER-independent) tail half of
+        OVOSCommonPlaybackSkill.register_ocp_keyword: same message name and
+        same payload shape, so the classifier cannot tell the difference.
+        Used as a fallback when ahocorasick_ner is not installed.
+        """
+        samples = list(set(samples))
+        if not samples:
+            return
+        for lang in self.native_langs:
+            if len(samples) >= 20:
+                csv_path = f"{self.ocp_cache_dir}/{self.skill_id}_{label}_{lang}.csv"
+                with open(csv_path, "w") as f:
+                    f.write("label,sample")
+                    for s in samples:
+                        f.write(f"\n{label},{s}")
+                self.bus.emit(
+                    Message('ovos.common_play.register_keyword',
+                            {"skill_id": self.skill_id,
+                             "label": label,
+                             "csv": csv_path,
+                             "media_type": media_type}))
+            else:
+                self.bus.emit(
+                    Message('ovos.common_play.register_keyword',
+                            {"skill_id": self.skill_id,
+                             "label": label,
+                             "samples": samples,
+                             "media_type": media_type}))
 
     def _get_status(self, message: Message) -> Optional[dict]:
         """Query current player status via the existing status bus API.
@@ -500,7 +568,7 @@ class OCPMediaPlayer:
         self.state: PlayerState = PlayerState.STOPPED
         self.loop_state: LoopState = LoopState.NONE
         self.media_state: MediaState = MediaState.NO_MEDIA
-        self.playlist: Playlist = Playlist("Search Results")
+        self.playlist: Playlist = Playlist(title="Search Results")
         self.shuffle: bool = False
         self.track_history: dict = {}  # Dict of track URI to play count
         self._paused_on_duck: bool = False
@@ -1196,7 +1264,10 @@ class OCPMediaPlayer:
         """
         if self.playback_type in [PlaybackType.AUDIO,
                                   PlaybackType.UNDEFINED]:
-            self.audio_service.set_track_position(position / 1000)
+            # audio_service.set_track_position expects milliseconds,
+            # matching the milliseconds contract documented on this
+            # method and on MediaBackend.set_track_position
+            self.audio_service.set_track_position(position)
 
     def stop(self):
         """
@@ -1259,6 +1330,9 @@ class OCPMediaPlayer:
             self.mpris.shutdown()
         self.now_playing.shutdown()
         self.media.shutdown()
+        self.audio_service.shutdown()
+        self.video_service.shutdown()
+        self.web_service.shutdown()
 
     def handle_player_media_update(self, message):
         """
