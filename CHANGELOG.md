@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.7a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.7a2) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.7a1...0.4.7a2)
+
+**Merged pull requests:**
+
+- docs: first-playback payload, status reply convention, backend system deps [\#106](https://github.com/OpenVoiceOS/ovos-media/pull/106) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.7a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.7a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.6a1...0.4.7a1)
