@@ -40,13 +40,18 @@ def _make_exporter(config=None):
 
 
 class TestPosition(unittest.TestCase):
-    """Position property must return microseconds (position * 1e6)."""
+    """Position property must return microseconds (position * 1000).
+
+    now_playing.position is milliseconds (repo-wide ms contract, produced by
+    ovos-plugin-manager templates' playback_time), NOT seconds. MPRIS wants
+    microseconds, so the conversion factor is *1000, not *1e6.
+    """
 
     def test_position_microseconds(self):
         iface, player = _make_interface()
-        player.now_playing.position = 30  # seconds
+        player.now_playing.position = 30_000  # milliseconds
         result = iface.Position
-        self.assertAlmostEqual(result, 30 * 1e6)
+        self.assertAlmostEqual(result, 30_000 * 1000)
 
     def test_position_zero_when_no_now_playing(self):
         iface, player = _make_interface()
@@ -140,6 +145,50 @@ class TestSetMainPlayer(unittest.IsolatedAsyncioTestCase):
         with patch("ovos_media.mpris.LOG") as mock_log:
             await ctl._set_main_player("same_player")
             mock_log.info.assert_not_called()
+
+
+class TestStopPlayer(unittest.IsolatedAsyncioTestCase):
+    """_stop_player must only mark a player Stopped on a successful call_stop.
+
+    A failed stop must leave player_meta state untouched (not "Stopped") so
+    _stop_all retries it later instead of silently skipping it forever.
+    """
+
+    def _setup(self):
+        ctl, player = _make_exporter()
+        mock_iface = MagicMock()
+        mock_iface.call_stop = AsyncMock()
+        mock_player_proxy = MagicMock()
+        mock_player_proxy.get_interface.return_value = mock_iface
+        ctl.players = {"p1": mock_player_proxy}
+        ctl.player_meta = {"p1": {"state": "Playing"}}
+        ctl.main_player = "p1"
+        return ctl, mock_iface
+
+    async def test_successful_stop_marks_stopped_and_clears_main_player(self):
+        ctl, mock_iface = self._setup()
+        await ctl._stop_player("p1")
+        self.assertEqual(ctl.player_meta["p1"]["state"], "Stopped")
+        self.assertIsNone(ctl.main_player)
+        mock_iface.call_stop.assert_awaited_once()
+
+    async def test_failed_stop_leaves_state_untouched(self):
+        ctl, mock_iface = self._setup()
+        mock_iface.call_stop.side_effect = Exception("dbus call failed")
+        await ctl._stop_player("p1", max_tries=1)
+        self.assertEqual(ctl.player_meta["p1"]["state"], "Playing")
+        self.assertEqual(ctl.main_player, "p1")
+
+    async def test_failed_stop_is_retried_on_next_call(self):
+        ctl, mock_iface = self._setup()
+        mock_iface.call_stop.side_effect = Exception("dbus call failed")
+        await ctl._stop_player("p1", max_tries=1)
+        self.assertEqual(mock_iface.call_stop.await_count, 1)
+        # state stayed "Playing" so a subsequent _stop_all pass retries it
+        self.assertEqual(ctl.player_meta["p1"]["state"], "Playing")
+        mock_iface.call_stop.side_effect = None  # next attempt succeeds
+        await ctl._stop_player("p1", max_tries=1)
+        self.assertEqual(ctl.player_meta["p1"]["state"], "Stopped")
 
 
 class TestDbusGracefulDegradation(unittest.IsolatedAsyncioTestCase):

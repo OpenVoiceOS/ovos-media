@@ -393,7 +393,7 @@ class OcpMprisExporter(Thread):
             else:
                 LOG.warning(f"player {name} can not be resumed")
 
-    async def _stop_player(self, name, max_tries=1):
+    async def _stop_player(self, name, max_tries=2):
         if name not in self.players:
             LOG.error(f"Invalid player: {name}")
             return
@@ -407,12 +407,15 @@ class OcpMprisExporter(Thread):
                 player = self.players[name].get_interface(
                     'org.mpris.MediaPlayer2.Player')
                 await player.call_stop()
-        except:
+        except Exception:
             max_tries -= 1
             if max_tries > 0:
                 await self._stop_player(name, max_tries)
             else:
+                # stop failed - leave state untouched so a later _stop_all
+                # pass retries it instead of silently treating it as stopped
                 LOG.warning(f"player {name} can not be stopped")
+            return
         if name == self.main_player:
             self.main_player = None
         self.player_meta[name]["state"] = "Stopped"
@@ -835,7 +838,11 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
     @dbus_property(access=PropertyAccess.READ)
     def Position(self) -> 'd':
         if self._ocp_player.now_playing:
-            return self._ocp_player.now_playing.position * 1e6
+            # now_playing.position is in milliseconds (repo-wide ms contract,
+            # produced by ovos-plugin-manager templates); MPRIS Position is
+            # in microseconds, hence * 1000 (not * 1e6, which would treat
+            # position as seconds).
+            return self._ocp_player.now_playing.position * 1000
         return 0
 
     @dbus_property(access=PropertyAccess.READ)
