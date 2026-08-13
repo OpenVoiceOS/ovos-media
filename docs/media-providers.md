@@ -209,15 +209,21 @@ That is the whole gating contract.
 Each wraps a standalone scraper/client library that emits `mediavocab.Release`
 objects, and each replaces a legacy OCP search skill.
 
-| Provider | Entry point | Serves | Replaces |
-|---|---|---|---|
-| [`ovos-media-provider-youtube`](https://github.com/OpenVoiceOS/ovos-media-provider-youtube) | `youtube` | video / music videos / podcasts | `ovos-skill-youtube` |
-| [`ovos-media-provider-youtube-music`](https://github.com/OpenVoiceOS/ovos-media-provider-youtube-music) | `youtube_music` | music | `ovos-skill-youtube-music` |
-| [`ovos-media-provider-bandcamp`](https://github.com/OpenVoiceOS/ovos-media-provider-bandcamp) | `bandcamp` | music | `ovos-skill-bandcamp` |
-| [`ovos-media-provider-soundcloud`](https://github.com/OpenVoiceOS/ovos-media-provider-soundcloud) | `soundcloud` | music / playlists | `ovos-skill-soundcloud` |
-| [`ovos-media-provider-tunein`](https://github.com/OpenVoiceOS/ovos-media-provider-tunein) | `tunein` | radio | `ovos-skill-tunein` |
-| [`ovos-media-provider-somafm`](https://github.com/OpenVoiceOS/ovos-media-provider-somafm) | `somafm` | radio | `ovos-skill-somafm` |
-| [`ovos-media-provider-pyradios`](https://github.com/OpenVoiceOS/ovos-media-provider-pyradios) | `pyradios` | radio | `ovos-skill-pyradios` |
+| Provider | Entry point | Serves | Auth needed | Replaces |
+|---|---|---|---|---|
+| [`ovos-media-provider-youtube`](https://github.com/OpenVoiceOS/ovos-media-provider-youtube) | `youtube` | video / music videos / podcasts | none | `ovos-skill-youtube` |
+| [`ovos-media-provider-youtube-music`](https://github.com/OpenVoiceOS/ovos-media-provider-youtube-music) | `youtube_music` | music | none | `ovos-skill-youtube-music` |
+| [`ovos-media-provider-bandcamp`](https://github.com/OpenVoiceOS/ovos-media-provider-bandcamp) | `bandcamp` | music | none | `ovos-skill-bandcamp` |
+| [`ovos-media-provider-soundcloud`](https://github.com/OpenVoiceOS/ovos-media-provider-soundcloud) | `soundcloud` | music / playlists | none | `ovos-skill-soundcloud` |
+| [`ovos-media-provider-tunein`](https://github.com/OpenVoiceOS/ovos-media-provider-tunein) | `tunein` | radio | none | `ovos-skill-tunein` |
+| [`ovos-media-provider-somafm`](https://github.com/OpenVoiceOS/ovos-media-provider-somafm) | `somafm` | radio | none | `ovos-skill-somafm` |
+| [`ovos-media-provider-pyradios`](https://github.com/OpenVoiceOS/ovos-media-provider-pyradios) | `pyradios` | radio | none | `ovos-skill-pyradios` |
+| [`ovos-media-provider-mass`](https://github.com/OpenVoiceOS/ovos-media-provider-mass) | `music_assistant` | music / radio / podcasts / audiobooks | a running Music Assistant server | `ovos-skill-music-assistant` |
+| [`ovos-media-provider-spotify`](https://github.com/OpenVoiceOS/ovos-media-provider-spotify) | `spotify` | music | Spotify OAuth (`ocp_spotify` credentials) | `ovos-skill-spotify` |
+| [`ovos-media-provider-news`](https://github.com/OpenVoiceOS/ovos-media-provider-news) | `news` | broadcast news feeds | none | `ovos-skill-news` |
+| [`ovos-media-provider-local`](https://github.com/OpenVoiceOS/ovos-media-provider-local) | `local` | local file-system media library | none | `ovos-skill-local-media` |
+| [`ovos-media-provider-radio-spain`](https://github.com/TigreGotico/ovos-media-provider-radio-spain) | `radio_spain` | Spanish internet radio | none | `skill-ovos-radio-spain` |
+| [`ovos-media-provider-radio-tuga`](https://github.com/TigreGotico/ovos-media-provider-radio-tuga) | `radio_tuga` | Portuguese internet radio | none | `skill-ovos-radio-tuga` |
 
 ---
 

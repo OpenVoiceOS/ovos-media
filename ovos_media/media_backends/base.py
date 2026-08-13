@@ -176,7 +176,7 @@ class BaseMediaService:
         if not self.services:
             LOG.error(
                 f"No {self.namespace} backends loaded — all {self.namespace} playback will fail. "
-                f"Install at least one backend plugin (e.g. ovos-vlc-plugin, ovos-mplayer-plugin)."
+                f"Install at least one backend plugin (e.g. ovos-media-plugin-vlc, ovos-media-plugin-mplayer)."
             )
             self.bus.emit(Message("ovos.common_play.media.state",
                                   {"state": MediaState.NO_MEDIA}))
