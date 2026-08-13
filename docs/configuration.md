@@ -141,7 +141,7 @@ control-signal checks.
 
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `native_sources` | list of strings | `["debug_cli", "audio"]` | Message sources treated as trusted native callers. Requests from these sources bypass message-context validation in the backend services. Read by `MediaService.__init__`. |
+| `native_sources` | list of strings | `["debug_cli", "audio"]` | Message sources treated as trusted native callers. Requests from these sources bypass message-context validation in the backend services. May be set at the top level (`native_sources`) or nested under `media` (`media.native_sources`, as in the example below) — both are honoured by `BaseMediaService._is_message_for_service`, with the top-level key taking precedence when both are set. |
 
 ---
 

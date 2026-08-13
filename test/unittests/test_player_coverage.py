@@ -35,6 +35,7 @@ from ovos_utils.ocp import (
     TrackState,
     LoopState,
     PlaybackType,
+    MediaType,
     MediaEntry,
     Playlist,
 )
@@ -80,7 +81,7 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
         p.now_playing.image = ""
         p.now_playing.length = 180000
         p.now_playing.position = 0
-        p.now_playing.media_type = MagicMock()
+        p.now_playing.media_type = MediaType.GENERIC
         p.now_playing.as_dict = {
             "uri": "http://example.com/track.mp3",
             "title": "Test Track",
@@ -89,14 +90,24 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
         }
         p.playlist = MagicMock()
         p.playlist.as_list.return_value = []
+        p.playlist.entries = []
+        p.playlist.position = 0
+        p.playlist.__len__ = lambda self: 0
         p.media = MagicMock()
+        p.media.search_playlist.entries = []
         p.audio_service = MagicMock()
+        p.audio_service.current = None
         p.video_service = MagicMock()
+        p.video_service.current = None
         p.web_service = MagicMock()
+        p.web_service.current = None
         p.current = None
         p.mpris = None
         p.bus = FakeBus()
         p.gui = MagicMock()
+        # __init__ normally sets these; OCPMediaPlayer.__new__ skips __init__
+        p._last_playback_type = playback_type
+        p._last_playback_uri = p.now_playing.uri
     return p
 
 

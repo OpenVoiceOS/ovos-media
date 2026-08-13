@@ -153,8 +153,13 @@ class TestSearchStartShowsLoadingState(unittest.TestCase):
     """handle_search_start must call show_media_player with state='loading'."""
 
     def test_handle_search_start_loading(self):
+        # F7/F8: handle_search_start is now gated to the default/local
+        # session (require_default_session), so a real default-session
+        # Message is needed — a bare MagicMock has no valid session context
+        # and would be (correctly) ignored.
         p = _make_player()
-        msg = MagicMock()
+        p.validate_source = True
+        msg = Message("ovos.common_play.search.start", {})
         p.handle_search_start(msg)
         p.gui.show_media_player.assert_called_once_with(
             now_playing=None,

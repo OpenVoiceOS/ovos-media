@@ -67,16 +67,11 @@ class TestMediaServiceHandlers(unittest.TestCase):
         svc.handle_home(MagicMock())
         svc.ocp._update_gui.assert_called_once()
 
-    def test_handle_search_start_shows_loading(self):
-        svc = self._make_service()
-        svc.ocp = MagicMock()
-        svc.handle_search_start(MagicMock())
-        svc.ocp.gui.show_media_player.assert_called_once_with(
-            now_playing=None,
-            playlist=[],
-            search_results=[],
-            state="loading",
-        )
+    # F7/F8: MediaService no longer registers its own
+    # 'ovos.common_play.search.start' handler — it was a redundant,
+    # ungated duplicate of OCPMediaPlayer.handle_search_start (player.py),
+    # which double-pushed the GUI "loading" state on every search. See
+    # test_wave2_defect_fixes.py::TestF7F8SearchStartSessionGating.
 
     def test_handle_search_end_calls_update_gui(self):
         svc = self._make_service()

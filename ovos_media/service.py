@@ -45,7 +45,12 @@ class MediaService(Thread):
         self.status.set_started()
 
         self.config = Configuration().get("media", {})
-        self.native_sources = self.config.get("native_sources", ["debug_cli", "audio"]) or []
+        # F9: this attribute was dead — it read media.native_sources but was
+        # never passed anywhere; the real consumer, validate_message_context()
+        # in utils.py, only ever read the top-level `native_sources` key.
+        # validate_message_context() now also honours the documented
+        # media-scoped key directly, so this unused shadow copy is removed
+        # rather than wired through a second time.
 
         # Only act on playback commands from the local/"default" session.
         # In a HiveMind split the OCP pipeline (on the server) forwards
@@ -69,7 +74,10 @@ class MediaService(Thread):
         self.ocp = OCPMediaPlayer(self.bus, validate_source=self.validate_source)
         self.bus.on('ovos.common_play.home', self.handle_home)
         self.bus.on("ovos.common_play.ping", self.handle_ping)
-        self.bus.on("ovos.common_play.search.start", self.handle_search_start)
+        # F7/F8: 'ovos.common_play.search.start' is handled by
+        # OCPMediaPlayer.handle_search_start (player.py) — that registration
+        # duplicated it here, unconditionally (no session gating), so every
+        # search.start double-pushed the "loading" GUI state.
         self.bus.on("ovos.common_play.search.end", self.handle_search_end)
         self.legacy_compat = LegacyAudioServiceCompat(self.ocp, self.bus)
 
@@ -82,15 +90,6 @@ class MediaService(Thread):
         @param message: message associated with request
         """
         self.bus.emit(message.reply("ovos.common_play.pong"))
-
-    def handle_search_start(self, message):
-        """when OCP pipeline triggers, show search animation"""
-        self.ocp.gui.show_media_player(
-            now_playing=None,
-            playlist=[],
-            search_results=[],
-            state="loading",
-        )
 
     def handle_search_end(self, message: "Message") -> None:
         """Dismiss the search spinner and refresh the player GUI."""

@@ -35,6 +35,12 @@ class BaseMediaService:
         self.play_start_time = 0
         self.volume_is_low = False
         self.validate_source = validate_source
+        # C6: queued-but-not-yet-loaded tracks from the last handle_play(),
+        # and whether that request asked to repeat once exhausted. Consumed
+        # incrementally from track_start() as each track finishes.
+        self._pending_playlist: list = []
+        self._pending_repeat: bool = False
+        self._last_full_playlist: list = []
 
         self._loaded = MonotonicEvent()
         if autoload:
@@ -72,6 +78,19 @@ class BaseMediaService:
                 # exact message type waiting for playback to start
                 self.bus.emit(Message('mycroft.audio.playing_track',
                                       data={'track': track}))
+        elif self._pending_playlist:
+            # C6: handle_play() was given more than one track — advance to
+            # the next queued uri instead of reporting end-of-playlist after
+            # only the first track ever played.
+            next_uri = self._pending_playlist.pop(0)
+            LOG.debug(f'Advancing to next queued {self.namespace} track')
+            self.play(next_uri)
+        elif self._pending_repeat and self._last_full_playlist:
+            # C6: the exhausted playlist was requested with repeat=True —
+            # mirrors ovos-audio's PlaybackService repeat semantics.
+            LOG.debug(f'Repeating {self.namespace} playlist')
+            self._pending_playlist = list(self._last_full_playlist[1:])
+            self.play(self._last_full_playlist[0])
         else:
             # If no track is about to start last track of the queue has been
             # played.
@@ -363,7 +382,17 @@ class BaseMediaService:
     def _is_message_for_service(self, message: Message):
         if not message or not self.validate_source:
             return True
-        return validate_message_context(message)
+        # F9: docs/configuration.md documents `media.native_sources` as the
+        # key to set, but validate_message_context() (ovos_media/utils.py)
+        # only ever reads the top-level `native_sources` config key on its
+        # own — its `native_sources` parameter was always available for a
+        # caller to override that lookup, but nothing here ever passed it,
+        # so the documented media-scoped key was silently ignored. self.config
+        # IS the media-scoped config (see __init__), so honour its
+        # `native_sources` here; the top-level key still works unchanged
+        # since we only override when the media-scoped key is actually set.
+        return validate_message_context(
+            message, native_sources=self.config.get("native_sources"))
 
     def handle_play(self, message: Message):
         """
@@ -377,20 +406,49 @@ class BaseMediaService:
         if not self._is_message_for_service(message):
             return
         with self.service_lock:
-            tracks = message.data['tracks']
+            tracks = message.data.get('tracks') or []
             if not tracks:
                 LOG.warning(f"ovos.{self.namespace}.service.play: no tracks provided")
                 return
+            repeat = message.data.get("repeat", False)
 
             # self.play() takes a single uri, not a tracklist — mirror how
             # ovos-audio's legacy service resolves the first playable track.
             # 'tracks' may be a bare uri string, a list of uri strings, or a
             # list of (uri, mime) tuples.
             if isinstance(tracks, str):
-                uri = tracks
+                track_list = [tracks]
             else:
-                first = tracks[0]
-                uri = first[0] if isinstance(first, (list, tuple)) else first
+                track_list = list(tracks)
+
+            # C6: an entry may itself be an empty list/tuple (eg.
+            # tracks=[[]]) — indexing straight into it used to raise
+            # IndexError and kill the request; skip empty entries and use
+            # the first genuinely playable one instead.
+            uris = []
+            for t in track_list:
+                if isinstance(t, (list, tuple)):
+                    if not t:
+                        continue
+                    uris.append(t[0])
+                else:
+                    uris.append(t)
+            if not uris:
+                LOG.warning(f"ovos.{self.namespace}.service.play: no playable "
+                            f"track entries in tracks={track_list!r}")
+                return
+            uri = uris[0]
+
+            # C6: hand the rest of the tracklist (and repeat) through to the
+            # backend path — mirrors ovos-audio's PlaybackService.play, which
+            # queues the whole list instead of dropping everything after the
+            # first uri. BaseMediaService/MediaBackend only load one uri at a
+            # time (no add_list()/play(repeat) on this template), so the
+            # remainder is advanced incrementally from track_start() as each
+            # track completes.
+            self._last_full_playlist = uris
+            self._pending_playlist = uris[1:]
+            self._pending_repeat = repeat
 
             # Find if the user wants to use a specific backend
             query = message.data.get("utterance", "").lower()

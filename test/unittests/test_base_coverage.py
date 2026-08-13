@@ -24,6 +24,10 @@ def _make_service():
     svc.service_lock = threading.Lock()
     svc.play_start_time = 0.0
     svc.namespace = "audio"
+    svc.config = {}
+    svc._pending_playlist = []
+    svc._pending_repeat = False
+    svc._last_full_playlist = []
     svc._loaded = threading.Event()
     svc._loaded.set()
     return svc, bus
