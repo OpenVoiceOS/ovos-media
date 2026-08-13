@@ -1,11 +1,12 @@
 # Changelog
 
-## [0.4.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.3a1) (2026-08-13)
+## [0.4.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.3a2) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.2a1...0.4.3a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.2a1...0.4.3a2)
 
 **Merged pull requests:**
 
+- test: e2e seek pins expect milliseconds per the OPM MediaBackend contract [\#97](https://github.com/OpenVoiceOS/ovos-media/pull/97) ([JarbasAl](https://github.com/JarbasAl))
 - fix: daemon startup crash, backend seek API, silent play failures, config robustness [\#96](https://github.com/OpenVoiceOS/ovos-media/pull/96) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.2a1) (2026-08-13)
