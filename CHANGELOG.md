@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.16a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.16a1) (2026-08-14)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.15a2...0.4.16a1)
+
+**Merged pull requests:**
+
+- fix: MPRIS Position wire type and stop/pause-all iteration race [\#127](https://github.com/OpenVoiceOS/ovos-media/pull/127) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.15a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.15a2) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.15a1...0.4.15a2)
@@ -453,10 +461,6 @@
 ## [V0.0.1a4](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a4) (2024-01-12)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a3...V0.0.1a4)
-
-**Merged pull requests:**
-
-- MPRIS, SEIs and housekeeping [\#3](https://github.com/OpenVoiceOS/ovos-media/pull/3) ([NeonJarbas](https://github.com/NeonJarbas))
 
 ## [V0.0.1a3](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a3) (2024-01-10)
 
