@@ -53,6 +53,8 @@ from ovos_bus_client.message import Message
 from ovos_utils.log import LOG
 from ovos_utils.ocp import TrackState, PlaybackType, PlayerState, LoopState, MediaState
 
+from ovos_media.utils import is_real_number
+
 
 class OcpMprisExporter(Thread):
     """Exposes OCP as an MPRIS MediaPlayer2 on the D-Bus session bus.
@@ -858,9 +860,11 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
             # Shell) misparse/reject a 'd' (double) wire value.
             position = self._ocp_player.now_playing.position
             # a bus-fed position can arrive malformed (missing/None/wrong
-            # type); never let a bad value break Properties.GetAll for the
-            # whole Player interface, fall back to 0 like "no now_playing"
-            if isinstance(position, bool) or not isinstance(position, (int, float)):
+            # type/NaN/inf - MediaEntry.update sets attrs directly, with no
+            # guard on this ingestion path); never let a bad value break
+            # Properties.GetAll for the whole Player interface, fall back to
+            # 0 like "no now_playing"
+            if not is_real_number(position):
                 return 0
             return int(position * 1000)
         return 0

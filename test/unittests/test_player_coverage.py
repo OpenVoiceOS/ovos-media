@@ -208,6 +208,65 @@ class TestNowPlayingInit(unittest.TestCase):
         self.assertEqual(np.position, 1000)
         self.assertEqual(np.length, 180000)
 
+    def test_handle_sync_seekbar_nan_position_ignored_without_raising(self):
+        np, _ = self._make_now_playing()
+        np.position = 1000
+        np.length = 2000
+        msg = Message("ovos.common_play.playback_time",
+                      {"length": 180000, "position": float("nan")})
+        np.handle_sync_seekbar(msg)  # must not raise ValueError
+        # valid 'length' still applies; the invalid 'position' is ignored
+        self.assertEqual(np.position, 1000)
+        self.assertEqual(np.length, 180000)
+
+    def test_handle_sync_seekbar_inf_length_ignored_without_raising(self):
+        np, _ = self._make_now_playing()
+        np.position = 1000
+        np.length = 2000
+        msg = Message("ovos.common_play.playback_time",
+                      {"length": float("inf"), "position": 45000})
+        np.handle_sync_seekbar(msg)  # must not raise OverflowError
+        self.assertEqual(np.length, 2000)
+        self.assertEqual(np.position, 45000)
+
+    def test_handle_sync_seekbar_neg_inf_ignored_without_raising(self):
+        np, _ = self._make_now_playing()
+        np.position = 1000
+        np.length = 2000
+        msg = Message("ovos.common_play.playback_time",
+                      {"length": float("-inf"), "position": float("-inf")})
+        np.handle_sync_seekbar(msg)  # must not raise
+        self.assertEqual(np.length, 2000)
+        self.assertEqual(np.position, 1000)
+
+    def test_handle_sync_seekbar_mixed_valid_length_nan_position_no_partial_commit(self):
+        # the crash used to happen AFTER a valid field had already been
+        # applied via setattr; verify both fields are validated up front
+        # and a valid field can commit independently of an invalid one
+        np, _ = self._make_now_playing()
+        np.position = 999
+        np.length = 111
+        msg = Message("ovos.common_play.playback_time",
+                      {"length": 180000, "position": float("nan")})
+        np.handle_sync_seekbar(msg)
+        self.assertEqual(np.length, 180000)  # valid field applied
+        self.assertEqual(np.position, 999)   # invalid field left untouched
+
+    def test_extract_stream_whitespace_uri_raises_with_bad_value_quoted(self):
+        np, _ = self._make_now_playing()
+        np.uri = "ocp://original"
+        np.title = "original title"
+        np.stream_xtract = MagicMock()
+        np.stream_xtract.extract_stream.return_value = {"uri": "   ",
+                                                         "title": "poisoned"}
+        with self.assertRaises(ValueError) as cm:
+            np.extract_stream()
+        # the raised message quotes the BAD value, not the original uri
+        self.assertIn("'   '", str(cm.exception))
+        # state must be untouched - no poisoning before the refusal
+        self.assertEqual(np.uri, "ocp://original")
+        self.assertEqual(np.title, "original title")
+
     def test_extract_stream_non_string_uri_raises_and_leaves_uri_untouched(self):
         np, _ = self._make_now_playing()
         np.uri = "ocp://original"

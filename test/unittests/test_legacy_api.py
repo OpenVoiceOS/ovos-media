@@ -233,6 +233,14 @@ class TestTracksToEntries(unittest.TestCase):
         entries = _tracks_to_entries(["http://a.com/a.mp3"])
         self.assertEqual(entries[0]["playback"], PlaybackType.AUDIO)
 
+    def test_empty_list_entry_is_skipped_not_indexerror(self):
+        from ovos_media.legacy_api import _tracks_to_entries
+        # an empty list/tuple entry has no [0] to index - must be skipped
+        # with a warning, not raise IndexError out of handle_play/queue
+        entries = _tracks_to_entries([[], "http://a.com/a.mp3", ()])
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["uri"], "http://a.com/a.mp3")
+
 
 class TestLegacyCompatShutdown(unittest.TestCase):
     """shutdown() must remove all listeners."""
