@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.19a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.19a1) (2026-08-14)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.18a1...0.4.19a1)
+
+**Merged pull requests:**
+
+- fix: sanitize nested playlists, clamp MPRIS position, dispatch video seek [\#133](https://github.com/OpenVoiceOS/ovos-media/pull/133) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.18a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.18a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.17a1...0.4.18a1)
@@ -453,10 +461,6 @@
 ## [V0.0.1a7](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a7) (2024-01-27)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a6...V0.0.1a7)
-
-**Fixed bugs:**
-
-- fix/MPRIS like button [\#6](https://github.com/OpenVoiceOS/ovos-media/pull/6) ([NeonJarbas](https://github.com/NeonJarbas))
 
 ## [V0.0.1a6](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a6) (2024-01-27)
 
