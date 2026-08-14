@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.15a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.15a1) (2026-08-14)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.14a1...0.4.15a1)
+
+**Merged pull requests:**
+
+- fix: invoke backend pause/resume exactly once per request [\#124](https://github.com/OpenVoiceOS/ovos-media/pull/124) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.14a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.14a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.13a1...0.4.14a1)
@@ -145,19 +153,19 @@
 
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a4)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a4)
 
 **Merged pull requests:**
 
 - chore: remove duplicate publish-alpha workflow [\#84](https://github.com/OpenVoiceOS/ovos-media/pull/84) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a2)
-
 ## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a3)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a3)
+
+## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a2)
 
 **Merged pull requests:**
 
@@ -449,7 +457,6 @@
 **Implemented enhancements:**
 
 - feat/better\_MPRIS [\#2](https://github.com/OpenVoiceOS/ovos-media/pull/2) ([NeonJarbas](https://github.com/NeonJarbas))
-- :tada: [\#1](https://github.com/OpenVoiceOS/ovos-media/pull/1) ([NeonJarbas](https://github.com/NeonJarbas))
 
 
 
