@@ -303,6 +303,49 @@ class TestNowPlayingInit(unittest.TestCase):
         self.assertEqual(np.uri, "ocp://original")
         self.assertEqual(np.title, "original title")
 
+    def test_extract_stream_line_separator_uri_raises_and_leaves_uri_untouched(self):
+        # U+2028 (LINE SEPARATOR) is not < 0x20 or 0x7f but acts as a
+        # newline-equivalent in log viewers/some HTTP stacks - must be
+        # refused like the ASCII control-character case above
+        np, _ = self._make_now_playing()
+        np.uri = "ocp://original"
+        np.title = "original title"
+        np.stream_xtract = MagicMock()
+        np.stream_xtract.extract_stream.return_value = {
+            "uri": "http://evil.example/ Set-Cookie: x=1",
+            "title": "poisoned"}
+        with self.assertRaises(ValueError) as cm:
+            np.extract_stream()
+        self.assertIn("Set-Cookie", str(cm.exception))
+        self.assertEqual(np.uri, "ocp://original")
+        self.assertEqual(np.title, "original title")
+
+    def test_extract_stream_next_line_uri_raises_and_leaves_uri_untouched(self):
+        # U+0085 (NEXT LINE) is the same class of newline-equivalent
+        np, _ = self._make_now_playing()
+        np.uri = "ocp://original"
+        np.title = "original title"
+        np.stream_xtract = MagicMock()
+        np.stream_xtract.extract_stream.return_value = {
+            "uri": "http://evil.example/Set-Cookie: x=1",
+            "title": "poisoned"}
+        with self.assertRaises(ValueError) as cm:
+            np.extract_stream()
+        self.assertIn("Set-Cookie", str(cm.exception))
+        self.assertEqual(np.uri, "ocp://original")
+        self.assertEqual(np.title, "original title")
+
+    def test_extract_stream_normal_http_uri_still_passes(self):
+        # control: a normal http uri must not be rejected by the widened
+        # unicode-category check
+        np, _ = self._make_now_playing()
+        np.uri = "ocp://original"
+        np.stream_xtract = MagicMock()
+        np.stream_xtract.extract_stream.return_value = {
+            "uri": "http://example.com/song.mp3"}
+        np.extract_stream()  # must not raise
+        self.assertEqual(np.uri, "http://example.com/song.mp3")
+
     def test_on_invalid_stream_after_bad_extract_does_not_raise(self):
         p = _make_player()
         np, _ = self._make_now_playing()

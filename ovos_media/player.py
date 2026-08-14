@@ -14,7 +14,7 @@ from ovos_config.meta import get_xdg_base
 from ovos_gui_api_client import GUIInterface
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
-from ovos_media.utils import require_default_session, is_real_number
+from ovos_media.utils import require_default_session, is_real_number, is_injection_char
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.gui import is_gui_connected, is_gui_running
@@ -473,7 +473,7 @@ class NowPlaying(MediaEntry):
             if isinstance(extracted_uri, str) and extracted_uri and not extracted_uri.strip():
                 raise ValueError(f"invalid stream: {extracted_uri!r}")
             if isinstance(extracted_uri, str) and any(
-                    ord(c) < 0x20 or ord(c) == 0x7f for c in extracted_uri):
+                    is_injection_char(c) for c in extracted_uri):
                 # a uri that otherwise looks fine (eg. a valid http prefix)
                 # may still smuggle control characters/newlines - refuse
                 # before mutating state, same as the non-string/whitespace
@@ -489,7 +489,7 @@ class NowPlaying(MediaEntry):
         # a uri passing the prefix check above may still smuggle control
         # characters (eg. embedded newlines for header/log injection) -
         # refuse those too
-        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in self.uri):
+        if any(is_injection_char(c) for c in self.uri):
             raise ValueError(f"invalid stream: {self.uri!r}")
 
     # bus api
@@ -1401,11 +1401,13 @@ class OCPMediaPlayer:
                                   f"backend on playback-type switch: {e}")
                 svc.current = None
 
-        # track play count
-        if self.now_playing.uri in self.media.liked_songs:
-            if "play_count" not in self.media.liked_songs[self.now_playing.uri]:
-                self.media.liked_songs[self.now_playing.uri]["play_count"] = 0
-            self.media.liked_songs[self.now_playing.uri]["play_count"] += 1
+        # track play count - fetch the entry once rather than check-then-index;
+        # handle_unlike() can pop this uri between the two on another bus
+        # dispatch thread, and mutating an entry that got concurrently
+        # popped is harmless, so no lock is needed
+        entry = self.media.liked_songs.get(self.now_playing.uri)
+        if entry is not None:
+            entry["play_count"] = entry.get("play_count", 0) + 1
             self.media.liked_songs.store()
 
         # validate new stream
@@ -2128,8 +2130,11 @@ class OCPMediaPlayer:
         copy of the list and drops nested Playlist members entirely, so it
         cannot be used to reach or fix them. Iterating the Playlist itself
         (it subclasses list) reaches every raw member, including nested
-        Playlists. Dict members are left untouched - `Playlist.entries`
-        converts them to MediaEntry on read.
+        Playlists. Dict members are *not* sanitized by reading them either:
+        `Playlist.entries` calls `dict2entry`/`MediaEntry.from_dict` fresh
+        on every read, and neither applies any numeric coercion - so a raw
+        dict member must be sanitized here, in place, or it stays a live
+        landmine for `Playlist.length`'s sum().
         """
         if id(playlist) in visited:
             return
@@ -2144,6 +2149,42 @@ class OCPMediaPlayer:
                         setattr(member, field, 0)
             elif isinstance(member, Playlist):
                 OCPMediaPlayer._sanitize_nested_playlist(member, visited)
+            elif isinstance(member, dict):
+                for field in ("length", "position"):
+                    if field in member and not is_real_number(member[field]):
+                        LOG.debug(f"coercing invalid '{field}' on raw "
+                                  f"playlist entry to 0: {member[field]!r}")
+                        member[field] = 0
+                # dict2entry() only turns a dict into a nested Playlist when
+                # it carries a truthy "playlist" key - recurse into that
+                # list of raw (also unsanitized) member dicts too.
+                if member.get("playlist"):
+                    OCPMediaPlayer._sanitize_raw_playlist_dicts(
+                        member["playlist"], visited)
+
+    @staticmethod
+    def _sanitize_raw_playlist_dicts(members, visited):
+        """Sanitize length/position in place across a raw list of playlist
+        member dicts/objects, as found under a dict's "playlist" key
+        (see `_sanitize_nested_playlist`)."""
+        if id(members) in visited:
+            return
+        visited.add(id(members))
+        for member in members:
+            if isinstance(member, (MediaEntry, PluginStream)):
+                for field in ("length", "position"):
+                    value = getattr(member, field, None)
+                    if not is_real_number(value):
+                        setattr(member, field, 0)
+            elif isinstance(member, Playlist):
+                OCPMediaPlayer._sanitize_nested_playlist(member, visited)
+            elif isinstance(member, dict):
+                for field in ("length", "position"):
+                    if field in member and not is_real_number(member[field]):
+                        member[field] = 0
+                if member.get("playlist"):
+                    OCPMediaPlayer._sanitize_raw_playlist_dicts(
+                        member["playlist"], visited)
 
     @require_default_session()
     def handle_playlist_queue_request(self, message):
