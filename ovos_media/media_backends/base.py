@@ -20,14 +20,24 @@ def _safe_supported_uris(s) -> list:
 
     A plugin raising here must not abort backend listing/selection for
     every other, healthy backend. Treated the same as a plugin that
-    supports nothing.
+    supports nothing. The return value is also validated: a plugin
+    returning a bare str (eg. "filesystem" instead of ["file"]) would
+    otherwise be iterated character-by-character, giving substring
+    semantics downstream ("file" in "filesystem") that pick the wrong
+    backend for a uri_type.
     """
     try:
-        return s.supported_uris()
+        uris = s.supported_uris()
     except Exception:
         LOG.exception(f"{getattr(s, 'name', s.__class__.__name__)}"
                       f".supported_uris() raised")
         return []
+    if isinstance(uris, (list, tuple, set)):
+        return list(uris)
+    LOG.warning(f"{getattr(s, 'name', s.__class__.__name__)}"
+               f".supported_uris() returned {type(uris).__name__}, expected"
+               f" a list/tuple/set - treating as unsupported")
+    return []
 
 
 class BaseMediaService:
@@ -93,13 +103,18 @@ class BaseMediaService:
         """
         data = {}
         for s in self.services:
-            info = {
-                'supported_uris': _safe_supported_uris(s),
-                'remote': isinstance(s, RemoteAudioPlayerBackend) or
-                          isinstance(s, RemoteWebPlayerBackend) or
-                          isinstance(s, RemoteVideoPlayerBackend)
-            }
-            data[s.name] = info
+            try:
+                info = {
+                    'supported_uris': _safe_supported_uris(s),
+                    'remote': isinstance(s, RemoteAudioPlayerBackend) or
+                              isinstance(s, RemoteWebPlayerBackend) or
+                              isinstance(s, RemoteVideoPlayerBackend)
+                }
+                data[s.name] = info
+            except Exception:
+                LOG.exception(f"{s.__class__.__name__} raised while listing"
+                              f" available backends - skipping")
+                continue
         return data
 
     def track_start(self, track):
