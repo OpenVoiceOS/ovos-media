@@ -23,7 +23,7 @@ from ovos_bus_client.message import Message
 from ovos_bus_client.session import SessionManager
 from ovos_utils.ocp import MediaType, Playlist
 from ovos_utils.ocp import OCP_ID, PlayerState, LoopState, PlaybackType, PlaybackMode, TrackState, MediaState, \
-    MediaEntry
+    MediaEntry, PluginStream
 from ovos_workshop.decorators.ocp import ocp_search
 from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 
@@ -1451,6 +1451,8 @@ class OCPMediaPlayer:
         if self.shuffle:
             LOG.debug("Shuffling")
             self.play_shuffle()
+            # play_shuffle only selects the track - actually start it
+            self.play()
             return
 
         queue = self._merged_queue()
@@ -1520,6 +1522,8 @@ class OCPMediaPlayer:
 
         if self.shuffle:
             self.play_shuffle()
+            # play_shuffle only selects the track - actually start it
+            self.play()
             return
 
         queue = self._merged_queue()
@@ -1934,13 +1938,40 @@ class OCPMediaPlayer:
         # the player with an empty playlist for no reason on a malformed
         # request.
         tracks = message.data.get("tracks") or []
+        if not isinstance(tracks, (list, tuple)):
+            LOG.warning(f"ignoring playlist.set payload of type "
+                        f"{type(tracks).__name__} - keeping current playlist")
+            return
+        entries = self._validated_entries(tracks)
         self.playlist.clear()
-        for track in tracks:
+        for track in entries:
             self.playlist.add_entry(track)
+
+    @staticmethod
+    def _validated_entries(tracks):
+        """Coerce a playlist payload into valid entries, skipping the bad
+        ones with a warning instead of aborting mid-mutation. A non-list
+        payload (eg. a bare string, which would iterate character-wise)
+        yields no entries."""
+        if not isinstance(tracks, (list, tuple)):
+            LOG.warning(f"ignoring playlist payload of type "
+                        f"{type(tracks).__name__}, expected a list of tracks")
+            return []
+        entries = []
+        for track in tracks:
+            try:
+                if isinstance(track, dict):
+                    track = MediaEntry.from_dict(track)
+                if not isinstance(track, (MediaEntry, Playlist, PluginStream)):
+                    raise ValueError(f"not a valid track: {track!r}")
+                entries.append(track)
+            except Exception as e:
+                LOG.warning(f"skipping invalid playlist entry: {e}")
+        return entries
 
     @require_default_session()
     def handle_playlist_queue_request(self, message):
-        for track in message.data.get("tracks") or []:
+        for track in self._validated_entries(message.data.get("tracks") or []):
             self.playlist.add_entry(track)
 
     @require_default_session()

@@ -531,6 +531,14 @@ class OcpMprisExporter(Thread):
                 ocp_data["image"] = v.value
             elif k == "mpris:length":
                 ocp_data["length"] = v.value
+            elif k == "xesam:url":
+                ocp_data["uri"] = v.value
+
+        # dict2entry refuses a track without a uri, and not every player
+        # reports xesam:url - fall back to a synthetic identifier so the
+        # reflected now-playing can always be constructed
+        if not ocp_data.get("uri"):
+            ocp_data["uri"] = f"mpris://{name}"
 
         # some players dont report state directly (eg, firefox)
         if not ocp_data["state"] and ocp_data.get("title"):
