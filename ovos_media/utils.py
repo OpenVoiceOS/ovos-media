@@ -40,12 +40,19 @@ def is_real_number(value) -> bool:
 def is_injection_char(c: str) -> bool:
     """True for a character that acts as a newline/format-injection
     surface in log viewers or HTTP stacks: C0/C1 controls (category Cc,
-    also covering the historical ``< 0x20`` and ``0x7f`` checks), format
-    chars like zero-width/bidi overrides (Cf), and the Unicode line/
-    paragraph separators U+2028/U+2029 (Zl/Zp) - all of which act as
-    newline-equivalents even though they aren't ASCII control characters.
+    also covering the historical ``< 0x20`` and ``0x7f`` checks) and the
+    Unicode line/paragraph separators U+2028/U+2029 (Zl/Zp) - all of which
+    act as newline-equivalents even though they aren't ASCII control
+    characters.
+
+    Format chars (Cf: soft hyphen U+00AD, zero-width joiner U+200D, BOM
+    U+FEFF, bidi overrides, ...) are deliberately NOT rejected here - they
+    show up in legitimate real-world filenames, and rejecting them refused
+    playback of real local files. Bidi/zero-width spoofing via Cf is
+    cosmetic, not a newline-equivalent, and isn't worth breaking those
+    files over.
     """
-    return unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp")
+    return unicodedata.category(c) in ("Cc", "Zl", "Zp")
 
 
 def require_default_session():

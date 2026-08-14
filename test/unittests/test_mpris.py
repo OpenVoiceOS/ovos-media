@@ -443,6 +443,43 @@ class TestMetadata(unittest.TestCase):
         self.assertIn("xesam:url", result)
 
 
+class TestVolumeGetter(unittest.TestCase):
+    """D3: Volume must never raise: the wait_for_response bus reply is
+    unvalidated (missing/None/non-numeric "percent"), and a failing
+    property getter kills Properties.GetAll for the whole Player interface,
+    the same failure class the Metadata/Position guards prevent."""
+
+    def _msg(self, data):
+        m = MagicMock()
+        m.data = data
+        return m
+
+    def test_missing_percent_key_returns_default(self):
+        iface, player = _make_interface()
+        player.bus.wait_for_response.return_value = self._msg({})
+        self.assertEqual(iface.Volume, 1.0)
+
+    def test_none_percent_returns_default(self):
+        iface, player = _make_interface()
+        player.bus.wait_for_response.return_value = self._msg({"percent": None})
+        self.assertEqual(iface.Volume, 1.0)
+
+    def test_non_numeric_percent_returns_default(self):
+        iface, player = _make_interface()
+        player.bus.wait_for_response.return_value = self._msg({"percent": "loud"})
+        self.assertEqual(iface.Volume, 1.0)
+
+    def test_no_response_returns_default(self):
+        iface, player = _make_interface()
+        player.bus.wait_for_response.return_value = None
+        self.assertEqual(iface.Volume, 1.0)
+
+    def test_valid_percent_returns_value(self):
+        iface, player = _make_interface()
+        player.bus.wait_for_response.return_value = self._msg({"percent": 0.7})
+        self.assertEqual(iface.Volume, 0.7)
+
+
 class TestPlaybackStatus(unittest.TestCase):
     """PlaybackStatus must return the right MPRIS string for each PlayerState."""
 

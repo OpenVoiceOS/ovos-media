@@ -432,5 +432,52 @@ class TestConstructsWithoutAhocorasickNer(unittest.TestCase):
             self.assertIn("playlist_name", labels)
 
 
+class TestSkillAnnounceMediaTypesNormalization(unittest.TestCase):
+    """D2: a skill announcing with the singular "media_type" key can send
+    a bare scalar (eg. an int), which used to be stored as-is and blow up
+    get_featured_skills()'s "in media_types" membership checks."""
+
+    def _announce(self, catalog, bus, **data):
+        bus.emit(Message("ovos.common_play.announce", data))
+
+    def test_singular_int_media_type_is_featured_and_does_not_raise(self):
+        bus = FakeBus()
+        catalog = OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
+        self._announce(catalog, bus,
+                       skill_id="skill.a", skill_name="A",
+                       featured_tracks=["t1"],
+                       media_type=int(MediaType.MUSIC))
+
+        skills = catalog.get_featured_skills()  # must not raise
+
+        self.assertEqual(len(skills), 1)
+        self.assertEqual(skills[0]["skill_id"], "skill.a")
+
+    def test_plural_list_media_types_still_works(self):
+        bus = FakeBus()
+        catalog = OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
+        self._announce(catalog, bus,
+                       skill_id="skill.b", skill_name="B",
+                       featured_tracks=["t1"],
+                       media_types=[MediaType.MUSIC])
+
+        skills = catalog.get_featured_skills()
+
+        self.assertEqual(len(skills), 1)
+        self.assertEqual(skills[0]["skill_id"], "skill.b")
+
+    def test_adult_singular_media_type_is_filtered_out(self):
+        bus = FakeBus()
+        catalog = OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
+        self._announce(catalog, bus,
+                       skill_id="skill.c", skill_name="C",
+                       featured_tracks=["t1"],
+                       media_type=int(MediaType.ADULT))
+
+        skills = catalog.get_featured_skills()  # must not raise
+
+        self.assertEqual(skills, [])
+
+
 if __name__ == "__main__":
     unittest.main()

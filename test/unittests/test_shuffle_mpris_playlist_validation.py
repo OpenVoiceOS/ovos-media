@@ -268,6 +268,46 @@ class TestPlaylistSetValidatesBeforeClearing(unittest.TestCase):
         self.assertNotEqual(total, float("inf"))
         p.shutdown()
 
+    def test_non_list_playlist_key_on_raw_dict_member_is_left_untouched_not_discarded(self):
+        # D6: `if member.get("playlist"):` used to recurse into ANY truthy
+        # value - a non-list (eg. an int) raised a TypeError from the outer
+        # per-track try/except in _validated_entries, discarding the WHOLE
+        # top-level entry. Sanitizing is meant to leave non-list values
+        # alone, not lose data.
+        from ovos_media.player import OCPMediaPlayer
+        from ovos_utils.ocp import Playlist as OcpPlaylist
+
+        bus, p = _player()
+        outer = OcpPlaylist(title="outer")
+        list.append(outer, {"uri": "file://y.mp3", "length": "garbage",
+                            "playlist": 5})
+
+        entries = OCPMediaPlayer._validated_entries([outer])
+        self.assertEqual(len(entries), 1)  # entry survives, not discarded
+        result = entries[0]
+        raw_member = list.__getitem__(result, 0)
+        self.assertEqual(raw_member["playlist"], 5)  # left untouched
+        self.assertEqual(raw_member["length"], 0)  # still coerced
+        p.shutdown()
+
+    def test_list_playlist_key_on_raw_dict_member_still_recursed(self):
+        # control: a real list under "playlist" must still be recursed and
+        # sanitized, same as before D6.
+        from ovos_media.player import OCPMediaPlayer
+        from ovos_utils.ocp import Playlist as OcpPlaylist
+
+        bus, p = _player()
+        outer = OcpPlaylist(title="outer")
+        list.append(outer, {"uri": "file://y.mp3",
+                            "playlist": [{"uri": "file://z.mp3", "length": "garbage"}]})
+
+        entries = OCPMediaPlayer._validated_entries([outer])
+        result = entries[0]
+        raw_member = list.__getitem__(result, 0)
+        nested_member = raw_member["playlist"][0]
+        self.assertEqual(nested_member["length"], 0)  # recursed and sanitized
+        p.shutdown()
+
     def test_self_referential_playlist_does_not_recurse_forever(self):
         from ovos_media.player import OCPMediaPlayer
         from ovos_utils.ocp import Playlist as OcpPlaylist

@@ -1179,5 +1179,42 @@ class TestPauseResumeRealTemplateIntegration(unittest.TestCase):
         self.assertFalse(b.paused)  # toggled exactly once -> unpaused
 
 
+class _RaisingUrisBackend(_FakeBackend):
+    """A backend whose supported_uris() always raises - simulates a
+    misbehaving plugin at runtime (not load time)."""
+
+    def supported_uris(self):
+        raise RuntimeError("boom")
+
+
+class TestSupportedUrisExceptionIsolation(unittest.TestCase):
+    """D1: a plugin raising from supported_uris() must not kill
+    available_backends() or abort backend selection in _play() before
+    healthy backends are tried."""
+
+    def test_available_backends_skips_raising_backend(self):
+        good = _FakeBackend({"name": "good", "uris": ["http"]}, None)
+        bad = _RaisingUrisBackend({"name": "bad"}, None)
+        svc, _bus = _make_base_svc(services=[bad, good])
+
+        data = svc.available_backends()
+
+        self.assertIn("good", data)
+        self.assertEqual(data["good"]["supported_uris"], ["http"])
+        self.assertIn("bad", data)
+        self.assertEqual(data["bad"]["supported_uris"], [])
+
+    def test_play_selects_good_backend_after_raising_one(self):
+        good = _FakeBackend({"name": "good", "uris": ["http"]}, None)
+        good.load_track = MagicMock()
+        bad = _RaisingUrisBackend({"name": "bad"}, None)
+        svc, _bus = _make_base_svc(services=[bad, good])
+
+        svc._play("http://example.com/track.mp3")
+
+        self.assertIs(svc.current, good)
+        good.load_track.assert_called_once_with("http://example.com/track.mp3")
+
+
 if __name__ == "__main__":
     unittest.main()

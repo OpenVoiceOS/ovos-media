@@ -313,6 +313,11 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         media_types = message.data.get("media_types") or \
                       message.data.get("media_type") or \
                       [MediaType.GENERIC]
+        if not isinstance(media_types, (list, tuple)):
+            # a skill announcing the singular "media_type" key sends a bare
+            # scalar (eg. an int); normalize to a container so downstream
+            # "in media_types" membership checks don't blow up
+            media_types = [media_types]
 
         if skill_id not in self.ocp_skills:
             LOG.debug(f"Registered {skill_id}")
@@ -710,6 +715,12 @@ class OCPMediaPlayer:
         # re-enters, and because set_player_state() calls handle_status()
         # which may itself touch player/media state.
         self._state_lock = RLock()
+        # Guards every liked_songs mutation + store() together. store() does
+        # a json.dump that iterates the dict, and handle_like/handle_unlike/
+        # play()'s play-count block all mutate it from separate bus-dispatch
+        # threads; without this a store() racing a pop() raises
+        # "dictionary changed size during iteration".
+        self._liked_songs_lock = RLock()
         # True between a stop request and the next play(). An explicit stop
         # must NOT advance the queue, but OPM backends emit END_OF_MEDIA from
         # ocp_stop(), so a stop is indistinguishable from a natural track end at
@@ -881,9 +892,10 @@ class OCPMediaPlayer:
         title = message.data.get("title") or self.now_playing.title
         image = message.data.get("image") or message.data.get("thumbnail") or self.now_playing.image
         artist = message.data.get("artist") or self.now_playing.artist
-        self.media.liked_songs[uri] = {"title": title, "artist": artist,
-                                       "image": image, "uri": uri}
-        self.media.liked_songs.store()
+        with self._liked_songs_lock:
+            self.media.liked_songs[uri] = {"title": title, "artist": artist,
+                                           "image": image, "uri": uri}
+            self.media.liked_songs.store()
         LOG.info(f"liked song: {uri}")
         self._update_gui()
         self.bus.emit(message.forward("mycroft.audio.play_sound",
@@ -893,10 +905,11 @@ class OCPMediaPlayer:
     def handle_unlike(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
-        if uri in self.media.liked_songs:
-            self.media.liked_songs.pop(uri)
-            self.media.liked_songs.store()
-            LOG.info(f"unliked song: {uri}")
+        with self._liked_songs_lock:
+            if uri in self.media.liked_songs:
+                self.media.liked_songs.pop(uri)
+                self.media.liked_songs.store()
+                LOG.info(f"unliked song: {uri}")
 
     # This and service.py's MediaService.handle_search_start both
     # registered on 'ovos.common_play.search.start' unconditionally, so a
@@ -1401,14 +1414,15 @@ class OCPMediaPlayer:
                                   f"backend on playback-type switch: {e}")
                 svc.current = None
 
-        # track play count - fetch the entry once rather than check-then-index;
-        # handle_unlike() can pop this uri between the two on another bus
-        # dispatch thread, and mutating an entry that got concurrently
-        # popped is harmless, so no lock is needed
-        entry = self.media.liked_songs.get(self.now_playing.uri)
-        if entry is not None:
-            entry["play_count"] = entry.get("play_count", 0) + 1
-            self.media.liked_songs.store()
+        # track play count - store() does a json.dump that iterates the
+        # dict, and handle_like()/handle_unlike() can mutate it concurrently
+        # from another bus-dispatch thread, so every mutation+store goes
+        # through _liked_songs_lock to serialize access to the dict.
+        with self._liked_songs_lock:
+            entry = self.media.liked_songs.get(self.now_playing.uri)
+            if entry is not None:
+                entry["play_count"] = entry.get("play_count", 0) + 1
+                self.media.liked_songs.store()
 
         # validate new stream
         if not self.validate_stream():
@@ -2158,7 +2172,7 @@ class OCPMediaPlayer:
                 # dict2entry() only turns a dict into a nested Playlist when
                 # it carries a truthy "playlist" key - recurse into that
                 # list of raw (also unsanitized) member dicts too.
-                if member.get("playlist"):
+                if isinstance(member.get("playlist"), list):
                     OCPMediaPlayer._sanitize_raw_playlist_dicts(
                         member["playlist"], visited)
 
@@ -2182,7 +2196,7 @@ class OCPMediaPlayer:
                 for field in ("length", "position"):
                     if field in member and not is_real_number(member[field]):
                         member[field] = 0
-                if member.get("playlist"):
+                if isinstance(member.get("playlist"), list):
                     OCPMediaPlayer._sanitize_raw_playlist_dicts(
                         member["playlist"], visited)
 

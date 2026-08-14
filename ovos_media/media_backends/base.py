@@ -15,6 +15,21 @@ from ovos_utils.log import LOG
 from ovos_utils.process_utils import MonotonicEvent
 
 
+def _safe_supported_uris(s) -> list:
+    """Call s.supported_uris() defensively.
+
+    A plugin raising here must not abort backend listing/selection for
+    every other, healthy backend. Treated the same as a plugin that
+    supports nothing.
+    """
+    try:
+        return s.supported_uris()
+    except Exception:
+        LOG.exception(f"{getattr(s, 'name', s.__class__.__name__)}"
+                      f".supported_uris() raised")
+        return []
+
+
 class BaseMediaService:
 
     def __init__(self, bus, namespace: str, plugin_loader: Callable,
@@ -79,7 +94,7 @@ class BaseMediaService:
         data = {}
         for s in self.services:
             info = {
-                'supported_uris': s.supported_uris(),
+                'supported_uris': _safe_supported_uris(s),
                 'remote': isinstance(s, RemoteAudioPlayerBackend) or
                           isinstance(s, RemoteWebPlayerBackend) or
                           isinstance(s, RemoteVideoPlayerBackend)
@@ -455,16 +470,16 @@ class BaseMediaService:
         uri_type = uri.split(':')[0]
 
         # check if user requested a particular service
-        if preferred_service and uri_type in preferred_service.supported_uris():
+        if preferred_service and uri_type in _safe_supported_uris(preferred_service):
             selected_service = preferred_service
 
         # check if default supports the uri
-        elif self.current and uri_type in self.current.supported_uris():
+        elif self.current and uri_type in _safe_supported_uris(self.current):
             selected_service = self.current
 
         else:  # Check if any media service can play the media
             for s in self.services:
-                if uri_type in s.supported_uris():
+                if uri_type in _safe_supported_uris(s):
                     LOG.debug(f"Service {s.__class__.__name__} supports URI {uri_type}")
                     selected_service = s
                     break
