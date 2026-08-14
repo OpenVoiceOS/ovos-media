@@ -287,15 +287,17 @@ class TestPlayerPlayNextMpris(unittest.TestCase):
 class TestPlayerPlayNextWithShuffle(unittest.TestCase):
     """Test play_next with shuffle enabled."""
 
-    def test_play_next_with_shuffle_calls_play_shuffle(self):
-        """play_next with shuffle=True should call play_shuffle."""
+    def test_play_next_with_shuffle_starts_playback(self):
+        """play_next with shuffle=True must select a track AND start it -
+        play_shuffle only picks, play() is what reaches the backend. The
+        old test mocked play_shuffle out, which hid exactly that gap."""
         p = _make_player()
         p.shuffle = True
 
-        with patch.object(p, "play_shuffle") as mock_shuffle:
+        with patch.object(p, "play") as mock_play:
             p.play_next()
 
-        mock_shuffle.assert_called_once()
+        mock_play.assert_called_once()
 
 
 class TestPlayerPlayPrevMpris(unittest.TestCase):
@@ -316,15 +318,16 @@ class TestPlayerPlayPrevMpris(unittest.TestCase):
 class TestPlayerPlayPrevWithShuffle(unittest.TestCase):
     """Test play_prev with shuffle."""
 
-    def test_play_prev_with_shuffle_calls_play_shuffle(self):
-        """play_prev with shuffle=True should call play_shuffle."""
+    def test_play_prev_with_shuffle_starts_playback(self):
+        """Same contract as play_next: a shuffled 'previous' must actually
+        start playback, not just repoint now_playing."""
         p = _make_player()
         p.shuffle = True
 
-        with patch.object(p, "play_shuffle") as mock_shuffle:
+        with patch.object(p, "play") as mock_play:
             p.play_prev()
 
-        mock_shuffle.assert_called_once()
+        mock_play.assert_called_once()
 
 
 class TestPlayerPauseMpris(unittest.TestCase):

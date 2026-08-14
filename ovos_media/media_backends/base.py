@@ -645,7 +645,8 @@ class BaseMediaService:
         if not self._is_message_for_service(message):
             return
         milliseconds = message.data.get("position")
-        if milliseconds and self.current:
+        # 0 is a valid position (seek to start) - only skip on missing value
+        if milliseconds is not None and self.current:
             self.current.set_track_position(milliseconds)
 
     def handle_seek_forward(self, message: Message):
