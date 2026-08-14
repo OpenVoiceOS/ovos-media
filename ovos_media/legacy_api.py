@@ -62,7 +62,14 @@ def _tracks_to_entries(
                 continue
             uri = t[0]
         else:
-            uri = str(t)
+            if not isinstance(t, str) or not t:
+                # not a (uri, mime) pair and not a usable uri string (eg. a
+                # dict or int) - skip with a warning instead of stringifying
+                # it into a garbage uri, mirroring the malformed
+                # list/tuple case above
+                LOG.warning(f"skipping malformed legacy track entry: {t!r}")
+                continue
+            uri = t
         entry = MediaEntry(
             uri=uri,
             title=uri,

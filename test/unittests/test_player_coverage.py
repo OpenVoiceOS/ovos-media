@@ -286,6 +286,23 @@ class TestNowPlayingInit(unittest.TestCase):
         np.extract_stream()  # must not raise
         self.assertEqual(np.uri, "http://example.com/x.mp3")
 
+    def test_extract_stream_control_char_uri_raises_and_leaves_uri_untouched(self):
+        # a uri that passes the prefix check may still embed control
+        # characters (eg. a newline for header/log injection) - it must be
+        # refused, same as a non-string or whitespace-only uri
+        np, _ = self._make_now_playing()
+        np.uri = "ocp://original"
+        np.title = "original title"
+        np.stream_xtract = MagicMock()
+        np.stream_xtract.extract_stream.return_value = {
+            "uri": "http://evil.example/\nSet-Cookie: x=1",
+            "title": "poisoned"}
+        with self.assertRaises(ValueError) as cm:
+            np.extract_stream()
+        self.assertIn("Set-Cookie", str(cm.exception))
+        self.assertEqual(np.uri, "ocp://original")
+        self.assertEqual(np.title, "original title")
+
     def test_on_invalid_stream_after_bad_extract_does_not_raise(self):
         p = _make_player()
         np, _ = self._make_now_playing()

@@ -241,6 +241,17 @@ class TestTracksToEntries(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["uri"], "http://a.com/a.mp3")
 
+    def test_non_str_non_list_entries_are_skipped_not_stringified(self):
+        # a dict or int track entry must not be turned into a garbage uri
+        # via str(t) (eg. a dict becomes its literal repr string) - skip
+        # it with a warning instead, same convention as the malformed
+        # list/tuple case. Valid siblings must still convert.
+        from ovos_media.legacy_api import _tracks_to_entries
+        entries = _tracks_to_entries(
+            [{"uri": "http://bad.example/dict"}, 42, "http://a.com/a.mp3"])
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["uri"], "http://a.com/a.mp3")
+
 
 class TestLegacyCompatShutdown(unittest.TestCase):
     """shutdown() must remove all listeners."""
