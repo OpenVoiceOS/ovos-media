@@ -2135,14 +2135,17 @@ class OCPMediaPlayer:
         - Duck (PLAYING): ``_paused_on_duck`` is True, player is PLAYING →
           ``handle_unduck_request`` restores volume.
         - Cork (PAUSED): ``_paused_on_duck`` is True, player is PAUSED →
-          ``handle_unduck_request`` restores volume; caller should also
-          uncork via ``handle_uncork_request`` if resume is desired.
+          ``handle_uncork_request`` resumes playback and restores state.
 
         @param message: Message associated with event
         """
-        if self._paused_on_duck:
-            # The intent has been handled; restore volume regardless of whether
-            # the player was ducked (PLAYING) or corked (PAUSED).
+        if self._paused_on_duck and self.state == PlayerState.PAUSED:
+            # The intent has been handled; resume playback that was paused
+            # for the cork path, since 'recognizer_loop:record_end' already
+            # no-op'd while the 'speak' was in flight.
+            self.handle_uncork_request(message)
+        elif self._paused_on_duck:
+            # The intent has been handled; restore volume for the duck path.
             self.handle_unduck_request(message)
 
     def handle_mycroft_stop(self, message):
