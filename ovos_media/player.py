@@ -40,6 +40,13 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
 
         self.liked_songs = JsonStorageXDG("OCP_liked_songs",
                                           subfolder=get_xdg_base())
+        # Guards every liked_songs mutation + store() together, and every
+        # unlocked read that iterates the dict (eg. liked_songs_playlist);
+        # store() does a json.dump that iterates the dict, and
+        # handle_like/handle_unlike/play()'s play-count block all mutate it
+        # from separate bus-dispatch threads. OCPMediaPlayer aliases its
+        # own _liked_songs_lock to this one so writers and readers share it.
+        self.liked_songs_lock = RLock()
         LOG.debug(f"Liked songs playlist loaded: {self.liked_songs.path}")
         self.search_playlist = Playlist()
         self.ocp_skills = {}
@@ -295,6 +302,11 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         # canonicalize the persisted liked-songs store (raw dicts) into
         # MediaEntry objects; match_confidence tracks play_count so the entries
         # sort most-played-first once handed to a Playlist.
+        # tolerate catalogs constructed via __new__ (bypassing __init__)
+        # that never set liked_songs_lock
+        lock = getattr(self, "liked_songs_lock", None) or RLock()
+        with lock:
+            items = list(self.liked_songs.items())
         entries = [MediaEntry(uri=uri,
                               title=song.get("title", ""),
                               artist=song.get("artist", ""),
@@ -302,7 +314,7 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
                               media_type=MediaType.MUSIC,
                               playback=PlaybackType.AUDIO,
                               match_confidence=song.get("play_count", 0) + 50)
-                   for uri, song in self.liked_songs.items()]
+                   for uri, song in items]
         return sorted(entries, key=lambda e: e.match_confidence, reverse=True)
 
     def handle_skill_announce(self, message):
@@ -313,7 +325,13 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         media_types = message.data.get("media_types") or \
                       message.data.get("media_type") or \
                       [MediaType.GENERIC]
-        if not isinstance(media_types, (list, tuple)):
+        if isinstance(media_types, (set, frozenset, tuple)):
+            # a skill announcing a set/tuple of media types must be
+            # flattened to a list of members - wrapping it as [the_set]
+            # would make membership checks like "MediaType.ADULT in
+            # media_types" always False regardless of contents
+            media_types = list(media_types)
+        elif not isinstance(media_types, list):
             # a skill announcing the singular "media_type" key sends a bare
             # scalar (eg. an int); normalize to a container so downstream
             # "in media_types" membership checks don't blow up
@@ -667,11 +685,11 @@ class OCPMediaPlayer:
         self.playlist: Playlist = Playlist(title="Search Results")
         self.shuffle: bool = False
         self.track_history: dict = {}  # Dict of track URI to play count
+        self.media: OCPMediaCatalog = OCPMediaCatalog(bus=bus, skill_id=OCP_ID + ".favorites",
+                                                       validate_source=self.validate_source)
         self._init_runtime_state()
 
         self.now_playing: NowPlaying = NowPlaying(bus, player=self)
-        self.media: OCPMediaCatalog = OCPMediaCatalog(bus=bus, skill_id=OCP_ID + ".favorites",
-                                                       validate_source=self.validate_source)
         # The per-namespace 'ovos.{ns}.service.stop' bus handler lives on
         # BaseMediaService; this callback lets it flag the stop on the player
         # BEFORE the backend's ocp_stop() emits END_OF_MEDIA, in the same
@@ -715,12 +733,19 @@ class OCPMediaPlayer:
         # re-enters, and because set_player_state() calls handle_status()
         # which may itself touch player/media state.
         self._state_lock = RLock()
-        # Guards every liked_songs mutation + store() together. store() does
-        # a json.dump that iterates the dict, and handle_like/handle_unlike/
-        # play()'s play-count block all mutate it from separate bus-dispatch
-        # threads; without this a store() racing a pop() raises
-        # "dictionary changed size during iteration".
-        self._liked_songs_lock = RLock()
+        # Alias of self.media.liked_songs_lock: guards every liked_songs
+        # mutation + store() together, and every unlocked read that
+        # iterates the dict. store() does a json.dump that iterates the
+        # dict, and handle_like/handle_unlike/play()'s play-count block all
+        # mutate it from separate bus-dispatch threads; without this a
+        # store() racing a pop() raises "dictionary changed size during
+        # iteration". Kept as a shared lock (not a private one) so
+        # OCPMediaCatalog.liked_songs_playlist can snapshot under the same
+        # lock writers use. Falls back to a private RLock when applied
+        # standalone (eg. tests calling _init_runtime_state() before
+        # self.media exists) so it stays usable outside full __init__.
+        media = getattr(self, "media", None)
+        self._liked_songs_lock = media.liked_songs_lock if media is not None else RLock()
         # True between a stop request and the next play(). An explicit stop
         # must NOT advance the queue, but OPM backends emit END_OF_MEDIA from
         # ocp_stop(), so a stop is indistinguishable from a natural track end at
@@ -1641,8 +1666,7 @@ class OCPMediaPlayer:
             else:
                 LOG.warning("MPRIS external player control is disabled; install ovos-media-plugin-mpris to enable it")
             return
-        elif self.playback_type in [PlaybackType.SKILL,
-                                    PlaybackType.UNDEFINED]:
+        elif self.playback_type in [PlaybackType.SKILL]:
             self.bus.emit(Message(
                 f'ovos.common_play.{self.now_playing.skill_id}.prev'))
             return

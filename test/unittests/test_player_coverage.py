@@ -817,13 +817,24 @@ class TestPlayPrev(unittest.TestCase):
         p.play_prev()
         p.play.assert_not_called()
 
-    def test_play_prev_undefined_emits_bus(self):
+    def test_play_prev_undefined_does_not_emit_bus(self):
+        # D5: UNDEFINED (the default playback_type) must NOT be treated as
+        # a skill-controlled playback and defer to a bogus
+        # ovos.common_play.<skill_id>.prev - mirrors play_next, which only
+        # matches PlaybackType.SKILL. UNDEFINED falls through to the merged
+        # queue logic instead (a no-op here: no queue entries beyond the
+        # current one).
         p = _make_player(PlaybackType.UNDEFINED)
         emitted = []
         p.bus.emit = lambda m: emitted.append(m)
+        p.playlist.entries = []
+        p.media.search_playlist.entries = []
+        p.now_playing.uri = "http://example.com/track.mp3"
+        p.shuffle = False
+        p.ocp_config = {"merge_search": False}
         p.play_prev()
         prev_msgs = [m for m in emitted if "prev" in m.msg_type]
-        self.assertTrue(len(prev_msgs) >= 1)
+        self.assertEqual(prev_msgs, [])
 
 
 # ---------------------------------------------------------------------------
