@@ -429,6 +429,59 @@ class TestPlayerUtteranceHandled(unittest.TestCase):
 
         mock_unduck.assert_called_once()
 
+    def test_utterance_handled_cork_path_resumes_playback(self):
+        """Cork path: PAUSED + _paused_on_duck=True must resume via
+        handle_uncork_request, not just restore volume, otherwise the
+        player stays paused forever (record_end already no-op'd while a
+        'speak' was in flight)."""
+        p = _make_player(PlaybackType.AUDIO)
+        p.state = PlayerState.PAUSED
+        p._paused_on_duck = True
+        p.handle_status = MagicMock()
+
+        with patch.object(p, "handle_unduck_request") as mock_unduck:
+            p.handle_utterance_handled(Message("ovos.utterance.handled"))
+
+        mock_unduck.assert_not_called()
+        self.assertEqual(p.state, PlayerState.PLAYING)
+        self.assertFalse(p._paused_on_duck)
+
+    def test_utterance_handled_duck_path_unchanged(self):
+        """Duck path: PLAYING + _paused_on_duck=True must only restore
+        volume, never call resume/uncork."""
+        p = _make_player(PlaybackType.AUDIO)
+        p.state = PlayerState.PLAYING
+        p._paused_on_duck = True
+
+        with patch.object(p, "handle_uncork_request") as mock_uncork:
+            p.handle_utterance_handled(Message("ovos.utterance.handled"))
+
+        mock_uncork.assert_not_called()
+        p.audio_service.restore_volume.assert_called_once()
+        self.assertEqual(p.state, PlayerState.PLAYING)
+        self.assertFalse(p._paused_on_duck)
+
+    def test_cork_then_utterance_handled_end_to_end_resumes(self):
+        """End-to-end: record_begin corks playback, then
+        ovos.utterance.handled must resume it (the previously-stuck
+        sequence), and a late record_end afterwards is a harmless no-op."""
+        p = _make_player(PlaybackType.AUDIO)
+        p.state = PlayerState.PLAYING
+        p.handle_status = MagicMock()
+
+        p.handle_cork_request(Message("recognizer_loop:record_begin"))
+        self.assertEqual(p.state, PlayerState.PAUSED)
+        self.assertTrue(p._paused_on_duck)
+
+        p.handle_utterance_handled(Message("ovos.utterance.handled"))
+        self.assertEqual(p.state, PlayerState.PLAYING)
+        self.assertFalse(p._paused_on_duck)
+
+        # a late record_end must no-op harmlessly (flag already cleared)
+        p.handle_record_end(Message("recognizer_loop:record_end"))
+        self.assertEqual(p.state, PlayerState.PLAYING)
+        self.assertFalse(p._paused_on_duck)
+
 
 class TestPlayerHandlePlayRequestNoMedia(unittest.TestCase):
     """Test handle_play_request with no media."""
