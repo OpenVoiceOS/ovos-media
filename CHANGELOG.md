@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.13a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.13a1) (2026-08-14)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.12a1...0.4.13a1)
+
+**Merged pull requests:**
+
+- fix: shuffle failure bounds and dead-player duck handler leak [\#119](https://github.com/OpenVoiceOS/ovos-media/pull/119) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.12a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.12a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.11a1...0.4.12a1)
@@ -107,7 +115,7 @@
 
 ## [0.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.0a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.4.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.4.0a1)
 
 **Implemented enhancements:**
 
@@ -117,17 +125,13 @@
 
 - feat: now-playing voice intents \(WhatSong/WhatAlbum/WhatArtist\) + shuffle on/off [\#90](https://github.com/OpenVoiceOS/ovos-media/pull/90) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.3.3a5)
-
 ## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.4a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.3.4a1)
 
-**Closed issues:**
+## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
 
-- The OCP Sprint [\#15](https://github.com/OpenVoiceOS/ovos-media/issues/15)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
 
 **Merged pull requests:**
 
@@ -137,19 +141,19 @@
 
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a4)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a4)
 
 **Merged pull requests:**
 
 - chore: remove duplicate publish-alpha workflow [\#84](https://github.com/OpenVoiceOS/ovos-media/pull/84) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a3)
-
 ## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a2)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a2)
+
+## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a3)
 
 **Merged pull requests:**
 
