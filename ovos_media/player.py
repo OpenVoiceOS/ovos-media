@@ -741,10 +741,33 @@ class OCPMediaPlayer:
         self._register('ovos.common_play.unduck', self.handle_unduck_request)
         self._register('ovos.common_play.cork', self.handle_cork_request)
         self._register('ovos.common_play.uncork', self.handle_uncork_request)
-        # legacy recognizer_loop ducking — same semantics as the ocp equivalents
-        self._register('recognizer_loop:audio_output_start', self.handle_duck_request)
-        self._register('recognizer_loop:audio_output_end', self.handle_unduck_request)
-        self._register('recognizer_loop:record_begin', self.handle_cork_request)
+        # legacy recognizer_loop ducking — same semantics as the ocp equivalents.
+        #
+        # NOTE: these are bound through distinct per-topic wrapper functions
+        # rather than the bare self.handle_*_request methods, on purpose.
+        # 'recognizer_loop:audio_output_start'/'_end'/'record_begin' are
+        # migrated legacy topics (ovos_spec_tools.messages.MIGRATION_MAP), so
+        # ovos-bus-client's MessageBusClient.on() (client.py) wraps them in a
+        # per-HANDLER dedup guard and tracks that wrapper in
+        # self._dedup_registrations[func]. Because a bound method compares
+        # equal (and hashes the same) across separate attribute accesses,
+        # self.handle_duck_request used here is "the same" func as the one
+        # passed to _register('ovos.common_play.duck', ...) above. remove()
+        # branches on `if target in self._dedup_registrations`, and once ANY
+        # topic put that func in the dedup table, remove() takes the dedup
+        # path for EVERY topic registered under it — including the plain,
+        # non-migrated 'ovos.common_play.duck' registration, whose entry
+        # never lived in that table. The dedup path then filters
+        # self._dedup_registrations[target] for the given event_name, finds
+        # nothing (the plain topic was never recorded there), and silently
+        # removes zero listeners instead of falling through to
+        # _remove_normal() — so a shut-down OCPMediaPlayer keeps answering
+        # 'ovos.common_play.duck'/'unduck'/'cork' forever. Binding the
+        # bridged topic to its own wrapper object keeps it out of the plain
+        # topic's identity entirely, so each remove() call resolves cleanly.
+        self._register('recognizer_loop:audio_output_start', lambda message: self.handle_duck_request(message))
+        self._register('recognizer_loop:audio_output_end', lambda message: self.handle_unduck_request(message))
+        self._register('recognizer_loop:record_begin', lambda message: self.handle_cork_request(message))
         self._register('recognizer_loop:record_end', self.handle_record_end)
         self._register('ovos.utterance.handled', self.handle_utterance_handled)
         # global stop
@@ -1388,25 +1411,52 @@ class OCPMediaPlayer:
         self.set_player_state(PlayerState.PLAYING)
         self._update_gui()
 
-    def play_shuffle(self):
+    def play_shuffle(self) -> bool:
         """
         Go to a random position in the merged queue and set that MediaEntry as
         ``now_playing`` (does NOT call ``play``).
 
         Uses ``_merged_queue()`` so the shuffle pool respects the same
-        deduplication and ``merge_search`` config as ``play_next``.
+        deduplication and ``merge_search`` config as ``play_next``, and
+        excludes any uri already recorded in ``_failed_uris`` so a shuffle
+        advance never re-picks a track already known to be broken.
+
+        @return: True if a track was selected (or there is nothing
+            meaningful to shuffle to and the current track should just keep
+            playing — e.g. an empty/singleton queue, or repeat-on with only
+            the current, unfailed track left). False if the queue is
+            non-empty but no viable (unfailed, not-currently-playing) track
+            remains, or the queue is empty and the current track itself has
+            already failed — the caller should treat this like the
+            sequential path's "no more tracks" end-of-queue case instead of
+            replaying forever.
         """
         queue = self._merged_queue()
-        if len(queue) < 2:
-            LOG.debug("Shuffle: queue too small, replaying current track")
-            return
+        if not queue:
+            current_uri = self.now_playing.uri if self.now_playing else None
+            if current_uri is not None and current_uri in self._failed_uris:
+                LOG.debug("Shuffle: queue is empty and current track failed")
+                return False
+            LOG.debug("Shuffle: queue is empty, replaying current track")
+            return True
         current_uri = self.now_playing.uri if self.now_playing else None
-        candidates = [e for e in queue if e.uri != current_uri]
+        candidates = [e for e in queue
+                      if e.uri != current_uri and e.uri not in self._failed_uris]
         if not candidates:
-            return
+            if self.loop_state == LoopState.REPEAT and current_uri and \
+                    current_uri not in self._failed_uris:
+                # nothing else to shuffle to, but repeat is on and the
+                # current track itself hasn't failed - keep it playing
+                # instead of stopping (mirrors play_next's sequential
+                # end-of-queue-with-repeat restart)
+                LOG.debug("Shuffle: no other viable tracks, repeat is on "
+                          "— keeping current track")
+                return True
+            return False
         pick = random.choice(candidates)
         LOG.debug(f"Shuffle pick: {pick.title!r}")
         self.set_now_playing(pick)
+        return True
 
     def _all_tracks_failed(self, queue: List[MediaEntry]) -> bool:
         """True if every track in *queue* has failed to load since the last
@@ -1450,9 +1500,33 @@ class OCPMediaPlayer:
 
         if self.shuffle:
             LOG.debug("Shuffling")
-            self.play_shuffle()
-            # play_shuffle only selects the track - actually start it
-            self.play()
+            # A shuffle advance must respect the same termination bounds as
+            # the sequential path (_all_tracks_failed(), end-of-queue) —
+            # otherwise an all-failing queue with shuffle+REPEAT hot-loops
+            # forever, since play_shuffle() would always pick something and
+            # self.play() would be called unconditionally.
+            queue = self._merged_queue()
+            if self._all_tracks_failed(queue):
+                LOG.warning("Shuffle requested, but every track in the "
+                            "queue failed to load — stopping instead of "
+                            "shuffling forever")
+                self.set_player_state(PlayerState.STOPPED)
+                return
+            if self.play_shuffle():
+                # play_shuffle only selects the track - actually start it
+                self.play()
+            else:
+                # no unfailed candidate remains to shuffle to (e.g. a
+                # single-track queue with repeat off) - this is the
+                # shuffle-path equivalent of the sequential "no more
+                # tracks" branch below, so mirror its behavior exactly
+                LOG.info("Requested next (shuffle), but there are no more "
+                         "tracks in the queue")
+                self.set_player_state(PlayerState.STOPPED)
+                try:
+                    self.media.speak_dialog("queue.finished")
+                except Exception as e:
+                    LOG.exception(f"Failed to speak queue.finished dialog: {e}")
             return
 
         queue = self._merged_queue()

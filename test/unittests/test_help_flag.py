@@ -23,10 +23,10 @@ module guards against). The behavioral proof therefore MUST invoke the
 actual installed script via its real entry point, not `python -m
 ovos_media` (the module path bypasses the console-script argv wiring
 entirely) and not `main(argv=...)` with an explicit list."""
-import shutil
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 
@@ -87,13 +87,23 @@ class TestHelpFlagSubprocess(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.exe = shutil.which("ovos-media")
+        # NOTE: shutil.which("ovos-media") resolves against the FULL ambient
+        # PATH, so it can certify whatever "ovos-media" console script
+        # happens to be first on PATH — e.g. a stale script installed in an
+        # unrelated shared venv — instead of the one this test run just
+        # installed into sys.executable's venv. That silently validated the
+        # wrong binary and produced false test failures. The console script
+        # is always installed as a sibling of the interpreter that installed
+        # it, so resolve it relative to sys.executable instead of trusting
+        # ambient PATH.
+        candidate = Path(sys.executable).parent / "ovos-media"
+        cls.exe = str(candidate) if candidate.is_file() else None
         if not cls.exe:
             raise unittest.SkipTest(
-                "ovos-media console script not found on PATH — package "
-                "must be installed (pip/uv install -e .), not just "
-                "importable, for this test to exercise the real "
-                "entry point")
+                f"ovos-media console script not found at {candidate} — "
+                "package must be installed (uv pip install -e .) into "
+                "this interpreter's venv, not just importable, for this "
+                "test to exercise the real entry point")
 
     def test_help_subprocess_exits_zero_and_prints_usage(self):
         proc = subprocess.run(
