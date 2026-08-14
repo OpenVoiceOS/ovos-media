@@ -111,14 +111,19 @@ class TestWaitForLoad(unittest.TestCase):
 class TestPauseWithCurrent(unittest.TestCase):
     """Test pause with current service."""
 
-    def test_pause_calls_current_pause(self):
-        """pause() should call current.pause() and current.ocp_pause()."""
+    def test_pause_calls_ocp_pause_only(self):
+        """pause() must invoke current.ocp_pause() exactly once, and must
+        NOT call current.pause() directly. The real ovos_plugin_manager
+        MediaBackend template's ocp_pause() itself calls pause() once (after
+        emitting the PAUSED TrackState), so calling both here would invoke
+        the backend's pause() twice per bus-level pause request — the
+        original defect."""
         svc, bus = _make_service()
         svc.current = MagicMock()
 
         svc.pause(Message("x"))
 
-        svc.current.pause.assert_called_once()
+        svc.current.pause.assert_not_called()
         svc.current.ocp_pause.assert_called_once()
 
     def test_pause_with_no_current_does_nothing(self):
@@ -132,14 +137,16 @@ class TestPauseWithCurrent(unittest.TestCase):
 class TestResumeWithCurrent(unittest.TestCase):
     """Test resume with current service."""
 
-    def test_resume_calls_current_resume(self):
-        """resume() should call current.resume() and current.ocp_resume()."""
+    def test_resume_calls_ocp_resume_only(self):
+        """resume() must invoke current.ocp_resume() exactly once, and must
+        NOT call current.resume() directly (symmetric to the pause case —
+        the real template's ocp_resume() already calls resume() once)."""
         svc, bus = _make_service()
         svc.current = MagicMock()
 
         svc.resume(Message("x"))
 
-        svc.current.resume.assert_called_once()
+        svc.current.resume.assert_not_called()
         svc.current.ocp_resume.assert_called_once()
 
     def test_resume_with_no_current_does_nothing(self):

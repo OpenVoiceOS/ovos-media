@@ -283,7 +283,6 @@ class BaseMediaService:
         if not self._is_message_for_service(message):
             return
         if self.current:
-            self.current.pause()
             self.current.ocp_pause()
 
     def resume(self, message: Message = None):
@@ -296,7 +295,6 @@ class BaseMediaService:
         if not self._is_message_for_service(message):
             return
         if self.current:
-            self.current.resume()
             self.current.ocp_resume()
 
     def _cancel_timers(self):
