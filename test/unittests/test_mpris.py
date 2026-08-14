@@ -67,6 +67,23 @@ class TestPosition(unittest.TestCase):
         result = iface.Position
         self.assertIsInstance(result, int)
 
+    def test_position_nan_returns_zero(self):
+        # NaN is a valid float and passes a bare isinstance check, but
+        # int(nan) raises ValueError - the getter must never let that
+        # break Properties.GetAll, no matter which ingestion path (bus
+        # message or a raw attribute set) produced the bad value
+        iface, player = _make_interface()
+        player.now_playing.position = float("nan")
+        result = iface.Position
+        self.assertEqual(result, 0)
+
+    def test_position_inf_returns_zero(self):
+        # int(inf) raises OverflowError
+        iface, player = _make_interface()
+        player.now_playing.position = float("inf")
+        result = iface.Position
+        self.assertEqual(result, 0)
+
     def test_position_none_returns_zero(self):
         # a bus-fed position can arrive as None (missing/invalid seekbar
         # data) - Properties.GetAll for the whole Player interface must

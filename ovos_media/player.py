@@ -14,7 +14,7 @@ from ovos_config.meta import get_xdg_base
 from ovos_gui_api_client import GUIInterface
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
-from ovos_media.utils import require_default_session
+from ovos_media.utils import require_default_session, is_real_number
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.gui import is_gui_connected, is_gui_running
@@ -461,19 +461,24 @@ class NowPlaying(MediaEntry):
             video = False
         meta = self.stream_xtract.extract_stream(uri, video)
         # validate the extractor-returned uri BEFORE mutating any state -
-        # a non-string uri (int/list/dict) must never poison self.uri, it
-        # must refuse the same way a missing uri does
+        # a non-string uri (int/list/dict) or a whitespace-only string must
+        # never poison self.uri/title, it must refuse the same way a
+        # missing uri does. An empty string is left alone: it is falsy, so
+        # update(newonly=True) below does not overwrite the existing uri
+        # with it anyway.
         if meta:
             extracted_uri = meta.get("uri")
             if extracted_uri is not None and not isinstance(extracted_uri, str):
-                raise ValueError(f"invalid stream: {extracted_uri}")
+                raise ValueError(f"invalid stream: {extracted_uri!r}")
+            if isinstance(extracted_uri, str) and extracted_uri and not extracted_uri.strip():
+                raise ValueError(f"invalid stream: {extracted_uri!r}")
             LOG.info(f"OCP plugins metadata: {meta}")
             self.update(meta, newonly=True)
             self.original_uri = uri
 
         # validate extracted uri
         if not any((self.uri.startswith(s) for s in ["http", "file", "/"])):
-            raise ValueError(f"invalid stream: {uri}")
+            raise ValueError(f"invalid stream: {self.uri!r}")
 
     # bus api
     def handle_external_play(self, message):
@@ -590,17 +595,25 @@ class NowPlaying(MediaEntry):
         Handle 'ovos.common_play.playback_time' Messages sent by audio backend
         @param message: Message with 'length' and 'position' data
         """
+        # validate BOTH fields before applying either - a valid 'length'
+        # must not commit before an invalid 'position' is discovered,
+        # which would otherwise leave partial state from a single message
+        updates = {}
         for field in ("length", "position"):
             value = message.data.get(field)
             # real numbers only; bool is a subclass of int but is never a
-            # legitimate ms value, and a str would otherwise silently
-            # coerce (eg. int("5000" * 1000) overflowing the MPRIS int64
-            # wire type) instead of being rejected outright
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
+            # legitimate ms value, a str would otherwise silently coerce
+            # (eg. int("5000" * 1000) overflowing the MPRIS int64 wire
+            # type) instead of being rejected outright, and NaN/inf/-inf
+            # are valid floats that would otherwise raise out of int()
+            # below (ValueError/OverflowError) instead of being ignored
+            if not is_real_number(value) or value < 0:
                 LOG.debug(f"ignoring invalid '{field}' in playback_time "
                           f"message: {value!r}")
                 continue
-            setattr(self, field, int(value))
+            updates[field] = int(value)
+        for field, value in updates.items():
+            setattr(self, field, value)
         if self._player is not None:
             self._player._update_gui()
 
@@ -1706,6 +1719,16 @@ class OCPMediaPlayer:
         if self.mpris and self.playback_type in [PlaybackType.MPRIS]:
             self.mpris.pause()
         self.set_player_state(PlayerState.STOPPED)
+        if self._paused_on_duck:
+            # _paused_on_duck is shared by cork (pause-based) and duck
+            # (volume-lowered, player stays PLAYING). A stop mid-duck must
+            # still restore volume - the backend's restore_volume() is
+            # guarded by its own "volume is low" check, so calling both
+            # services unconditionally is a no-op for whichever one wasn't
+            # ducking (or for the cork path, where volume was never
+            # touched in the first place).
+            self.video_service.restore_volume()
+            self.audio_service.restore_volume()
         self._paused_on_duck = False
         self._update_gui()
 
@@ -2058,10 +2081,20 @@ class OCPMediaPlayer:
                 if isinstance(track, (MediaEntry, PluginStream)):
                     for field in ("length", "position"):
                         value = getattr(track, field, None)
-                        if isinstance(value, bool) or not isinstance(value, (int, float)):
+                        if not is_real_number(value):
                             LOG.debug(f"coercing invalid '{field}' on "
                                       f"playlist entry to 0: {value!r}")
                             setattr(track, field, 0)
+                elif isinstance(track, Playlist):
+                    # a nested Playlist's own tracks are entries too - bad
+                    # values inside them would otherwise reach the outer
+                    # Playlist.length (a sum over all contained entries)
+                    # unsanitized. Recurse arbitrarily deep. `entries` is a
+                    # read-only property backed by the list itself (no
+                    # setter), so sanitize in place.
+                    sanitized = OCPMediaPlayer._validated_entries(track.entries)
+                    track.entries.clear()
+                    track.entries.extend(sanitized)
                 entries.append(track)
             except Exception as e:
                 LOG.warning(f"skipping invalid playlist entry: {e}")

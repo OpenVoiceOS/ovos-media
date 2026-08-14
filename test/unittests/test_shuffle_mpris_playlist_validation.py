@@ -155,6 +155,48 @@ class TestPlaylistSetValidatesBeforeClearing(unittest.TestCase):
         self.assertEqual(p.playlist[0].length, 0)
         p.shutdown()
 
+    def test_nan_and_inf_length_are_coerced_to_zero(self):
+        # NaN/inf are valid floats and pass a bare isinstance check but
+        # must never leak into Playlist.length (sum() over all entries).
+        # NaN/inf are not JSON-serializable, so this exercises the
+        # sanitizer directly (as a bus message with such payloads never
+        # round-trips through the real wire format) rather than via the
+        # FakeBus, matching how a directly-constructed MediaEntry (eg.
+        # from MPRIS reflection) could still carry a non-finite value.
+        from ovos_media.player import OCPMediaPlayer
+        bus, p = _player()
+        entries = OCPMediaPlayer._validated_entries([
+            _entry("file:///a.mp3", "a"), _entry("file:///b.mp3", "b")])
+        entries[0].length = float("nan")
+        entries[1].length = float("inf")
+        entries = OCPMediaPlayer._validated_entries(entries)
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0].length, 0)
+        self.assertEqual(entries[1].length, 0)
+        p.shutdown()
+
+    def test_nested_playlist_entries_are_also_sanitized(self):
+        # bad values inside a NESTED Playlist's tracks must not reach the
+        # outer Playlist.length unsanitized - recurse into nested tracks
+        from ovos_media.player import OCPMediaPlayer
+        from ovos_utils.ocp import Playlist as OcpPlaylist
+
+        bus, p = _player()
+        nested = OcpPlaylist(title="nested")
+        nested.add_entry(_entry("file:///n1.mp3", "n1"))
+        nested.add_entry(_entry("file:///n2.mp3", "n2"))
+        nested.entries[0].length = float("inf")
+        nested.entries[1].length = float("nan")
+        entries = OCPMediaPlayer._validated_entries([nested])
+        self.assertEqual(len(entries), 1)
+        self.assertIsInstance(entries[0], OcpPlaylist)
+        for track in entries[0].entries:
+            self.assertEqual(track.length, 0)
+        total = entries[0].length
+        self.assertTrue(total == total)
+        self.assertNotEqual(total, float("inf"))
+        p.shutdown()
+
 
 class TestStopClearsPausedOnDuckFlag(unittest.TestCase):
     """D5 sibling to pause(): stop() must reset the duck-pause flag same
@@ -168,6 +210,36 @@ class TestStopClearsPausedOnDuckFlag(unittest.TestCase):
         p._paused_on_duck = True
         p.stop()
         self.assertFalse(p._paused_on_duck)
+        p.shutdown()
+
+    def test_stop_during_duck_restores_volume(self):
+        # _paused_on_duck is shared by cork (pause) and duck (volume-lower,
+        # still PLAYING). stop() must still restore volume for the duck
+        # case, or the belated unduck/record_end no-ops on it (already
+        # STOPPED) and volume stays lowered for the rest of the session.
+        from ovos_utils.ocp import PlaybackType
+        bus, p = _player()
+        p.audio_service.services = [MagicMock()]
+        p.playback_type = PlaybackType.AUDIO
+        p.play()
+        p._paused_on_duck = True  # simulates handle_duck_request having fired
+        p.audio_service.reset_mock()
+        p.stop()
+        self.assertTrue(p.audio_service.restore_volume.called)
+        self.assertFalse(p._paused_on_duck)
+        p.shutdown()
+
+    def test_stop_after_cork_does_not_resume_playback(self):
+        # cork (pause-based) uses the same flag; stop() restoring volume
+        # unconditionally must not accidentally resume playback.
+        bus, p = _player()
+        p.audio_service.services = [MagicMock()]
+        p.play()
+        p._paused_on_duck = True  # simulates handle_cork_request having fired
+        p.audio_service.reset_mock()
+        p.stop()
+        self.assertFalse(p.audio_service.play.called)
+        self.assertFalse(p.audio_service.resume.called)
         p.shutdown()
 
 

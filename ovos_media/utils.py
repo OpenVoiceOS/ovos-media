@@ -11,11 +11,29 @@
 # limitations under the License.
 #
 
+import math
 from functools import wraps
 
 from ovos_config import Configuration
 from ovos_bus_client.session import SessionManager
 from ovos_utils.log import LOG
+
+
+def is_real_number(value) -> bool:
+    """True only for an actual finite real number.
+
+    ``bool`` is an ``int`` subclass but is never a legitimate numeric value
+    here (durations/positions/etc), and ``NaN``/``inf``/``-inf`` ARE valid
+    ``float`` instances that pass a bare ``isinstance(x, (int, float))``
+    check yet blow up downstream (``int(nan)`` raises ``ValueError``,
+    ``int(inf)`` raises ``OverflowError``). Centralizing the check here
+    keeps every bus-fed numeric field guarded the same way.
+    """
+    if isinstance(value, bool):
+        return False
+    if not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value)
 
 
 def require_default_session():

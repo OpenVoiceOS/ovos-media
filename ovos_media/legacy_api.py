@@ -53,6 +53,13 @@ def _tracks_to_entries(
     entries = []
     for t in tracks:
         if isinstance(t, (list, tuple)):
+            if not t or not isinstance(t[0], str) or not t[0]:
+                # empty list/tuple (no uri to index), or a first element
+                # that is not a non-empty str - skip with a warning
+                # instead of raising IndexError/using a garbage uri,
+                # mirroring the validate-warn-skip convention elsewhere
+                LOG.warning(f"skipping malformed legacy track entry: {t!r}")
+                continue
             uri = t[0]
         else:
             uri = str(t)
