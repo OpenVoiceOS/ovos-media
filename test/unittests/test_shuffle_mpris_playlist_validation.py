@@ -134,6 +134,42 @@ class TestPlaylistSetValidatesBeforeClearing(unittest.TestCase):
         self.assertEqual(len(p.playlist), 0)
         p.shutdown()
 
+    def test_garbage_length_is_sanitized_not_left_poisoning_sum(self):
+        # a non-numeric length must not survive into the playlist: it
+        # would otherwise blow up Playlist.length's sum() over all
+        # entries the next time anything asks for the playlist length
+        bus, p = _player()
+        self._set(p, bus, [{"uri": "file:///ok.mp3", "title": "ok",
+                            "length": "garbage"}])
+        self.assertEqual(len(p.playlist), 1)
+        self.assertEqual(p.playlist[0].length, 0)
+        # must not raise
+        total = p.playlist.length
+        self.assertIsInstance(total, (int, float))
+        p.shutdown()
+
+    def test_none_length_is_sanitized(self):
+        bus, p = _player()
+        self._set(p, bus, [{"uri": "file:///ok.mp3", "title": "ok",
+                            "length": None}])
+        self.assertEqual(p.playlist[0].length, 0)
+        p.shutdown()
+
+
+class TestStopClearsPausedOnDuckFlag(unittest.TestCase):
+    """D5 sibling to pause(): stop() must reset the duck-pause flag same
+    as pause() does, or a later ovos.utterance.handled fires a spurious
+    restore_volume against whatever plays next."""
+
+    def test_stop_resets_paused_on_duck(self):
+        bus, p = _player()
+        p.audio_service.services = [MagicMock()]
+        p.play()
+        p._paused_on_duck = True
+        p.stop()
+        self.assertFalse(p._paused_on_duck)
+        p.shutdown()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -173,5 +173,41 @@ class TestRequireDefaultSessionMalformedContext(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
 
+class TestValidateMessageContextStringDestination(unittest.TestCase):
+    """A bare string destination (produced by ovos-bus-client's
+    .reply()/.forward()) must be matched exactly, never by substring
+    containment."""
+
+    def _call(self, destination, native_sources):
+        from ovos_media.utils import validate_message_context
+        msg = _make_message(destination=destination)
+        with patch("ovos_media.utils.Configuration", return_value={}):
+            return validate_message_context(msg, native_sources=native_sources)
+
+    def test_substring_match_returns_false(self):
+        # "audio_settings_skill" contains "audio" but is not the native
+        # "audio" source - must not be treated as a device-originated request
+        result = self._call("audio_settings_skill", ["debug_cli", "audio"])
+        self.assertFalse(result)
+
+    def test_exact_string_match_returns_true(self):
+        result = self._call("audio", ["debug_cli", "audio"])
+        self.assertTrue(result)
+
+    def test_non_matching_string_returns_false(self):
+        result = self._call("remote_client", ["debug_cli", "audio"])
+        self.assertFalse(result)
+
+    def test_int_destination_returns_false_without_raising(self):
+        result = self._call(12345, ["debug_cli", "audio"])
+        self.assertFalse(result)
+
+    def test_dict_destination_returns_false(self):
+        # previously `in` on a dict checked its keys, an accident that
+        # let a dict destination slip through as a "match"
+        result = self._call({"audio": True}, ["debug_cli", "audio"])
+        self.assertFalse(result)
+
+
 if __name__ == "__main__":
     unittest.main()
