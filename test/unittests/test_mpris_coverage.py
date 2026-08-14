@@ -680,6 +680,54 @@ class TestInternalPlayerControl(unittest.IsolatedAsyncioTestCase):
             await ctl._pause_all()
             self.assertEqual(mock_pause.await_count, 2)
 
+    async def test_stop_all_survives_concurrent_player_loss(self):
+        # Reproduces a live crash: _stop_player awaits a real D-Bus call,
+        # yielding to the event loop. If a concurrent handle_lost_player()
+        # (dispatched by on_properties_changed on the same loop) pops from
+        # self.players mid-iteration, a plain `for p in self.players:` loop
+        # raises "RuntimeError: dictionary changed size during iteration".
+        # _stop_all must snapshot the players before iterating.
+        ctl, ocp_player = _make_exporter()
+        for name in ("vlc", "spotify"):
+            ctl.players[name] = MagicMock()
+            ctl.player_meta[name] = {"state": "Playing"}
+
+        attempted = []
+
+        async def fake_stop_player(name, max_tries=2):
+            attempted.append(name)
+            if name == "vlc":
+                # simulate a concurrent handle_lost_player() firing while
+                # this await is suspended
+                await ctl.handle_lost_player("spotify")
+            await asyncio.sleep(0)
+
+        with patch.object(ctl, "_stop_player", new=fake_stop_player):
+            await ctl._stop_all()  # must not raise RuntimeError
+
+        self.assertEqual(set(attempted), {"vlc", "spotify"})
+        self.assertNotIn("spotify", ctl.players)
+
+    async def test_pause_all_survives_concurrent_player_loss(self):
+        ctl, ocp_player = _make_exporter()
+        for name in ("vlc", "spotify"):
+            ctl.players[name] = MagicMock()
+            ctl.player_meta[name] = {"state": "Playing"}
+
+        attempted = []
+
+        async def fake_pause_player(name, max_tries=1):
+            attempted.append(name)
+            if name == "vlc":
+                await ctl.handle_lost_player("spotify")
+            await asyncio.sleep(0)
+
+        with patch.object(ctl, "_pause_player", new=fake_pause_player):
+            await ctl._pause_all()  # must not raise RuntimeError
+
+        self.assertEqual(set(attempted), {"vlc", "spotify"})
+        self.assertNotIn("spotify", ctl.players)
+
 
 # ---------------------------------------------------------------------------
 # OcpMprisExporter: error-handling retry paths
