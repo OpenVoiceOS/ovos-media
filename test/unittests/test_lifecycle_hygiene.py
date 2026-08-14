@@ -6,6 +6,7 @@ L2 - a malformed liked-songs store entry crashed daemon startup.
 L3 - liking with nothing playing persisted an empty-string store entry.
 L4 - opm.audio.query was bound before self.ocp existed.
 """
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -184,6 +185,7 @@ class TestL3EmptyLikeGuarded(unittest.TestCase):
         p.media.liked_songs = _FakeStore()
         p.media.speak_dialog = MagicMock()
         p._update_gui = MagicMock()
+        p._liked_songs_lock = threading.RLock()
         return p
 
     def test_like_with_nothing_playing_does_not_store_empty_key(self):

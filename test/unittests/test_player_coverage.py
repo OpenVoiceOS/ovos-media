@@ -346,6 +346,18 @@ class TestNowPlayingInit(unittest.TestCase):
         np.extract_stream()  # must not raise
         self.assertEqual(np.uri, "http://example.com/song.mp3")
 
+    def test_extract_stream_soft_hyphen_and_zwj_uri_still_passes(self):
+        # D5: U+00AD (SOFT HYPHEN) and U+200D (ZERO WIDTH JOINER) are
+        # category Cf and appear in real-world filenames - a file:// uri
+        # containing them must be accepted, not refused as "injection".
+        uri = "file:///music/so­ft‍join.mp3"
+        np, _ = self._make_now_playing()
+        np.uri = "ocp://original"
+        np.stream_xtract = MagicMock()
+        np.stream_xtract.extract_stream.return_value = {"uri": uri}
+        np.extract_stream()  # must not raise
+        self.assertEqual(np.uri, uri)
+
     def test_on_invalid_stream_after_bad_extract_does_not_raise(self):
         p = _make_player()
         np, _ = self._make_now_playing()

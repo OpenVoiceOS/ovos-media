@@ -846,9 +846,18 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @dbus_property()
     def Volume(self) -> 'd':
+        # a failing property getter kills Properties.GetAll for the whole
+        # Player interface, not just this property (same class of failure
+        # the Metadata/Position guards prevent) - the bus response is
+        # unvalidated, so fall back to full volume rather than let a
+        # missing/None/non-numeric "percent" propagate.
         msg = self._ocp_player.bus.wait_for_response(Message("mycroft.volume.get"), timeout=0.5)
         if msg:
-            return float(msg.data["percent"])
+            try:
+                return float(msg.data["percent"])
+            except Exception as e:
+                LOG.warning(f"failed to parse volume percent: {e}")
+                return 1.0
         return 1.0
 
     @Volume.setter

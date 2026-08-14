@@ -241,6 +241,70 @@ class TestPlayerPlayWithLikedSongs(unittest.TestCase):
         liked_songs.store.assert_not_called()
 
 
+class _LockProbe:
+    """Records acquire()/release() calls, standing in for an RLock so a
+    test can assert a critical section actually took the lock."""
+
+    def __init__(self):
+        self.acquire_count = 0
+        self.release_count = 0
+
+    def __enter__(self):
+        self.acquire_count += 1
+        return self
+
+    def __exit__(self, *exc):
+        self.release_count += 1
+        return False
+
+
+class TestLikedSongsLockSerialization(unittest.TestCase):
+    """D4: liked_songs.store() (json.dump) iterates the dict while
+    handle_like/handle_unlike/play()'s play-count block can mutate it from
+    other bus-dispatch threads - all three sites must go through the same
+    _liked_songs_lock. Fails on the old code because the lock attribute
+    doesn't exist / isn't held around these sites."""
+
+    def test_play_play_count_block_holds_liked_songs_lock(self):
+        p = _make_player()
+        p.now_playing.uri = "http://liked.mp3"
+        liked_songs_mock = MagicMock()
+        liked_songs_dict = {"http://liked.mp3": {"title": "Liked"}}
+        liked_songs_mock.__getitem__.side_effect = liked_songs_dict.__getitem__
+        liked_songs_mock.__setitem__.side_effect = liked_songs_dict.__setitem__
+        liked_songs_mock.__contains__.side_effect = liked_songs_dict.__contains__
+        liked_songs_mock.get.side_effect = liked_songs_dict.get
+        p.media.liked_songs = liked_songs_mock
+
+        probe = _LockProbe()
+        p._liked_songs_lock = probe
+
+        with patch.object(p, "validate_stream", return_value=True), \
+             patch.object(p, "set_player_state"), \
+             patch.object(p, "_update_gui"):
+            p.play()
+
+        self.assertGreaterEqual(probe.acquire_count, 1)
+        self.assertEqual(probe.acquire_count, probe.release_count)
+        liked_songs_mock.store.assert_called_once()
+
+    def test_handle_unlike_holds_liked_songs_lock(self):
+        p = _make_player()
+        p.media.liked_songs = MagicMock()
+        p.media.liked_songs.__contains__ = MagicMock(return_value=True)
+
+        probe = _LockProbe()
+        p._liked_songs_lock = probe
+
+        from ovos_bus_client.message import Message
+        p.handle_unlike(Message("ovos.common_play.unlike", {"uri": "http://liked.mp3"}))
+
+        self.assertGreaterEqual(probe.acquire_count, 1)
+        self.assertEqual(probe.acquire_count, probe.release_count)
+        p.media.liked_songs.pop.assert_called_once()
+        p.media.liked_songs.store.assert_called_once()
+
+
 class TestPlayerValidateStreamException(unittest.TestCase):
     """Test validate_stream with extraction exception."""
 
