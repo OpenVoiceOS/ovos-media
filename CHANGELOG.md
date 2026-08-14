@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.15a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.15a2) (2026-08-14)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.15a1...0.4.15a2)
+
+**Merged pull requests:**
+
+- chore: state invariants in comments, descriptive test file names [\#121](https://github.com/OpenVoiceOS/ovos-media/pull/121) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.15a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.15a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.14a1...0.4.15a1)
@@ -453,10 +461,6 @@
 ## [V0.0.1a3](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a3) (2024-01-10)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/379c62b2b7f6d6ff6f5fb59d1feb683bbbb56f41...V0.0.1a3)
-
-**Implemented enhancements:**
-
-- feat/better\_MPRIS [\#2](https://github.com/OpenVoiceOS/ovos-media/pull/2) ([NeonJarbas](https://github.com/NeonJarbas))
 
 
 
