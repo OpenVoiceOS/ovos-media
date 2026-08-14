@@ -67,6 +67,25 @@ class TestPosition(unittest.TestCase):
         result = iface.Position
         self.assertIsInstance(result, int)
 
+    def test_position_none_returns_zero(self):
+        # a bus-fed position can arrive as None (missing/invalid seekbar
+        # data) - Properties.GetAll for the whole Player interface must
+        # not blow up on it, fall back to 0 like "no now_playing"
+        iface, player = _make_interface()
+        player.now_playing.position = None
+        result = iface.Position
+        self.assertEqual(result, 0)
+        self.assertIsInstance(result, int)
+
+    def test_position_str_does_not_overflow_wire_type(self):
+        # a str position must never be multiplied/coerced (eg.
+        # int("5000" * 1000) would overflow int64 on the wire) - it is
+        # invalid, fall back to 0
+        iface, player = _make_interface()
+        player.now_playing.position = "5000"
+        result = iface.Position
+        self.assertEqual(result, 0)
+
     def test_position_dbus_signature_is_x(self):
         # The dbus-next @dbus_property decorator stores the declared wire
         # signature on the underlying property object (a dbus_next

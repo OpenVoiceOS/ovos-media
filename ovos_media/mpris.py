@@ -856,7 +856,13 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
             # position as seconds). MPRIS2 spec requires signature 'x'
             # (int64), so cast to int - strict clients (playerctl, GNOME
             # Shell) misparse/reject a 'd' (double) wire value.
-            return int(self._ocp_player.now_playing.position * 1000)
+            position = self._ocp_player.now_playing.position
+            # a bus-fed position can arrive malformed (missing/None/wrong
+            # type); never let a bad value break Properties.GetAll for the
+            # whole Player interface, fall back to 0 like "no now_playing"
+            if isinstance(position, bool) or not isinstance(position, (int, float)):
+                return 0
+            return int(position * 1000)
         return 0
 
     @dbus_property(access=PropertyAccess.READ)

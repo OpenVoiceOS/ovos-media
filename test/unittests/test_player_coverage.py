@@ -180,6 +180,66 @@ class TestNowPlayingInit(unittest.TestCase):
         self.assertEqual(np.position, 45000)
         self.assertEqual(np.length, 180000)
 
+    def test_handle_sync_seekbar_missing_keys_does_not_raise(self):
+        np, _ = self._make_now_playing()
+        np.position = 1000
+        np.length = 2000
+        msg = Message("ovos.common_play.playback_time", {})
+        np.handle_sync_seekbar(msg)  # must not raise KeyError
+        # prior values are kept, not clobbered
+        self.assertEqual(np.position, 1000)
+        self.assertEqual(np.length, 2000)
+
+    def test_handle_sync_seekbar_none_position_keeps_prior_value(self):
+        np, _ = self._make_now_playing()
+        np.position = 1000
+        msg = Message("ovos.common_play.playback_time",
+                      {"length": 180000, "position": None})
+        np.handle_sync_seekbar(msg)
+        self.assertEqual(np.position, 1000)
+        self.assertEqual(np.length, 180000)
+
+    def test_handle_sync_seekbar_str_position_keeps_prior_value(self):
+        np, _ = self._make_now_playing()
+        np.position = 1000
+        msg = Message("ovos.common_play.playback_time",
+                      {"length": 180000, "position": "5000"})
+        np.handle_sync_seekbar(msg)  # must not string-repeat/overflow
+        self.assertEqual(np.position, 1000)
+        self.assertEqual(np.length, 180000)
+
+    def test_extract_stream_non_string_uri_raises_and_leaves_uri_untouched(self):
+        np, _ = self._make_now_playing()
+        np.uri = "ocp://original"
+        np.stream_xtract = MagicMock()
+        # extractor plugin returns a garbage non-string uri
+        np.stream_xtract.extract_stream.return_value = {"uri": ["not", "a", "str"]}
+        with self.assertRaises(ValueError):
+            np.extract_stream()
+        # self.uri must not have been poisoned by the garbage value
+        self.assertEqual(np.uri, "ocp://original")
+
+    def test_extract_stream_valid_uri_updates_normally(self):
+        np, _ = self._make_now_playing()
+        np.uri = "ocp://original"
+        np.stream_xtract = MagicMock()
+        np.stream_xtract.extract_stream.return_value = {"uri": "http://example.com/x.mp3"}
+        np.extract_stream()  # must not raise
+        self.assertEqual(np.uri, "http://example.com/x.mp3")
+
+    def test_on_invalid_stream_after_bad_extract_does_not_raise(self):
+        p = _make_player()
+        np, _ = self._make_now_playing()
+        np.uri = "ocp://original"
+        np.stream_xtract = MagicMock()
+        np.stream_xtract.extract_stream.return_value = {"uri": ["bad"]}
+        with self.assertRaises(ValueError):
+            np.extract_stream()
+        p.now_playing = np
+        # the retry-guard recovery path must not crash on the (still
+        # valid, untouched) uri left behind by the refused extraction
+        p.on_invalid_stream()  # must not raise
+
     def test_handle_external_play_updates_metadata(self):
         np, _ = self._make_now_playing()
         msg = Message("ovos.common_play.play",

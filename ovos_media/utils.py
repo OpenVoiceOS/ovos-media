@@ -73,7 +73,18 @@ def require_default_session():
 def validate_message_context(message, native_sources=None):
     destination = message.context.get("destination")
     if destination:
-        # moved to global config level, used to be in "Audio" subsection 
+        # a bare string destination is legitimate (ovos-bus-client's
+        # .reply()/.forward() produce one) - normalize it to a single-element
+        # list so membership below is exact, not substring containment
+        # (destination "audio_settings_skill" must NOT match native source
+        # "audio")
+        if isinstance(destination, str):
+            destination = [destination]
+        elif not isinstance(destination, (list, tuple, set)):
+            # anything else (int, dict, ...) is not a valid destination
+            # container - refuse without raising, treat as external
+            return False
+        # moved to global config level, used to be in "Audio" subsection
         native_sources = native_sources or \
                         Configuration().get("native_sources") or \
                         Configuration().get("Audio", {}).get("native_sources") or \

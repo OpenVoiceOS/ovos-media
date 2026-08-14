@@ -460,8 +460,13 @@ class NowPlaying(MediaEntry):
         else:
             video = False
         meta = self.stream_xtract.extract_stream(uri, video)
-        # update media entry with new data
+        # validate the extractor-returned uri BEFORE mutating any state -
+        # a non-string uri (int/list/dict) must never poison self.uri, it
+        # must refuse the same way a missing uri does
         if meta:
+            extracted_uri = meta.get("uri")
+            if extracted_uri is not None and not isinstance(extracted_uri, str):
+                raise ValueError(f"invalid stream: {extracted_uri}")
             LOG.info(f"OCP plugins metadata: {meta}")
             self.update(meta, newonly=True)
             self.original_uri = uri
@@ -585,8 +590,17 @@ class NowPlaying(MediaEntry):
         Handle 'ovos.common_play.playback_time' Messages sent by audio backend
         @param message: Message with 'length' and 'position' data
         """
-        self.length = message.data["length"]
-        self.position = message.data["position"]
+        for field in ("length", "position"):
+            value = message.data.get(field)
+            # real numbers only; bool is a subclass of int but is never a
+            # legitimate ms value, and a str would otherwise silently
+            # coerce (eg. int("5000" * 1000) overflowing the MPRIS int64
+            # wire type) instead of being rejected outright
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                LOG.debug(f"ignoring invalid '{field}' in playback_time "
+                          f"message: {value!r}")
+                continue
+            setattr(self, field, int(value))
         if self._player is not None:
             self._player._update_gui()
 
@@ -1692,6 +1706,7 @@ class OCPMediaPlayer:
         if self.mpris and self.playback_type in [PlaybackType.MPRIS]:
             self.mpris.pause()
         self.set_player_state(PlayerState.STOPPED)
+        self._paused_on_duck = False
         self._update_gui()
 
     def handle_MPRIS_takeover(self):
@@ -2035,6 +2050,18 @@ class OCPMediaPlayer:
                     track = MediaEntry.from_dict(track)
                 if not isinstance(track, (MediaEntry, Playlist, PluginStream)):
                     raise ValueError(f"not a valid track: {track!r}")
+                # a non-numeric length/position (eg. bus-fed "garbage")
+                # must not poison Playlist.length's later sum() over all
+                # entries - sanitize to 0 rather than reject the whole entry.
+                # Playlist.length is a read-only computed property (sum of
+                # its own entries), so only individual tracks are sanitized.
+                if isinstance(track, (MediaEntry, PluginStream)):
+                    for field in ("length", "position"):
+                        value = getattr(track, field, None)
+                        if isinstance(value, bool) or not isinstance(value, (int, float)):
+                            LOG.debug(f"coercing invalid '{field}' on "
+                                      f"playlist entry to 0: {value!r}")
+                            setattr(track, field, 0)
                 entries.append(track)
             except Exception as e:
                 LOG.warning(f"skipping invalid playlist entry: {e}")
