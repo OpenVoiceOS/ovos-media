@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.22a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.22a1) (2026-08-14)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.21a1...0.4.22a1)
+
+**Merged pull requests:**
+
+- fix: adult-filter set bypass, backend selection substring match, unlocked liked\_songs reader, play\_prev asymmetry [\#139](https://github.com/OpenVoiceOS/ovos-media/pull/139) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.21a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.21a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.20a1...0.4.21a1)
@@ -453,10 +461,6 @@
 ## [V0.0.1a10](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a10) (2024-01-28)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a9...V0.0.1a10)
-
-**Implemented enhancements:**
-
-- feat/animations [\#9](https://github.com/OpenVoiceOS/ovos-media/pull/9) ([NeonJarbas](https://github.com/NeonJarbas))
 
 ## [V0.0.1a9](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a9) (2024-01-27)
 
