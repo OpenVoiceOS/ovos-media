@@ -410,6 +410,39 @@ class TestMediaPlayer2InterfaceQuit(unittest.TestCase):
         player.shutdown.assert_not_called()
 
 
+class TestMetadata(unittest.TestCase):
+    """Metadata must never raise: a bus-fed length arrives unvalidated
+    (MediaEntry.update sets attrs directly, no guard), and a failing
+    property getter kills Properties.GetAll for the whole Player interface.
+    """
+
+    def test_metadata_garbage_length_returns_empty_dict(self):
+        from ovos_utils.ocp import MediaEntry, PlaybackType
+        iface, player = _make_interface()
+        entry = MediaEntry(uri="file:///a.mp3", title="t",
+                           playback=PlaybackType.AUDIO)
+        entry.length = "garbage"
+        player.now_playing = entry
+        result = iface.Metadata
+        self.assertEqual(result, {})
+
+    def test_metadata_no_now_playing_returns_empty_dict(self):
+        iface, player = _make_interface()
+        player.now_playing = None
+        self.assertEqual(iface.Metadata, {})
+
+    def test_metadata_valid_entry_returns_populated_dict(self):
+        from ovos_utils.ocp import MediaEntry, PlaybackType
+        iface, player = _make_interface()
+        entry = MediaEntry(uri="file:///a.mp3", title="t",
+                           playback=PlaybackType.AUDIO)
+        entry.length = 30_000
+        player.now_playing = entry
+        result = iface.Metadata
+        self.assertIn("mpris:length", result)
+        self.assertIn("xesam:url", result)
+
+
 class TestPlaybackStatus(unittest.TestCase):
     """PlaybackStatus must return the right MPRIS string for each PlayerState."""
 

@@ -12,6 +12,7 @@
 #
 
 import math
+import unicodedata
 from functools import wraps
 
 from ovos_config import Configuration
@@ -34,6 +35,17 @@ def is_real_number(value) -> bool:
     if not isinstance(value, (int, float)):
         return False
     return math.isfinite(value)
+
+
+def is_injection_char(c: str) -> bool:
+    """True for a character that acts as a newline/format-injection
+    surface in log viewers or HTTP stacks: C0/C1 controls (category Cc,
+    also covering the historical ``< 0x20`` and ``0x7f`` checks), format
+    chars like zero-width/bidi overrides (Cf), and the Unicode line/
+    paragraph separators U+2028/U+2029 (Zl/Zp) - all of which act as
+    newline-equivalents even though they aren't ASCII control characters.
+    """
+    return unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp")
 
 
 def require_default_session():

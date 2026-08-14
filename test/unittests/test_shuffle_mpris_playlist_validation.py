@@ -228,6 +228,46 @@ class TestPlaylistSetValidatesBeforeClearing(unittest.TestCase):
         self.assertEqual(inner_result.length, 0)
         p.shutdown()
 
+    def test_raw_dict_member_garbage_length_is_sanitized(self):
+        # Playlist.entries calls dict2entry/MediaEntry.from_dict fresh on
+        # every read with NO numeric sanitization - a raw dict appended
+        # directly (bypassing add_entry/from_dict) must still be sanitized
+        # by walking the raw list members, or Playlist.length's sum()
+        # blows up on the unsanitized "garbage" string.
+        from ovos_media.player import OCPMediaPlayer
+        from ovos_utils.ocp import Playlist as OcpPlaylist
+
+        bus, p = _player()
+        outer = OcpPlaylist(title="outer")
+        outer.add_entry(_entry("file:///ok.mp3", "ok"))
+        list.append(outer, {"uri": "file://y.mp3", "length": "garbage"})
+
+        entries = OCPMediaPlayer._validated_entries([outer])
+        self.assertEqual(len(entries), 1)
+        result = entries[0]
+        self.assertIsInstance(result, OcpPlaylist)
+        # must not raise
+        total = result.length
+        self.assertIsInstance(total, (int, float))
+        self.assertEqual(total, result.entries[0].length)
+        p.shutdown()
+
+    def test_raw_dict_member_inf_length_is_coerced_to_zero(self):
+        from ovos_media.player import OCPMediaPlayer
+        from ovos_utils.ocp import Playlist as OcpPlaylist
+
+        bus, p = _player()
+        outer = OcpPlaylist(title="outer")
+        list.append(outer, {"uri": "file://y.mp3", "length": float("inf")})
+
+        entries = OCPMediaPlayer._validated_entries([outer])
+        result = entries[0]
+        raw_member = list.__getitem__(result, 0)
+        self.assertEqual(raw_member["length"], 0)
+        total = result.length
+        self.assertNotEqual(total, float("inf"))
+        p.shutdown()
+
     def test_self_referential_playlist_does_not_recurse_forever(self):
         from ovos_media.player import OCPMediaPlayer
         from ovos_utils.ocp import Playlist as OcpPlaylist

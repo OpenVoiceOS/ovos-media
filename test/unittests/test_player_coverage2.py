@@ -193,6 +193,7 @@ class TestPlayerPlayWithLikedSongs(unittest.TestCase):
         liked_songs_mock.__getitem__.side_effect = liked_songs_dict.__getitem__
         liked_songs_mock.__setitem__.side_effect = liked_songs_dict.__setitem__
         liked_songs_mock.__contains__.side_effect = liked_songs_dict.__contains__
+        liked_songs_mock.get.side_effect = liked_songs_dict.get
         p.media.liked_songs = liked_songs_mock
 
         with patch.object(p, "validate_stream", return_value=True), \
@@ -203,6 +204,41 @@ class TestPlayerPlayWithLikedSongs(unittest.TestCase):
         # Check that play_count was incremented
         self.assertEqual(liked_songs_dict["http://liked.mp3"]["play_count"], 1)
         liked_songs_mock.store.assert_called_once()
+
+    def test_play_survives_liked_song_popped_between_check_and_index(self):
+        """play() must not raise KeyError when another bus-handler thread
+        (handle_unlike) pops the now-playing uri from liked_songs between
+        the membership check and the play_count mutation - a real race,
+        since bus handlers dispatch on a thread pool."""
+        p = _make_player()
+        p.now_playing.uri = "http://liked.mp3"
+
+        class _PoppedBetweenCheckAndIndex(dict):
+            """Membership looks True (the entry existed a moment ago) but
+            indexing/`.get()` raises/returns None as if it was concurrently
+            popped - simulates the race window without needing real
+            threads."""
+
+            def __contains__(self, key):
+                return True
+
+            def __getitem__(self, key):
+                raise KeyError(key)
+
+            def get(self, key, default=None):
+                return default
+
+        liked_songs = _PoppedBetweenCheckAndIndex()
+        liked_songs.store = MagicMock()
+        p.media.liked_songs = liked_songs
+
+        with patch.object(p, "validate_stream", return_value=True), \
+             patch.object(p, "set_player_state"), \
+             patch.object(p, "_update_gui"):
+            p.play()  # must not raise KeyError
+
+        # no entry to mutate - store() must not be called
+        liked_songs.store.assert_not_called()
 
 
 class TestPlayerValidateStreamException(unittest.TestCase):

@@ -797,7 +797,17 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
     @dbus_property(access=PropertyAccess.READ)
     def Metadata(self) -> 'a{sv}':
         if self._ocp_player.now_playing:
-            return self._ocp_player.now_playing.mpris_metadata
+            # mpris_metadata wraps length in a Variant('d', ...); a bus-fed
+            # length can arrive malformed (missing/None/wrong type - same
+            # ungated MediaEntry.update ingestion path as Position above),
+            # and a failing property getter kills Properties.GetAll for the
+            # whole Player interface, not just this property - fall back to
+            # empty metadata rather than let that happen.
+            try:
+                return self._ocp_player.now_playing.mpris_metadata
+            except Exception as e:
+                LOG.warning(f"failed to build mpris metadata: {e}")
+                return {}
         return {}
 
     @dbus_property(access=PropertyAccess.READ)
