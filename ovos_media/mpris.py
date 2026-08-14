@@ -866,7 +866,13 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
             # 0 like "no now_playing"
             if not is_real_number(position):
                 return 0
-            return int(position * 1000)
+            # dbus_next marshals 'x' as a signed 64-bit int; a value outside
+            # that range raises during marshalling (after this getter has
+            # already returned), so clamp into range rather than let a huge
+            # finite position (eg. a bogus seekbar sync) blow up the whole
+            # Properties.GetAll response
+            value = int(position * 1000)
+            return max(0, min(value, 2 ** 63 - 1))
         return 0
 
     @dbus_property(access=PropertyAccess.READ)

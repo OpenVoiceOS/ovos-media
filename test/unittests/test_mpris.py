@@ -112,6 +112,29 @@ class TestPosition(unittest.TestCase):
         prop = _MediaPlayer2PlayerInterface.__dict__["Position"]
         self.assertEqual(prop.signature, "x")
 
+    def test_position_huge_finite_clamps_into_int64_and_packs(self):
+        # a position like 1e16 ms is finite and non-negative (accepted by
+        # the seekbar sync handler), but *1000 overflows a signed 64-bit
+        # int - the getter must clamp it, not hand dbus_next a value that
+        # blows up during marshalling (outside the per-getter guard)
+        from dbus_next.signature import Variant
+        iface, player = _make_interface()
+        player.now_playing.position = 1e16
+        result = iface.Position
+        self.assertIsInstance(result, int)
+        self.assertLessEqual(result, 2 ** 63 - 1)
+        Variant('x', result)  # must not raise
+
+    def test_position_absurd_float_clamps_into_int64_and_packs(self):
+        from dbus_next.signature import Variant
+        iface, player = _make_interface()
+        player.now_playing.position = 1e300
+        result = iface.Position
+        self.assertIsInstance(result, int)
+        self.assertGreaterEqual(result, 0)
+        self.assertLessEqual(result, 2 ** 63 - 1)
+        Variant('x', result)  # must not raise
+
 
 class TestLoopStatusSetter(unittest.TestCase):
     """LoopStatus setter must map MPRIS strings to LoopState enum values."""

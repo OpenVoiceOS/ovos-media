@@ -472,12 +472,24 @@ class NowPlaying(MediaEntry):
                 raise ValueError(f"invalid stream: {extracted_uri!r}")
             if isinstance(extracted_uri, str) and extracted_uri and not extracted_uri.strip():
                 raise ValueError(f"invalid stream: {extracted_uri!r}")
+            if isinstance(extracted_uri, str) and any(
+                    ord(c) < 0x20 or ord(c) == 0x7f for c in extracted_uri):
+                # a uri that otherwise looks fine (eg. a valid http prefix)
+                # may still smuggle control characters/newlines - refuse
+                # before mutating state, same as the non-string/whitespace
+                # checks above (log/header-injection surface downstream)
+                raise ValueError(f"invalid stream: {extracted_uri!r}")
             LOG.info(f"OCP plugins metadata: {meta}")
             self.update(meta, newonly=True)
             self.original_uri = uri
 
         # validate extracted uri
         if not any((self.uri.startswith(s) for s in ["http", "file", "/"])):
+            raise ValueError(f"invalid stream: {self.uri!r}")
+        # a uri passing the prefix check above may still smuggle control
+        # characters (eg. embedded newlines for header/log injection) -
+        # refuse those too
+        if any(ord(c) < 0x20 or ord(c) == 0x7f for c in self.uri):
             raise ValueError(f"invalid stream: {self.uri!r}")
 
     # bus api
@@ -1680,7 +1692,12 @@ class OCPMediaPlayer:
 
     def seek(self, position: int):
         """
-        Request playback to go to a specific position in the current media
+        Request playback to go to a specific position in the current media.
+        Only AUDIO, UNDEFINED and VIDEO playback support seeking. SKILL
+        playback would require a new bus message to ask the skill to seek,
+        and MPRIS players have no seek passthrough - those types (and any
+        other unhandled one) are logged and dropped rather than silently
+        doing nothing.
         @param position: milliseconds position to seek to
         """
         if self.playback_type in [PlaybackType.AUDIO,
@@ -1689,6 +1706,11 @@ class OCPMediaPlayer:
             # matching the milliseconds contract documented on this
             # method and on MediaBackend.set_track_position
             self.audio_service.set_track_position(position)
+        elif self.playback_type == PlaybackType.VIDEO:
+            self.video_service.set_track_position(position)
+        else:
+            LOG.warning(f"seek() is not supported for playback_type "
+                        f"{self.playback_type}, ignoring")
 
     def stop(self):
         """
@@ -2089,16 +2111,39 @@ class OCPMediaPlayer:
                     # a nested Playlist's own tracks are entries too - bad
                     # values inside them would otherwise reach the outer
                     # Playlist.length (a sum over all contained entries)
-                    # unsanitized. Recurse arbitrarily deep. `entries` is a
-                    # read-only property backed by the list itself (no
-                    # setter), so sanitize in place.
-                    sanitized = OCPMediaPlayer._validated_entries(track.entries)
-                    track.entries.clear()
-                    track.entries.extend(sanitized)
+                    # unsanitized. Recurse arbitrarily deep.
+                    OCPMediaPlayer._sanitize_nested_playlist(track, set())
                 entries.append(track)
             except Exception as e:
                 LOG.warning(f"skipping invalid playlist entry: {e}")
         return entries
+
+    @staticmethod
+    def _sanitize_nested_playlist(playlist, visited):
+        """Sanitize length/position on every MediaEntry/PluginStream
+        reachable inside a (possibly self-referential) tree of nested
+        Playlists, mutating the shared objects in place.
+
+        `Playlist.entries` is a computed property that returns a filtered
+        copy of the list and drops nested Playlist members entirely, so it
+        cannot be used to reach or fix them. Iterating the Playlist itself
+        (it subclasses list) reaches every raw member, including nested
+        Playlists. Dict members are left untouched - `Playlist.entries`
+        converts them to MediaEntry on read.
+        """
+        if id(playlist) in visited:
+            return
+        visited.add(id(playlist))
+        for member in list.__iter__(playlist):
+            if isinstance(member, (MediaEntry, PluginStream)):
+                for field in ("length", "position"):
+                    value = getattr(member, field, None)
+                    if not is_real_number(value):
+                        LOG.debug(f"coercing invalid '{field}' on "
+                                  f"playlist entry to 0: {value!r}")
+                        setattr(member, field, 0)
+            elif isinstance(member, Playlist):
+                OCPMediaPlayer._sanitize_nested_playlist(member, visited)
 
     @require_default_session()
     def handle_playlist_queue_request(self, message):

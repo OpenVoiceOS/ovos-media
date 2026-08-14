@@ -282,6 +282,31 @@ class TestHandleSeekRequest(unittest.TestCase):
         p.seek(60000)
         p.audio_service.set_track_position.assert_called_once_with(60000)
 
+    def test_seek_video_calls_video_service(self):
+        """A VIDEO seek (eg. GUI seekbar drag, "skip forward 30s" on a
+        video skill) must reach video_service.set_track_position, not
+        evaporate silently."""
+        p = _make_player(PlaybackType.VIDEO)
+        p.seek(60000)
+        p.video_service.set_track_position.assert_called_once_with(60000)
+        p.audio_service.set_track_position.assert_not_called()
+
+    def test_seek_skill_logs_warning_and_does_not_raise(self):
+        p = _make_player(PlaybackType.SKILL)
+        with patch("ovos_media.player.LOG") as mock_log:
+            p.seek(60000)
+            mock_log.warning.assert_called_once()
+        p.audio_service.set_track_position.assert_not_called()
+        p.video_service.set_track_position.assert_not_called()
+
+    def test_seek_mpris_logs_warning_and_does_not_raise(self):
+        p = _make_player(PlaybackType.MPRIS)
+        with patch("ovos_media.player.LOG") as mock_log:
+            p.seek(60000)
+            mock_log.warning.assert_called_once()
+        p.audio_service.set_track_position.assert_not_called()
+        p.video_service.set_track_position.assert_not_called()
+
     def test_seek_with_non_numeric_seconds_is_ignored(self):
         """A non-numeric 'seconds' payload must not raise TypeError from the
         `* 1000` multiplication — it should be logged and ignored instead."""

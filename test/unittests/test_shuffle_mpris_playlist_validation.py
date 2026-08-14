@@ -197,6 +197,50 @@ class TestPlaylistSetValidatesBeforeClearing(unittest.TestCase):
         self.assertNotEqual(total, float("inf"))
         p.shutdown()
 
+    def test_playlist_nested_in_playlist_is_sanitized(self):
+        # Playlist.entries is a computed property that builds a NEW
+        # filtered list and drops nested Playlist members entirely, so
+        # recursing over track.entries never reaches a Playlist nested
+        # inside a Playlist. The raw list members (Playlist subclasses
+        # list) must be walked instead.
+        from ovos_media.player import OCPMediaPlayer
+        from ovos_utils.ocp import Playlist as OcpPlaylist
+
+        bus, p = _player()
+        inner = OcpPlaylist(title="inner")
+        inner.add_entry(_entry("file:///n1.mp3", "n1"))
+        # Playlist subclasses list - indexing/iterating it directly hits
+        # the raw members, unlike the .entries property
+        inner[0].length = "garbage"
+
+        outer = OcpPlaylist(title="outer")
+        outer.add_entry(inner)
+
+        entries = OCPMediaPlayer._validated_entries([outer])
+        self.assertEqual(len(entries), 1)
+        outer_result = entries[0]
+        self.assertIsInstance(outer_result, OcpPlaylist)
+        inner_result = outer_result[0]
+        self.assertIsInstance(inner_result, OcpPlaylist)
+        # inner.length must not raise TypeError from "garbage" + int, and
+        # the sanitized value must be visible
+        self.assertEqual(inner_result[0].length, 0)
+        self.assertEqual(inner_result.length, 0)
+        p.shutdown()
+
+    def test_self_referential_playlist_does_not_recurse_forever(self):
+        from ovos_media.player import OCPMediaPlayer
+        from ovos_utils.ocp import Playlist as OcpPlaylist
+
+        bus, p = _player()
+        cycle = OcpPlaylist(title="cycle")
+        cycle.add_entry(_entry("file:///a.mp3", "a"))
+        list.append(cycle, cycle)  # self-reference via raw list append
+
+        entries = OCPMediaPlayer._validated_entries([cycle])
+        self.assertEqual(len(entries), 1)
+        p.shutdown()
+
 
 class TestStopClearsPausedOnDuckFlag(unittest.TestCase):
     """D5 sibling to pause(): stop() must reset the duck-pause flag same
