@@ -59,6 +59,23 @@ class TestPosition(unittest.TestCase):
         result = iface.Position
         self.assertEqual(result, 0)
 
+    def test_position_returns_int(self):
+        # MPRIS2 spec requires Position signature 'x' (int64, microseconds).
+        # Strict clients (playerctl, GNOME Shell) misparse/reject a float.
+        iface, player = _make_interface()
+        player.now_playing.position = 30_000
+        result = iface.Position
+        self.assertIsInstance(result, int)
+
+    def test_position_dbus_signature_is_x(self):
+        # The dbus-next @dbus_property decorator stores the declared wire
+        # signature on the underlying property object (a dbus_next
+        # service._Property); assert it directly, no live D-Bus session
+        # needed. MPRIS2 spec requires 'x' (int64, microseconds) here.
+        from ovos_media.mpris import _MediaPlayer2PlayerInterface
+        prop = _MediaPlayer2PlayerInterface.__dict__["Position"]
+        self.assertEqual(prop.signature, "x")
+
 
 class TestLoopStatusSetter(unittest.TestCase):
     """LoopStatus setter must map MPRIS strings to LoopState enum values."""

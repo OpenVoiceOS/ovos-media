@@ -421,11 +421,15 @@ class OcpMprisExporter(Thread):
         self.player_meta[name]["state"] = "Stopped"
 
     async def _stop_all(self):
-        for p in self.players:
+        # snapshot before iterating - each await below can yield to the
+        # event loop, where a concurrent handle_lost_player() (dispatched by
+        # on_properties_changed on the same loop) may pop from self.players
+        # mid-iteration and raise "dictionary changed size during iteration"
+        for p in list(self.players):
             await self._stop_player(p)
 
     async def _pause_all(self):
-        for p in self.players:
+        for p in list(self.players):
             await self._pause_player(p)
 
     async def scan_players(self):
@@ -844,13 +848,15 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
         return 1
 
     @dbus_property(access=PropertyAccess.READ)
-    def Position(self) -> 'd':
+    def Position(self) -> 'x':
         if self._ocp_player.now_playing:
             # now_playing.position is in milliseconds (repo-wide ms contract,
             # produced by ovos-plugin-manager templates); MPRIS Position is
             # in microseconds, hence * 1000 (not * 1e6, which would treat
-            # position as seconds).
-            return self._ocp_player.now_playing.position * 1000
+            # position as seconds). MPRIS2 spec requires signature 'x'
+            # (int64), so cast to int - strict clients (playerctl, GNOME
+            # Shell) misparse/reject a 'd' (double) wire value.
+            return int(self._ocp_player.now_playing.position * 1000)
         return 0
 
     @dbus_property(access=PropertyAccess.READ)
