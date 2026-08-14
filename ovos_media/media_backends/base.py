@@ -57,13 +57,13 @@ class BaseMediaService:
         whose backends and bus wiring are supplied by other means.
         """
         self.on_stop = on_stop
-        # C6: queued-but-not-yet-loaded tracks from the last handle_play(),
+        # Queued-but-not-yet-loaded tracks from the last handle_play(),
         # and whether that request asked to repeat once exhausted. Consumed
         # incrementally from track_start() as each track finishes.
         self._pending_playlist: list = []
         self._pending_repeat: bool = False
         self._last_full_playlist: list = []
-        # W3: handles for the deferred work started by handle_play()/stop().
+        # Handles for the deferred work started by handle_play()/stop().
         # Both are cancellable and daemonic — an orphaned timer used to load a
         # second backend behind the first, survive a stop, and fire into an
         # already shut-down service.
@@ -102,14 +102,14 @@ class BaseMediaService:
                 self.bus.emit(Message('mycroft.audio.playing_track',
                                       data={'track': track}))
         elif self._pending_playlist:
-            # C6: handle_play() was given more than one track — advance to
+            # handle_play() was given more than one track — advance to
             # the next queued uri instead of reporting end-of-playlist after
             # only the first track ever played.
             next_uri = self._pending_playlist.pop(0)
             LOG.debug(f'Advancing to next queued {self.namespace} track')
             self._play(next_uri)
         elif self._pending_repeat and self._last_full_playlist:
-            # C6: the exhausted playlist was requested with repeat=True —
+            # The exhausted playlist was requested with repeat=True —
             # mirrors ovos-audio's PlaybackService repeat semantics.
             LOG.debug(f'Repeating {self.namespace} playlist')
             self._pending_playlist = list(self._last_full_playlist[1:])
@@ -308,7 +308,7 @@ class BaseMediaService:
     def _clear_pending_playlist(self):
         """Forget the legacy-request tracklist queued by handle_play().
 
-        W3: without this, a legacy 'ovos.{ns}.service.play' tracklist that was
+        Without this, a legacy 'ovos.{ns}.service.play' tracklist that was
         never exhausted stayed queued and hijacked a later, unrelated OCP
         playback — track_start() advanced into the stale uris, interleaving
         them with the OCP queue.
@@ -346,7 +346,7 @@ class BaseMediaService:
         """
         if not self._is_message_for_service(message):
             return
-        # W4: the on_stop callback is player-wide (shared _stop_requested
+        # The on_stop callback is player-wide (shared _stop_requested
         # across audio/video/web), but this service instance may have no
         # active backend at all — eg. a skill calls the video interface's
         # stop() while only audio is playing. Firing on_stop unconditionally
@@ -355,13 +355,13 @@ class BaseMediaService:
         # actually playing. Only a real stop (self.current is not None) is
         # allowed to signal it.
         if self.on_stop is not None and self.current is not None:
-            # W3: tell the owning player this end-of-playback is a stop, before
+            # Tell the owning player this end-of-playback is a stop, before
             # the backend's ocp_stop() emits END_OF_MEDIA.
             try:
                 self.on_stop()
             except Exception as e:
                 LOG.exception(f"on_stop callback failed: {e}")
-        # W3: a stop must also cancel playback that has been scheduled but has
+        # A stop must also cancel playback that has been scheduled but has
         # not started yet — otherwise a stop inside handle_play()'s 0.5s window
         # was simply ignored and the track started playing anyway.
         if self._play_timer is not None:
@@ -376,7 +376,7 @@ class BaseMediaService:
                     LOG.exception(e)
                     LOG.error("failed to stop!")
         elif message is None:
-            # W3: the <1s guard exists to swallow the stop that ovos-core fires
+            # The <1s guard exists to swallow the stop that ovos-core fires
             # right as playback begins. Dropping it outright meant the internal
             # caller (OCPMediaPlayer.stop) reported STOPPED while audio kept
             # playing forever. Defer the stop past the guard window instead.
@@ -435,7 +435,7 @@ class BaseMediaService:
                 preferred_service: indicates the service the user prefer to play
                                   the tracks.
         """
-        # W3: a new playback request supersedes whatever the last legacy
+        # A new playback request supersedes whatever the last legacy
         # 'service.play' tracklist left queued, and any deferred stop aimed at
         # the previous track. The internal advance path (_play) deliberately
         # keeps the pending playlist, since that is what it is consuming.
@@ -490,7 +490,7 @@ class BaseMediaService:
     def _is_message_for_service(self, message: Message):
         if not message or not self.validate_source:
             return True
-        # F9: docs/configuration.md documents `media.native_sources` as the
+        # docs/configuration.md documents `media.native_sources` as the
         # key to set, but validate_message_context() (ovos_media/utils.py)
         # only ever reads the top-level `native_sources` config key on its
         # own — its `native_sources` parameter was always available for a
@@ -514,7 +514,7 @@ class BaseMediaService:
         if not self._is_message_for_service(message):
             return
         with self.service_lock:
-            # W3: a second play request supersedes the first. Without cancelling
+            # A second play request supersedes the first. Without cancelling
             # the pending timer both fired, loading two backends at once and
             # orphaning the first.
             self._cancel_timers()
@@ -533,7 +533,7 @@ class BaseMediaService:
             else:
                 track_list = list(tracks)
 
-            # C6: an entry may itself be an empty list/tuple (eg.
+            # An entry may itself be an empty list/tuple (eg.
             # tracks=[[]]) — indexing straight into it used to raise
             # IndexError and kill the request; skip empty entries and use
             # the first genuinely playable one instead.
@@ -551,7 +551,7 @@ class BaseMediaService:
                 return
             uri = uris[0]
 
-            # C6: hand the rest of the tracklist (and repeat) through to the
+            # Hand the rest of the tracklist (and repeat) through to the
             # backend path — mirrors ovos-audio's PlaybackService.play, which
             # queues the whole list instead of dropping everything after the
             # first uri. BaseMediaService/MediaBackend only load one uri at a
@@ -721,7 +721,7 @@ class BaseMediaService:
         self.current.set_track_position(milliseconds)
 
     def shutdown(self):
-        # W3: a pending deferred play/stop must not fire into a shut-down backend
+        # A pending deferred play/stop must not fire into a shut-down backend
         self._cancel_timers()
         self._clear_pending_playlist()
         for s in self.services:

@@ -732,7 +732,7 @@ class TestHandlePlayerMediaUpdateEndOfMedia(unittest.TestCase):
         p.play_next = MagicMock()
         p._update_gui = MagicMock()
         p.ocp_config = {"autoplay": True}
-        # W3: the skip is scheduled through on_invalid_stream() rather than
+        # The skip is scheduled through on_invalid_stream() rather than
         # called inline, so it lands on the next tick, not this one.
         p.invalid_stream_delay = 0.01
         msg = Message("ovos.common_play.media.state",

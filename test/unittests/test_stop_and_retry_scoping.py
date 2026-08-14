@@ -1,21 +1,21 @@
-"""Regression tests for the 2026-08 wave-4 defect fixes.
+"""Regression tests pinning stop scoping and invalid-stream retry cancellation.
 
-W4-1  BaseMediaService.stop() invoked the player-wide ``on_stop`` callback
-      (which flags the single, player-wide ``_stop_requested``) even when
-      THIS service instance had no active backend at all. All three services
-      (audio/video/web) share the one flag, so a skill calling the video
-      interface's stop() while only audio was playing suppressed the next
-      natural audio END_OF_MEDIA advance.
+BaseMediaService.stop() must invoke the player-wide ``on_stop`` callback
+    (which flags the single, player-wide ``_stop_requested``) only when THIS
+    service instance has an active backend. All three services
+    (audio/video/web) share the one flag, so a skill calling the video
+    interface's stop() while only audio is playing must not suppress the
+    next natural audio END_OF_MEDIA advance.
 
-W4-2  ``_mark_stop_requested`` did not cancel the pending invalid-stream
-      retry timer (``_invalid_timer``), and neither did
-      ``OCPMediaPlayer.stop()`` (only reset()/shutdown() did). A stop
-      arriving during the 3s post-INVALID_MEDIA retry window left the timer
-      armed; it fired play_next() after the stop had already settled the
-      player into STOPPED, spontaneously resuming playback.
+``_mark_stop_requested`` must cancel the pending invalid-stream retry timer
+    (``_invalid_timer``), and so must ``OCPMediaPlayer.stop()`` (not only
+    reset()/shutdown()). A stop arriving during the 3s post-INVALID_MEDIA
+    retry window must not leave the timer armed to fire play_next() after
+    the stop has already settled the player into STOPPED, which would
+    spontaneously resume playback.
 
 Both tests drive the scenario through the real objects (FakeBus + a stub
-backend), mirroring test_wave3_end_of_track.py.
+backend), mirroring test_end_of_track_handling.py.
 """
 import time
 import unittest

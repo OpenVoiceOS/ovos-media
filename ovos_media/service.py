@@ -45,7 +45,7 @@ class MediaService(Thread):
         self.status.set_started()
 
         self.config = Configuration().get("media", {})
-        # F9: this attribute was dead — it read media.native_sources but was
+        # This attribute was dead — it read media.native_sources but was
         # never passed anywhere; the real consumer, validate_message_context()
         # in utils.py, only ever read the top-level `native_sources` key.
         # validate_message_context() now also honours the documented
@@ -74,12 +74,12 @@ class MediaService(Thread):
         self.ocp = OCPMediaPlayer(self.bus, validate_source=self.validate_source)
         self.bus.on('ovos.common_play.home', self.handle_home)
         self.bus.on("ovos.common_play.ping", self.handle_ping)
-        # F7/F8: 'ovos.common_play.search.start' is handled by
+        # 'ovos.common_play.search.start' is handled by
         # OCPMediaPlayer.handle_search_start (player.py) — that registration
         # duplicated it here, unconditionally (no session gating), so every
         # search.start double-pushed the "loading" GUI state.
         self.bus.on("ovos.common_play.search.end", self.handle_search_end)
-        # L4: opm.audio.query's handler reads self.ocp.audio_service — it
+        # opm.audio.query's handler reads self.ocp.audio_service — it
         # must not be reachable until self.ocp exists. Registered here
         # (after OCPMediaPlayer's plugin-loading construction above), not in
         # init_messagebus() which runs before self.ocp is assigned.
@@ -127,7 +127,7 @@ class MediaService(Thread):
         self.status.set_stopping()
         self.legacy_compat.shutdown()
         self.ocp.shutdown()
-        # L1: remove the four handlers registered directly on MediaService
+        # Remove the four handlers registered directly on MediaService
         # (not on self.ocp) so a shut-down service stops answering
         # home/ping/search.end/opm.audio.query.
         self.bus.remove('ovos.common_play.home', self.handle_home)

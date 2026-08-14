@@ -122,7 +122,7 @@ class TestValidateMessageContextNativeSources(unittest.TestCase):
 
 
 class TestRequireDefaultSessionMalformedContext(unittest.TestCase):
-    """C4: a malformed session context (empty session_id, non-dict session)
+    """A malformed session context (empty session_id, non-dict session)
     must never crash a gated handler — it must be refused (treated as
     NOT-default) and logged, not raised, so any peer cannot DoS a handler
     with context={"session": {"session_id": ""}}."""

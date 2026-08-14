@@ -1,13 +1,13 @@
-"""Regression tests for the closing-certification findings.
+"""Regression tests pinning shuffle startup, MPRIS reflection, and playlist validation.
 
-C1: shuffle mode selected tracks but never started them (play_shuffle
-    documents that it does not call play(); both call sites returned
-    without playing - permanent silence on every shuffled advance).
-C2: the MPRIS reflection produced a now-playing dict without a uri, which
-    dict2entry refuses - every external-player update raised, after the
-    takeover had already stopped local playback.
-C3: a malformed playlist.set payload wiped the existing playlist before
-    validation aborted mid-mutation.
+Shuffle mode must actually start playback after selecting a track
+    (play_shuffle documents that it does not call play(); both call sites
+    must play the selected track themselves, not leave it silently selected).
+The MPRIS reflection must produce a now-playing dict with a uri, since
+    dict2entry refuses one without — an external-player update must not
+    raise after the takeover has already stopped local playback.
+A malformed playlist.set payload must not wipe the existing playlist before
+    validation aborts the mutation.
 """
 import unittest
 from unittest.mock import MagicMock
