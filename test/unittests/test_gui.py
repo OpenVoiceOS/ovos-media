@@ -154,7 +154,7 @@ class TestSearchStartShowsLoadingState(unittest.TestCase):
     """handle_search_start must call show_media_player with state='loading'."""
 
     def test_handle_search_start_loading(self):
-        # F7/F8: handle_search_start is now gated to the default/local
+        # handle_search_start is gated to the default/local
         # session (require_default_session), so a real default-session
         # Message is needed — a bare MagicMock has no valid session context
         # and would be (correctly) ignored.

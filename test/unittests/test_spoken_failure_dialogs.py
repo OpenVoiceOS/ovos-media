@@ -190,7 +190,7 @@ def _track(uri, title, playback=PlaybackType.AUDIO):
 
 def _real_player(bus=None, config=None):
     """A real OCPMediaPlayer on a FakeBus (same construction pattern as
-    test_wave3_end_of_track.py), with stream extraction and the actual
+    test_end_of_track_handling.py), with stream extraction and the actual
     speak_dialog call stubbed out so tests observe calls without touching
     real dialog resources."""
     from ovos_media.player import OCPMediaPlayer

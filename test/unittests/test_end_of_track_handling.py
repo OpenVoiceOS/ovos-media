@@ -1,29 +1,29 @@
-"""Regression tests for the 2026-08 wave-3 end-of-track redesign.
+"""Regression tests pinning end-of-track handling under concurrent bus dispatch.
 
-The end-of-track path used to have TWO independent subscribers to
+The end-of-track path has TWO independent subscribers to
 'ovos.common_play.media.state' — NowPlaying.handle_media_state_change and
 OCPMediaPlayer.handle_player_media_update — with no ordering guarantee between
 them (pyee's ExecutorEventEmitter submits every handler to a thread pool
-independently). They coordinated through a stash on the player, which meant:
+independently). They coordinate through a stash on the player. Each test below
+pins one invariant that coordination must hold:
 
-W3-1  under contention the autoplay decision read a half-reset NowPlaying and
-      silently dropped the advance;
-W3-2  two END_OF_MEDIA events could both pass the compare-and-set and advance
-      the queue twice;
-W3-3  an explicit stop advanced the queue, because OPM backends emit
-      END_OF_MEDIA from ocp_stop() and nothing distinguished that from a track
-      ending naturally;
-W3-4  a playlist with a repeated uri ([a, b, a]) ping-ponged forever, because
-      the current track was located by uri alone;
-W3-5  a 1-track repeat playlist on a permanently failing backend spun without
-      bound, because INVALID_MEDIA called play_next() inline;
-W3-6  two rapid legacy 'service.play' requests each armed a 0.5s Timer, loading
-      two backends at once and orphaning the first; a stop inside that window
-      was ignored entirely;
-W3-7  a stop within 1s of playback starting was dropped silently — the player
-      reported STOPPED while audio kept playing forever;
-W3-8  a legacy tracklist that was never exhausted stayed queued on the service
-      and hijacked later, unrelated OCP playback.
+- under contention the autoplay decision must not read a half-reset NowPlaying
+  and silently drop the advance;
+- two END_OF_MEDIA events must not both pass the compare-and-set and advance
+  the queue twice;
+- an explicit stop must not advance the queue, even though OPM backends emit
+  END_OF_MEDIA from ocp_stop() same as a track ending naturally;
+- a playlist with a repeated uri ([a, b, a]) must not ping-pong forever from
+  locating the current track by uri alone;
+- a 1-track repeat playlist on a permanently failing backend must not spin
+  without bound from INVALID_MEDIA calling play_next() inline;
+- two rapid legacy 'service.play' requests must not each arm a 0.5s Timer,
+  loading two backends at once and orphaning the first, nor ignore a stop
+  that arrives inside that window;
+- a stop within 1s of playback starting must not be dropped silently, leaving
+  the player reporting STOPPED while audio keeps playing;
+- a legacy tracklist that was never exhausted must not stay queued on the
+  service and hijack later, unrelated OCP playback.
 
 Every test drives the scenario through the real objects (FakeBus + a stub
 backend), never by hand-calling the handler under test in isolation.
@@ -370,7 +370,7 @@ class TestBoundedInvalidRetries(unittest.TestCase):
         since _all_tracks_failed() never accumulated enough of
         _failed_uris to trip. The guard is cleared only on evidence of
         PLAYBACK (TrackState.PLAYING_* via NowPlaying, see the
-        certification-round follow-up test in test_wave4_defect_fixes.py /
+        related tests in test_stop_and_retry_scoping.py /
         test_spoken_failure_dialogs.py)."""
         bus = FakeBus()
         player = _make_player(bus)

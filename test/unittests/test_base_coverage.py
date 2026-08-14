@@ -424,7 +424,7 @@ class TestHandleSeekBackward(unittest.TestCase):
 
 
 class TestTrackStartLegacyTwins(unittest.TestCase):
-    """C1: track_start must emit mycroft.audio.* twins alongside ovos.audio.*
+    """track_start must emit mycroft.audio.* twins alongside ovos.audio.*
     so legacy skills blocking on mycroft.audio.playing_track /
     mycroft.audio.queue_end do not hang forever."""
 
@@ -482,7 +482,7 @@ class TestTrackStartLegacyTwins(unittest.TestCase):
 
 
 class TestHandlePlayUriExtraction(unittest.TestCase):
-    """C3: handle_play must pass a single uri string to self.play(), not the
+    """handle_play must pass a single uri string to self.play(), not the
     raw tracks list — self.play() does uri.split(':') and would raise
     AttributeError on a list, killing the Timer thread silently."""
 
@@ -506,7 +506,7 @@ class TestHandlePlayUriExtraction(unittest.TestCase):
         target, call_args = self._run_handle_play(
             svc, {"tracks": ["http://example.com/a.mp3"]})
 
-        # W3: handle_play defers to _play so the tracklist it just queued
+        # handle_play defers to _play so the tracklist it just queued
         # is not cleared by the public play() entry point.
         self.assertEqual(target, svc._play)
         self.assertEqual(call_args[0], "http://example.com/a.mp3")

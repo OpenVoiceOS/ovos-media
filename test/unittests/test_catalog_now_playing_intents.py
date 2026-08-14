@@ -313,7 +313,7 @@ class TestFiveIntentsRegistered(unittest.TestCase):
 
 
 class TestShuffleSessionGate(unittest.TestCase):
-    """Backcompat audit F2: OCPMediaPlayer.handle_set_shuffle/handle_unset_shuffle
+    """OCPMediaPlayer.handle_set_shuffle/handle_unset_shuffle
     are gated by @require_default_session() and silently drop the action on a
     non-default (e.g. HiveMind satellite) session. The catalog's shuffle
     intent handlers must not claim success (speak "shuffle.on"/"shuffle.off")

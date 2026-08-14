@@ -71,7 +71,7 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         # ImportError there prevents the emit from ever running. We
         # replicate the (NER-independent) emit here directly so the
         # classifier still learns the keywords even without the "ner" extra.
-        # L2: liked-songs is a persisted JSON store editable outside this
+        # liked-songs is a persisted JSON store editable outside this
         # process (GUI, manual edits, older/newer schema versions). A single
         # malformed entry (a non-dict value, or a dict missing "title") used
         # to raise here and kill daemon startup entirely. Skip and warn
@@ -429,7 +429,7 @@ class NowPlaying(MediaEntry):
         self.media_type = MediaType.GENERIC
         self.skill_icon = ""
         self.image = ""
-        # F4: without clearing these, a stopped/home'd player still reports
+        # Without clearing these, a stopped/home'd player still reports
         # the previous track's uri via now_playing.as_dict / GUI payload
         self.uri = ""
         self.original_uri = ""
@@ -628,7 +628,7 @@ class OCPMediaPlayer:
         self.now_playing: NowPlaying = NowPlaying(bus, player=self)
         self.media: OCPMediaCatalog = OCPMediaCatalog(bus=bus, skill_id=OCP_ID + ".favorites",
                                                        validate_source=self.validate_source)
-        # W3: the per-namespace 'ovos.{ns}.service.stop' bus handler lives on
+        # The per-namespace 'ovos.{ns}.service.stop' bus handler lives on
         # BaseMediaService; this callback lets it flag the stop on the player
         # BEFORE the backend's ocp_stop() emits END_OF_MEDIA, in the same
         # thread. A second bus subscription would have had no such ordering
@@ -663,7 +663,7 @@ class OCPMediaPlayer:
         means.
         """
         self._paused_on_duck: bool = False
-        # W3/W4: guards every read-modify-write of media_state/player_state
+        # Guards every read-modify-write of media_state/player_state
         # (including the compare-and-set in set_media_state/set_player_state)
         # so the END_OF_MEDIA compare-and-set cannot be executed twice
         # concurrently (two racing END_OF_MEDIA events used to double-advance
@@ -671,17 +671,17 @@ class OCPMediaPlayer:
         # re-enters, and because set_player_state() calls handle_status()
         # which may itself touch player/media state.
         self._state_lock = RLock()
-        # W3: True between a stop request and the next play(). An explicit stop
+        # True between a stop request and the next play(). An explicit stop
         # must NOT advance the queue, but OPM backends emit END_OF_MEDIA from
         # ocp_stop(), so a stop is indistinguishable from a natural track end at
         # the media.state level without this flag.
         self._stop_requested: bool = False
-        # W3: the exact MediaEntry object currently selected. Located by
+        # The exact MediaEntry object currently selected. Located by
         # identity in _queue_index(), which makes duplicate uris in a playlist
         # (eg. [a, b, a]) advance correctly instead of ping-ponging, and
         # survives the END_OF_MEDIA reset that clears now_playing.uri.
         self._current_entry: Optional[MediaEntry] = None
-        # W3: uris that failed to load since the last successful load. Used to
+        # Uris that failed to load since the last successful load. Used to
         # stop LoopState.REPEAT from restarting a queue in which every track is
         # broken (unbounded hot loop).
         self._failed_uris: set = set()
@@ -798,7 +798,7 @@ class OCPMediaPlayer:
         np = self.now_playing
         now_playing = None
         if np and np.uri:
-            # F2/C3: MediaEntry.as_dict has no 'position' field (it is a
+            # MediaEntry.as_dict has no 'position' field (it is a
             # plain attribute, not a dataclass field) and reports 'length'
             # rather than 'duration' — the GUI seekbar contract needs both
             # 'position' and 'duration' (milliseconds), so merge them in.
@@ -830,7 +830,7 @@ class OCPMediaPlayer:
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
         if not uri:
-            # L3: nothing playing and no uri in the request — persisting
+            # nothing playing and no uri in the request — persisting
             # under the empty-string key would create an unremovable store
             # entry (handle_unlike keys off "uri or now_playing.original_uri"
             # too, so it would never be able to target it), pollute the
@@ -859,7 +859,7 @@ class OCPMediaPlayer:
             self.media.liked_songs.store()
             LOG.info(f"unliked song: {uri}")
 
-    # F7/F8: this and service.py's MediaService.handle_search_start both
+    # This and service.py's MediaService.handle_search_start both
     # registered on 'ovos.common_play.search.start' unconditionally, so a
     # satellite/non-default session's search double-pushed the "loading" GUI
     # state (once from each handler). Gate this one to the default session
@@ -945,7 +945,7 @@ class OCPMediaPlayer:
         from BaseMediaService.stop() (the 'ovos.{ns}.service.stop' bus handler)
         before the backend's ocp_stop() emits END_OF_MEDIA.
 
-        W4: also cancels any pending invalid-stream retry timer. Without this,
+        Also cancels any pending invalid-stream retry timer. Without this,
         a stop arriving during the post-INVALID_MEDIA retry window left the
         timer armed, and it fired play_next() after the stop had already
         settled the player into STOPPED — spontaneously resuming playback.
@@ -1021,7 +1021,7 @@ class OCPMediaPlayer:
         """
         if not isinstance(state, MediaState):
             raise TypeError(f"Expected MediaState and got: {state}")
-        # W4: the compare-and-set must happen under _state_lock, same as
+        # the compare-and-set must happen under _state_lock, same as
         # every other read-modify-write of media_state; the emit stays
         # outside the critical section to avoid lock-order risk with any
         # bus handler that re-enters and takes the lock itself.
@@ -1040,7 +1040,7 @@ class OCPMediaPlayer:
         """
         if not isinstance(state, PlayerState):
             raise TypeError(f"Expected PlayerState and got: {state}")
-        # W4: same rationale as set_media_state() — compare-and-set under
+        # same rationale as set_media_state() — compare-and-set under
         # _state_lock, emit (and the MPRIS/GUI/status side effects below)
         # outside the critical section.
         with self._state_lock:
@@ -1076,7 +1076,7 @@ class OCPMediaPlayer:
             self.playlist.clear()
 
         self.now_playing.reset()  # reset now_playing to remove old metadata
-        # W3: remember the exact entry object so _queue_index() can locate it by
+        # remember the exact entry object so _queue_index() can locate it by
         # identity even when its uri is duplicated in the queue or cleared by
         # the END_OF_MEDIA reset.
         self._current_entry = track if isinstance(track, MediaEntry) else None
@@ -1246,7 +1246,7 @@ class OCPMediaPlayer:
             state="error",
         )
         LOG.warning(f"Failed to play: {self.now_playing}")
-        # W3: remember this uri as broken so LoopState.REPEAT cannot restart a
+        # remember this uri as broken so LoopState.REPEAT cannot restart a
         # queue whose every track has failed (that was an unbounded hot loop:
         # 1-track repeat playlist + a backend that always reports INVALID_MEDIA).
         uri = self.now_playing.uri if self.now_playing else None
@@ -1327,7 +1327,7 @@ class OCPMediaPlayer:
         if self.mpris and not self.mpris.stop_event.is_set():
             self.mpris.stop()
 
-        # C1: handle_player_media_update dedups on `state == self.media_state`
+        # handle_player_media_update dedups on `state == self.media_state`
         # (see below). Without resetting here, two unplayable tracks in a
         # row both land on MediaState.INVALID_MEDIA, so the second INVALID_MEDIA
         # is silently swallowed by the dedup guard and the bad-track skip
@@ -1337,7 +1337,7 @@ class OCPMediaPlayer:
         # (whatever it is) always differs from the just-reset value.
         with self._state_lock:
             self.media_state = MediaState.LOADING_MEDIA
-            # W3: a new play attempt supersedes any earlier stop request
+            # a new play attempt supersedes any earlier stop request
             self._stop_requested = False
             # a new play attempt supersedes any pending invalid-stream retry;
             # otherwise the stale timer fires play_next() against this NEW
@@ -1346,7 +1346,7 @@ class OCPMediaPlayer:
                 self._invalid_timer.cancel()
                 self._invalid_timer = None
 
-        # C4: switching playback types must not leave the previously active
+        # switching playback types must not leave the previously active
         # backend's BaseMediaService.current set — otherwise a later,
         # unrelated global LOADED_MEDIA event revives the stale backend and
         # two backends end up playing at once. Stop/clear every backend that
@@ -1537,7 +1537,7 @@ class OCPMediaPlayer:
             LOG.info(f"Next track: {next_track.title!r} (queue index {idx + 1}/{len(queue) - 1})")
             self.set_now_playing(next_track)
         elif self.loop_state == LoopState.REPEAT and queue:
-            # W3: never restart a queue in which every track has already failed
+            # never restart a queue in which every track has already failed
             # to load since the last successful one — that is an unbounded hot
             # loop, not a repeat.
             if self._all_tracks_failed(queue):
@@ -1549,7 +1549,7 @@ class OCPMediaPlayer:
             self.set_now_playing(queue[0])
         else:
             LOG.info("Requested next, but there are no more tracks in the queue")
-            # F3: end of queue with repeat off previously left the player
+            # end of queue with repeat off previously left the player
             # state untouched (still PLAYING from the just-ended track) —
             # nothing ever told the GUI/MPRIS/bus that playback stopped.
             self.set_player_state(PlayerState.STOPPED)
@@ -1558,18 +1558,16 @@ class OCPMediaPlayer:
             # here, not in handle_playback_ended — that call site fires on
             # every autoplay-off track end and on MPRIS-external track
             # ends too, neither of which is really "the queue finished".
-            # FOLLOW-UP (certification round, item 6): this always speaks
-            # into the default session. play_next() is reached from an
-            # END_OF_MEDIA bus event (or the invalid-stream retry timer),
-            # neither of which carries the session of whatever
+            # This always speaks into the default session. play_next() is
+            # reached from an END_OF_MEDIA bus event (or the invalid-stream
+            # retry timer), neither of which carries the session of whatever
             # 'ovos.common_play.play' request originally started this
             # queue — so a satellite-triggered playback's queue.finished
             # announces on the default/local session instead of the
             # satellite's. Fixing this needs the player to stash the
             # triggering message's session at play time (handle_play_request)
             # and thread it through to speak_dialog here and at the
-            # track.failed site below; that plumbing was out of scope for
-            # this round and needs its own PR + tests.
+            # track.failed site below; see the issue tracker.
             try:
                 self.media.speak_dialog("queue.finished")
             except Exception as e:
@@ -1669,7 +1667,7 @@ class OCPMediaPlayer:
         """
         Request stopping current playback and searching
         """
-        # W3: flag BEFORE asking the backends to stop. OPM backends emit
+        # flag BEFORE asking the backends to stop. OPM backends emit
         # END_OF_MEDIA from ocp_stop(), which is indistinguishable from a track
         # ending naturally; without this flag an explicit stop advanced the
         # queue, contradicting the documented "stop must not advance" semantics.
@@ -1728,10 +1726,10 @@ class OCPMediaPlayer:
             self.set_media_state(MediaState.NO_MEDIA)
         self.shuffle = False
         self.loop_state = LoopState.NONE
-        # F4: use the authoritative setter (emits ovos.common_play.player.state,
+        # use the authoritative setter (emits ovos.common_play.player.state,
         # updates MPRIS) instead of a bare attribute assignment that bypassed it.
         self.set_player_state(PlayerState.STOPPED)
-        # F4: stop -> home (reset) previously left a zombie now_playing entry
+        # stop -> home (reset) previously left a zombie now_playing entry
         # on the GUI — now_playing.reset() above already clears uri/original_uri,
         # but set_player_state() above is a no-op (incl. no _update_gui) when
         # the player was already STOPPED, so push explicitly here too.
@@ -1749,7 +1747,7 @@ class OCPMediaPlayer:
         if self.mpris:
             self.mpris.shutdown()
         self.now_playing.shutdown()
-        # L1: self.media.shutdown() is the no-op OVOSSkill.shutdown() hook —
+        # self.media.shutdown() is the no-op OVOSSkill.shutdown() hook —
         # it does NOT remove the bus handlers add_event() registered
         # (ovos.common_play.skills.detach, .announce, the OCP intents, ...).
         # default_shutdown() is the real OVOSSkill teardown that removes
@@ -1764,7 +1762,7 @@ class OCPMediaPlayer:
         # created (eg. in a test loop, or a real service restart) leaked one
         # such bus listener for the lifetime of the process.
         self.gui.shutdown()
-        # L1: register_bus_handlers() above bound ~35 handlers directly via
+        # register_bus_handlers() above bound ~35 handlers directly via
         # self.bus.on() (not add_event(), since OCPMediaPlayer is not an
         # OVOSSkill) — remove exactly what was registered so a shut-down
         # player stops answering ping/status/search/like/etc.
@@ -1784,7 +1782,7 @@ class OCPMediaPlayer:
         if not isinstance(state, MediaState):
             raise ValueError(f"Expected int or MediaState, but got: {state}")
 
-        # W3: this is the SOLE subscriber to 'ovos.common_play.media.state'.
+        # this is the SOLE subscriber to 'ovos.common_play.media.state'.
         # The compare-and-set below plus the end-of-media capture happen under
         # one lock, so two concurrent END_OF_MEDIA events can only ever advance
         # the queue once. Nothing that can re-enter the player (autoplay, GUI
@@ -1820,7 +1818,7 @@ class OCPMediaPlayer:
         elif invalid:
             self.handle_invalid_media(message)
             if self.ocp_config.get("autoplay", True):
-                # W3: go through the delayed on_invalid_stream() path rather
+                # go through the delayed on_invalid_stream() path rather
                 # than calling play_next() inline — an inline call recursed
                 # straight back into play() and, with a permanently failing
                 # backend, spun without bound.
@@ -1843,9 +1841,8 @@ class OCPMediaPlayer:
         # does not talk over itself
         if not self._track_failed_spoken:
             self._track_failed_spoken = True
-            # FOLLOW-UP (certification round, item 6): same default-session
-            # gap as queue.finished above — see that comment. INVALID_MEDIA
-            # carries no session either.
+            # Same default-session gap as queue.finished above — see that
+            # comment. INVALID_MEDIA carries no session either.
             try:
                 self.media.speak_dialog("track.failed")
             except Exception as e:
@@ -1869,7 +1866,7 @@ class OCPMediaPlayer:
             stop_requested = self._stop_requested
 
         if stop_requested:
-            # W3: an explicit stop must never advance the queue. OPM backends
+            # an explicit stop must never advance the queue. OPM backends
             # emit END_OF_MEDIA from ocp_stop(), so both the API path
             # (OCPMediaPlayer.stop) and the external path
             # ('ovos.{ns}.service.stop') land here.
@@ -1943,7 +1940,7 @@ class OCPMediaPlayer:
 
         # from audio player GUI
         position = message.data.get("seekValue")
-        # F5: `seekValue: 0` (seek to the very start) is falsy, so `if not
+        # `seekValue: 0` (seek to the very start) is falsy, so `if not
         # position` misread it as "no seekValue given" and fell through to
         # the relative-seek path instead of seeking to 0.
         if position is None:
@@ -2006,7 +2003,7 @@ class OCPMediaPlayer:
 
     @require_default_session()
     def handle_playlist_set_request(self, message):
-        # F6: validate (and default to []) BEFORE clearing the existing
+        # validate (and default to []) BEFORE clearing the existing
         # playlist — the old code cleared first and then KeyError'd on a
         # missing 'tracks' key inside handle_playlist_queue_request, leaving
         # the player with an empty playlist for no reason on a malformed

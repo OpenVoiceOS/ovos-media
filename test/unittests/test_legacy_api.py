@@ -56,7 +56,7 @@ class TestLegacyPlayTranslation(unittest.TestCase):
         self.assertEqual(len(received[0].data["playlist"]), 2)
 
     def test_play_carries_utterance_through(self):
-        """C2: legacy 'utterance' field (used for by-name backend selection)
+        """Legacy 'utterance' field (used for by-name backend selection)
         must survive translation into ovos.common_play.play."""
         compat, bus, player = _make_compat()
         received = []

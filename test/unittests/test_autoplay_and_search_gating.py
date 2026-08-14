@@ -1,42 +1,38 @@
-"""Regression tests for defects found during the 2026-08 wave-2 audit.
+"""Regression tests pinning autoplay, seek, playlist, and search-gating behavior.
 
-F1: NowPlaying (constructed BEFORE OCPMediaPlayer.register_bus_handlers)
-    resets playback -> PlaybackType.UNDEFINED on END_OF_MEDIA before
+NowPlaying (constructed BEFORE OCPMediaPlayer.register_bus_handlers) must not
+    reset playback -> PlaybackType.UNDEFINED on END_OF_MEDIA before
     OCPMediaPlayer.handle_playback_ended gets to check what was playing
     (both are subscribed to 'ovos.common_play.media.state'; NowPlaying's
     handler fires first purely because it was registered first) — autoplay
-    never ran because the UNDEFINED check always tripped.
-C1: handle_player_media_update's `if state == self.media_state: return`
-    dedup guard swallowed the SECOND consecutive INVALID_MEDIA in a bad-track
-    skip chain, wedging the player mid-PLAYING instead of skipping through
-    every unplayable track.
-F3: end of queue (repeat off) left the player state untouched instead of
-    transitioning to STOPPED.
-F2/C3: the GUI now_playing payload was missing 'position' (a plain
-    NowPlaying attribute, not a MediaEntry dataclass field) and reported
-    'length' instead of the 'duration' key the seekbar contract expects.
-F4: NowPlaying.reset() did not clear uri/original_uri, and
-    OCPMediaPlayer.reset() used a bare `self.state = ...` assignment that
-    never reached the GUI.
-F5: handle_seek_request treated `seekValue: 0` as "no seekValue given"
-    (falsy) and fell through to the relative-seek path.
-F6: handle_playlist_set_request cleared the playlist before validating
-    'tracks', so a malformed/absent 'tracks' key KeyError'd with the
-    playlist already wiped.
-F7/F8: 'ovos.common_play.search.start' was handled by both
-    OCPMediaPlayer.handle_search_start (ungated) and
-    MediaService.handle_search_start (also ungated, now deleted), double
-    pushing the GUI "loading" state, including for non-default sessions.
-C4: switching playback type (eg. VIDEO -> AUDIO) left the previous
-    BaseMediaService's `current` set, so a later stray LOADED_MEDIA event
-    could revive it and run two backends at once.
-C6: BaseMediaService.handle_play only ever looked at tracks[0], silently
-    dropping the rest of the tracklist and `repeat`; `tracks=[[]]` raised
-    an uncaught IndexError.
+    must still run despite that ordering.
+handle_player_media_update's `if state == self.media_state: return`
+    dedup guard must not swallow a SECOND consecutive INVALID_MEDIA in a
+    bad-track skip chain — the player must skip through every unplayable
+    track instead of wedging mid-PLAYING.
+End of queue (repeat off) must transition the player state to STOPPED.
+The GUI now_playing payload must include 'position' (a plain NowPlaying
+    attribute, not a MediaEntry dataclass field) and report the 'duration'
+    key the seekbar contract expects, not 'length'.
+NowPlaying.reset() must clear uri/original_uri, and OCPMediaPlayer.reset()
+    must reach the GUI (not just set `self.state = ...` internally).
+handle_seek_request must treat `seekValue: 0` as an absolute seek, not as
+    "no seekValue given" (falsy) that falls through to the relative-seek path.
+handle_playlist_set_request must validate 'tracks' before clearing the
+    existing playlist, so a malformed/absent 'tracks' key does not KeyError
+    with the playlist already wiped.
+'ovos.common_play.search.start' must be handled exactly once — solely by
+    OCPMediaPlayer.handle_search_start, session-gated — not double-pushing
+    the GUI "loading" state, including for non-default sessions.
+Switching playback type (eg. VIDEO -> AUDIO) must clear the previous
+    BaseMediaService's `current`, so a later stray LOADED_MEDIA event cannot
+    revive it and run two backends at once.
+BaseMediaService.handle_play must consume the full tracklist and `repeat`,
+    not just tracks[0]; `tracks=[[]]` must not raise an uncaught IndexError.
 
-CRITICAL: the F1/C1 tests drive their scenario entirely through
-bus.emit()/FakeBus — calling the handler methods directly was the
-false-green mechanism that let both defects through the first audit wave.
+The autoplay-chain and invalid-media-skip-chain tests drive their scenario
+entirely through bus.emit()/FakeBus rather than calling the handler methods
+directly, since only the real dispatch order can expose those two behaviors.
 """
 import threading
 import time
@@ -58,8 +54,8 @@ def _track(uri, title, playback=PlaybackType.AUDIO):
     return MediaEntry(uri=uri, title=title, playback=playback)
 
 
-class TestF1AutoplayChain(unittest.TestCase):
-    """F1: a 2-track playlist must advance to track 2 on END_OF_MEDIA,
+class TestAutoplayChain(unittest.TestCase):
+    """A 2-track playlist must advance to track 2 on END_OF_MEDIA,
     driven entirely through bus.emit on a FakeBus."""
 
     def test_end_of_media_advances_to_next_track_via_bus(self):
@@ -85,8 +81,8 @@ class TestF1AutoplayChain(unittest.TestCase):
         self.assertEqual(player.now_playing.title, "Track B")
 
 
-class TestC1InvalidMediaSkipChain(unittest.TestCase):
-    """C1: three unplayable tracks in a row must ALL be attempted, and the
+class TestInvalidMediaSkipChain(unittest.TestCase):
+    """Three unplayable tracks in a row must ALL be attempted, and the
     player must end up in a sane (not silently-wedged-PLAYING) state.
     Driven entirely through bus.emit on a FakeBus."""
 
@@ -99,7 +95,7 @@ class TestC1InvalidMediaSkipChain(unittest.TestCase):
         # synchronously emits INVALID_MEDIA (BaseMediaService.play(), "no
         # service found for uri_type")
         player.audio_service.services = []
-        # W3: the skip-to-next-track retry is now deferred (on_invalid_stream)
+        # The skip-to-next-track retry is deferred (on_invalid_stream)
         # instead of recursing inline, so shorten the delay and wait for the
         # chain rather than expecting it to complete inside bus.emit().
         player.invalid_stream_delay = 0.01
@@ -143,14 +139,14 @@ class TestC1InvalidMediaSkipChain(unittest.TestCase):
                          f"expected all 3 unplayable tracks to be attempted, "
                          f"got {invalid_count} INVALID_MEDIA events: "
                          f"{invalid_media_events}")
-        # F3: exhausting the queue (repeat off) must transition player
+        # Exhausting the queue (repeat off) must transition player
         # state instead of leaving it wedged at whatever it was.
         self.assertIn(PlayerState.STOPPED, player_state_events,
                       "expected a STOPPED transition once the queue of "
                       "unplayable tracks was exhausted")
 
 
-class TestF3EndOfQueueStops(unittest.TestCase):
+class TestEndOfQueueStops(unittest.TestCase):
     def test_play_next_at_end_of_queue_sets_stopped(self):
         from ovos_media.player import OCPMediaPlayer
 
@@ -167,7 +163,7 @@ class TestF3EndOfQueueStops(unittest.TestCase):
         self.assertEqual(player.state, PlayerState.STOPPED)
 
 
-class TestF2GuiSeekbarPayload(unittest.TestCase):
+class TestGuiSeekbarPayload(unittest.TestCase):
     def test_update_gui_includes_position_and_duration(self):
         from ovos_media.player import OCPMediaPlayer
 
@@ -191,7 +187,7 @@ class TestF2GuiSeekbarPayload(unittest.TestCase):
         self.assertEqual(np["length"], 90000)
 
 
-class TestF4ResetClearsZombieEntry(unittest.TestCase):
+class TestResetClearsZombieEntry(unittest.TestCase):
     def test_stop_then_reset_clears_now_playing_uri_and_pushes_gui(self):
         from ovos_media.player import OCPMediaPlayer
 
@@ -213,7 +209,7 @@ class TestF4ResetClearsZombieEntry(unittest.TestCase):
                           "(zombie now_playing entry)")
 
 
-class TestF5SeekZeroIsAbsolute(unittest.TestCase):
+class TestSeekZeroIsAbsolute(unittest.TestCase):
     def test_seek_value_zero_seeks_to_start(self):
         from ovos_media.player import OCPMediaPlayer
 
@@ -233,7 +229,7 @@ class TestF5SeekZeroIsAbsolute(unittest.TestCase):
         mock_seek.assert_called_once_with(0)
 
 
-class TestF6PlaylistSetMissingTracks(unittest.TestCase):
+class TestPlaylistSetMissingTracks(unittest.TestCase):
     def test_playlist_set_without_tracks_key_does_not_raise_and_clears(self):
         from ovos_media.player import OCPMediaPlayer
 
@@ -243,9 +239,8 @@ class TestF6PlaylistSetMissingTracks(unittest.TestCase):
         player.playlist.add_entry(t1)
         self.assertEqual(len(player.playlist), 1)
 
-        # call the handler directly (not F1/C1 — not exempt from that rule)
-        # so a KeyError raised inside is not silently swallowed by
-        # bus.emit()'s own try/except, which would mask the defect.
+        # Call the handler directly, bypassing bus.emit()'s own try/except,
+        # so a KeyError raised inside is not silently swallowed.
         try:
             player.handle_playlist_set_request(
                 Message("ovos.common_play.playlist.set", {}))
@@ -271,7 +266,7 @@ class TestF6PlaylistSetMissingTracks(unittest.TestCase):
         self.assertEqual(player.playlist[0].uri, new_track.uri)
 
 
-class TestF7F8SearchStartSessionGating(unittest.TestCase):
+class TestSearchStartSessionGating(unittest.TestCase):
     def test_named_session_search_start_pushes_no_gui_update(self):
         from ovos_media.player import OCPMediaPlayer
         from ovos_bus_client.session import Session
@@ -311,7 +306,7 @@ class TestF7F8SearchStartSessionGating(unittest.TestCase):
             service.shutdown()
 
 
-class TestC4PlaybackTypeSwitchStopsOtherBackend(unittest.TestCase):
+class TestPlaybackTypeSwitchStopsOtherBackend(unittest.TestCase):
     def test_switching_video_to_audio_clears_video_backend_current(self):
         from ovos_media.player import OCPMediaPlayer
 
@@ -335,7 +330,7 @@ class TestC4PlaybackTypeSwitchStopsOtherBackend(unittest.TestCase):
                           "backend's `current`, not just leave it dangling")
 
 
-class TestC6TracklistAndRepeat(unittest.TestCase):
+class TestTracklistAndRepeat(unittest.TestCase):
     def _make_service(self):
         from ovos_media.media_backends.base import BaseMediaService
         svc = BaseMediaService.__new__(BaseMediaService)
@@ -393,7 +388,7 @@ class TestC6TracklistAndRepeat(unittest.TestCase):
         svc = self._make_service()
         svc._pending_playlist = ["http://example.com/b.mp3"]
         svc._last_full_playlist = ["http://example.com/a.mp3", "http://example.com/b.mp3"]
-        # W3: the internal advance goes through _play, which (unlike the
+        # The internal advance goes through _play, which (unlike the
         # public play()) preserves the pending tracklist it is consuming.
         with patch.object(svc, "_play") as mock_play:
             svc.track_start(None)
