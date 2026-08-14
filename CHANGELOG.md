@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.12a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.12a1) (2026-08-14)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.11a1...0.4.12a1)
+
+**Merged pull requests:**
+
+- fix: shuffled playback actually plays, mpris reflection always constructs, playlist.set validates first [\#117](https://github.com/OpenVoiceOS/ovos-media/pull/117) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.11a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.11a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.10a1...0.4.11a1)
