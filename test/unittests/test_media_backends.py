@@ -298,6 +298,8 @@ class _FullFakeBackend:
         self.stopped = False
         self.ocp_paused = False
         self.ocp_resumed = False
+        self.pause_calls = 0
+        self.resume_calls = 0
         self.ocp_stopped = False
         self.volume_lowered = False
         self.volume_restored = False
@@ -323,15 +325,23 @@ class _FullFakeBackend:
 
     def pause(self):
         self.paused = True
+        self.pause_calls += 1
 
     def resume(self):
         self.resumed = True
+        self.resume_calls += 1
 
     def ocp_pause(self):
+        # mirrors the real ovos_plugin_manager MediaBackend template, which
+        # emits the PAUSED TrackState and then calls self.pause() once
         self.ocp_paused = True
+        self.pause()
 
     def ocp_resume(self):
+        # mirrors the real template, which emits state events then calls
+        # self.resume() once
         self.ocp_resumed = True
+        self.resume()
 
     def ocp_stop(self):
         self.ocp_stopped = True
@@ -549,26 +559,36 @@ class TestPlay(unittest.TestCase):
 
 class TestPauseResume(unittest.TestCase):
 
-    def test_pause_calls_current_pause_and_ocp_pause(self):
+    def test_pause_calls_backend_pause_exactly_once(self):
+        # Regression: BaseMediaService.pause() used to call both
+        # self.current.pause() AND self.current.ocp_pause(), and
+        # ocp_pause() itself calls pause() again — double-invoking a
+        # single bus-level pause request. A toggling backend pause command
+        # would end up NOT paused. Only ocp_pause() should be called here,
+        # which performs the pause exactly once.
         svc, bus = _make_base_svc()
         b = _FullFakeBackend(uris=["http"], name="vlc")
         svc.current = b
         svc.pause()
         self.assertTrue(b.paused)
         self.assertTrue(b.ocp_paused)
+        self.assertEqual(b.pause_calls, 1)
 
     def test_pause_no_current_does_nothing(self):
         svc, bus = _make_base_svc()
         # must not raise
         svc.pause()
 
-    def test_resume_calls_current_resume_and_ocp_resume(self):
+    def test_resume_calls_backend_resume_exactly_once(self):
+        # Regression: symmetric to the pause case above — resume() must
+        # invoke the backend's resume() exactly once per bus request.
         svc, bus = _make_base_svc()
         b = _FullFakeBackend(uris=["http"], name="vlc")
         svc.current = b
         svc.resume()
         self.assertTrue(b.resumed)
         self.assertTrue(b.ocp_resumed)
+        self.assertEqual(b.resume_calls, 1)
 
     def test_resume_no_current_does_nothing(self):
         svc, bus = _make_base_svc()
@@ -1065,6 +1085,98 @@ class TestPluginLoadingExceptionHandling(unittest.TestCase):
         # must not raise
         svc.load_services()
         self.assertEqual(svc.services, [])
+
+
+class _TogglingRealTemplateBackend:
+    """Real ovos_plugin_manager MediaBackend subclass whose pause command
+    toggles a single paused flag, as many real subprocess/IPC-wrapper
+    backends do (e.g. mpv/vlc "cycle pause"). Only pause()/resume() and
+    the abstract methods are implemented; ocp_pause()/ocp_resume()/ocp_stop()
+    are inherited UNMODIFIED from the real template."""
+
+    def __new__(cls, *a, **kw):
+        from ovos_plugin_manager.templates.media import MediaBackend
+
+        # build a real dynamic subclass so we exercise the actual
+        # ocp_pause/ocp_resume implementations, not a hand-rolled fake
+        class _Backend(MediaBackend):
+            def __init__(self, config=None, bus=None):
+                super().__init__(config, bus)
+                self.paused = False
+                self.pause_calls = 0
+                self.resume_calls = 0
+
+            def pause(self):
+                self.pause_calls += 1
+                self.paused = not self.paused  # toggling backend
+
+            def resume(self):
+                self.resume_calls += 1
+                self.paused = not self.paused  # toggling backend
+
+            def supported_uris(self):
+                return ["http"]
+
+            def play(self, repeat=False):
+                pass
+
+            def stop(self):
+                self._now_playing = None
+                return True
+
+            def lower_volume(self):
+                pass
+
+            def restore_volume(self):
+                pass
+
+            def get_track_length(self):
+                return 0
+
+            def get_track_position(self):
+                return 0
+
+            def set_track_position(self, milliseconds):
+                pass
+
+        return _Backend(*a, **kw)
+
+
+class TestPauseResumeRealTemplateIntegration(unittest.TestCase):
+    """Integration-grade regression test: exercises the REAL
+    ovos_plugin_manager.templates.media.MediaBackend ocp_pause()/
+    ocp_resume() implementations (not mocked/stubbed), driven through
+    BaseMediaService.pause()/resume().
+
+    Before the fix, BaseMediaService.pause() called both
+    self.current.pause() AND self.current.ocp_pause() — and ocp_pause()
+    itself calls self.pause() again — so a single bus-level pause request
+    invoked the backend's pause() TWICE. A backend whose pause command
+    toggles (common for subprocess/IPC wrappers) would end up NOT paused.
+    """
+
+    def test_single_bus_pause_invokes_backend_pause_exactly_once(self):
+        svc, bus = _make_base_svc()
+        b = _TogglingRealTemplateBackend()
+        b.load_track("http://example.com/track.mp3")  # sets _now_playing
+        svc.current = b
+
+        svc.pause()
+
+        self.assertEqual(b.pause_calls, 1)
+        self.assertTrue(b.paused)  # toggled exactly once -> paused
+
+    def test_single_bus_resume_invokes_backend_resume_exactly_once(self):
+        svc, bus = _make_base_svc()
+        b = _TogglingRealTemplateBackend()
+        b.load_track("http://example.com/track.mp3")
+        svc.current = b
+        b.paused = True  # start paused
+
+        svc.resume()
+
+        self.assertEqual(b.resume_calls, 1)
+        self.assertFalse(b.paused)  # toggled exactly once -> unpaused
 
 
 if __name__ == "__main__":
