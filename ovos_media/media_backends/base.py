@@ -252,7 +252,14 @@ class BaseMediaService:
         if preferred:
             return list(preferred)
         # no preference configured -> fall back to all loaded backends
-        return [s.name for s in self.services]
+        names = []
+        for s in self.services:
+            try:
+                names.append(s.name)
+            except Exception as e:
+                LOG.exception(f"Failed to get name for backend "
+                              f"{s.__class__.__name__}: {e}")
+        return names
 
     def handle_media_state_change(self, message: Message):
         """

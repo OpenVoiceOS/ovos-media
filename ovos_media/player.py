@@ -5,6 +5,7 @@ import time
 from os.path import join, dirname
 from threading import RLock
 from typing import List, Optional, Union
+from collections.abc import Iterable
 
 from json_database import JsonStorageXDG
 
@@ -317,6 +318,20 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
                    for uri, song in items]
         return sorted(entries, key=lambda e: e.match_confidence, reverse=True)
 
+    @staticmethod
+    def _flatten_media_types(value) -> list:
+        # a skill can announce media_types as a set/tuple/dict_keys/generator,
+        # or nest any of those inside a list - wrapping such a value as
+        # [value] would make membership checks like "MediaType.ADULT in
+        # media_types" always False regardless of contents, so flatten any
+        # non-scalar iterable recursively into one flat list of members
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            return [value]
+        flat = []
+        for item in value:
+            flat.extend(OCPMediaCatalog._flatten_media_types(item))
+        return flat
+
     def handle_skill_announce(self, message):
         skill_id = message.data.get("skill_id")
         skill_name = message.data.get("skill_name") or skill_id
@@ -325,17 +340,7 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         media_types = message.data.get("media_types") or \
                       message.data.get("media_type") or \
                       [MediaType.GENERIC]
-        if isinstance(media_types, (set, frozenset, tuple)):
-            # a skill announcing a set/tuple of media types must be
-            # flattened to a list of members - wrapping it as [the_set]
-            # would make membership checks like "MediaType.ADULT in
-            # media_types" always False regardless of contents
-            media_types = list(media_types)
-        elif not isinstance(media_types, list):
-            # a skill announcing the singular "media_type" key sends a bare
-            # scalar (eg. an int); normalize to a container so downstream
-            # "in media_types" membership checks don't blow up
-            media_types = [media_types]
+        media_types = self._flatten_media_types(media_types)
 
         if skill_id not in self.ocp_skills:
             LOG.debug(f"Registered {skill_id}")

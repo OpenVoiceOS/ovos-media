@@ -95,6 +95,38 @@ class TestLegacyPlayTranslation(unittest.TestCase):
         bus.emit(Message("mycroft.audio.service.play", {"tracks": []}))
         self.assertEqual(len(received), 0)
 
+    def test_play_with_all_malformed_tracks_does_not_emit_or_raise(self):
+        """A non-empty tracks list whose every entry is malformed converts
+        to zero entries; handle_play must degrade gracefully (no emit) not
+        raise IndexError while indexing entries[0]. Calls handle_play
+        directly (not via bus.emit) so the IndexError isn't swallowed by
+        FakeBus's own exception handling around dispatch."""
+        compat, bus, player = _make_compat()
+        received = []
+        bus.on("ovos.common_play.play", lambda m: received.append(m))
+
+        from ovos_bus_client.message import Message
+        msg = Message("mycroft.audio.service.play", {
+            "tracks": [None, 123, {}, ""],
+        })
+        compat.handle_play(msg)  # must not raise IndexError
+
+        self.assertEqual(len(received), 0)
+
+    def test_play_with_one_valid_track_among_garbage_still_plays(self):
+        compat, bus, player = _make_compat()
+        received = []
+        bus.on("ovos.common_play.play", lambda m: received.append(m))
+
+        from ovos_bus_client.message import Message
+        bus.emit(Message("mycroft.audio.service.play", {
+            "tracks": [None, "http://example.com/track.mp3", {}],
+        }))
+
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0].data["media"]["uri"],
+                         "http://example.com/track.mp3")
+
     def test_play_passes_repeat_flag(self):
         compat, bus, player = _make_compat()
         received = []
