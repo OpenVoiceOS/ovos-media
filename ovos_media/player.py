@@ -1272,8 +1272,13 @@ class OCPMediaPlayer:
             return None
         for name in preferred_names:
             for backend in media_service.services:
-                if backend.name == name or name in getattr(backend, "aliases", []):
-                    return backend
+                try:
+                    if backend.name == name or name in getattr(backend, "aliases", []):
+                        return backend
+                except Exception as e:
+                    LOG.exception(f"Failed to check backend {backend} against "
+                                  f"preferred name {name!r}: {e}")
+                    continue
         return None
 
     # stream handling
@@ -1363,7 +1368,12 @@ class OCPMediaPlayer:
         @param playlist: list of tracks in the current playlist
         """
         if isinstance(track, dict):
-            track = MediaEntry.from_dict(track)
+            try:
+                track = MediaEntry.from_dict(track)
+            except Exception as e:
+                LOG.warning(f"Ignoring play request, track can not be "
+                            f"represented as a valid media entry: {e}")
+                return
             LOG.debug(f"deserialized: {track}")
 
         if isinstance(track, Playlist):
@@ -1389,11 +1399,14 @@ class OCPMediaPlayer:
                 LOG.exception(f"Failed to speak no.playback.backend dialog: {e}")
 
         if disambiguation:
-            self.media.search_playlist.replace([t for t in disambiguation
+            valid_disambiguation = self._validated_entries(disambiguation)
+            self.media.search_playlist.replace([t for t in valid_disambiguation
                                                 if t not in self.media.search_playlist])
             self.media.search_playlist.sort_by_conf()
         if playlist:
-            self.playlist.replace(playlist)
+            valid_playlist = self._validated_entries(playlist)
+            if valid_playlist:
+                self.playlist.replace(valid_playlist)
         if track in self.playlist:
             self.playlist.goto_track(track)
         self.set_now_playing(track)
