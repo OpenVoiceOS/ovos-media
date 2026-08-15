@@ -544,8 +544,13 @@ class NowPlaying(MediaEntry):
             media = playlist[0]
         else:
             media = message.data.get("media", {})
-        if media:
-            self.update(media, newonly=False)
+        if not media:
+            return
+        if not isinstance(media, dict):
+            LOG.warning(f"ignoring '{message.msg_type}' now_playing update, "
+                        f"expected a dict track, got: {media!r}")
+            return
+        self.update(media, newonly=False)
 
     # events from media services
     def handle_track_state_change(self, message):
@@ -1379,8 +1384,16 @@ class OCPMediaPlayer:
         if isinstance(track, Playlist):
             playlist = track
             track = track[0]
-        elif not isinstance(track, MediaEntry):
-            raise TypeError(f"Expected MediaEntry, got: {track}")
+        elif not isinstance(track, (MediaEntry, PluginStream)):
+            LOG.warning(f"Ignoring play request, track can not be "
+                        f"represented as a valid media entry: {track!r}")
+            return
+        if isinstance(track, PluginStream):
+            # set_now_playing/playlist machinery only understand MediaEntry;
+            # as_media_entry maps extractor_id/stream onto uri the same way
+            # PluginStream.extract_uri does, so extract_stream() resolves it
+            # via the same stream_xtract call later on.
+            track = track.as_media_entry
 
         if self.mpris:
             self.mpris.stop()
@@ -1400,9 +1413,10 @@ class OCPMediaPlayer:
 
         if disambiguation:
             valid_disambiguation = self._validated_entries(disambiguation)
-            self.media.search_playlist.replace([t for t in valid_disambiguation
-                                                if t not in self.media.search_playlist])
-            self.media.search_playlist.sort_by_conf()
+            if valid_disambiguation:
+                self.media.search_playlist.replace([t for t in valid_disambiguation
+                                                    if t not in self.media.search_playlist])
+                self.media.search_playlist.sort_by_conf()
         if playlist:
             valid_playlist = self._validated_entries(playlist)
             if valid_playlist:
