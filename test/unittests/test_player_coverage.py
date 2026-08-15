@@ -388,6 +388,16 @@ class TestNowPlayingInit(unittest.TestCase):
         np.handle_external_play(msg)
         self.assertEqual(np.title, "Track 0")
 
+    def test_handle_external_play_old_style_tracks_non_dict_entry_ignored(self):
+        """A non-dict entry in an old-style 'tracks' list (eg. a bare str)
+        must be skipped with a warning, not raise AttributeError out of the
+        raw bus handler."""
+        np, _ = self._make_now_playing()
+        np.title = "unchanged"
+        msg = Message("ovos.common_play.play", {"tracks": ["not-a-dict"]})
+        np.handle_external_play(msg)  # must not raise
+        self.assertEqual(np.title, "unchanged")
+
     def test_handle_track_state_change_updates_status(self):
         np, _ = self._make_now_playing()
         msg = Message("ovos.common_play.track.state",
@@ -884,10 +894,15 @@ class TestPlayMedia(unittest.TestCase):
         p.play_media(track_dict)
         p.play.assert_called_once()
 
-    def test_play_media_raises_on_invalid_type(self):
+    def test_play_media_invalid_type_warns_and_returns_without_raising(self):
+        # play_media is bus-facing; an unrepresentable track type must not
+        # raise out of the handler, just be logged and skipped.
         p = _make_player()
-        with self.assertRaises(TypeError):
-            p.play_media(12345)
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+        p.play_media(12345)  # must not raise
+        p.set_now_playing.assert_not_called()
+        p.play.assert_not_called()
 
     def test_play_media_stops_mpris(self):
         p = _make_player(PlaybackType.AUDIO)

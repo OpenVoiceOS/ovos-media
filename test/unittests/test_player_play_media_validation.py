@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from ovos_utils.fakebus import FakeBus
 from ovos_utils.ocp import (
     PlayerState, MediaState, LoopState, PlaybackType, MediaEntry, Playlist,
+    PluginStream,
 )
 
 
@@ -134,6 +135,54 @@ class TestPlayMediaValidPayloadStillPlays(unittest.TestCase):
                          [VALID_TRACK["uri"]])
         self.assertEqual([e.uri for e in p.playlist.entries],
                          [VALID_TRACK["uri"]])
+
+
+class TestPlayMediaAcceptsPluginStream(unittest.TestCase):
+
+    def test_plugin_stream_shaped_track_reaches_set_now_playing(self):
+        """A valid PluginStream-shaped dict (extractor_id+stream, no uri) is
+        deserialized by MediaEntry.from_dict's dict2entry fallback into a
+        PluginStream, which is a legitimate single-track play request and
+        must not raise."""
+        p = _make_player()
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+
+        track = {"extractor_id": "ocp_youtube", "stream": "abc123",
+                 "title": "Plugin Track"}
+        p.play_media(track)  # must not raise
+
+        p.set_now_playing.assert_called_once()
+        played = p.set_now_playing.call_args[0][0]
+        self.assertIsInstance(played, MediaEntry)
+        p.play.assert_called_once()
+
+    def test_unrepresentable_track_warns_and_returns_without_mutation(self):
+        p = _make_player()
+        p.playlist.add_entry(MediaEntry.from_dict(VALID_TRACK_2))
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+
+        p.play_media(42)  # not a dict, MediaEntry, or PluginStream
+
+        p.set_now_playing.assert_not_called()
+        p.play.assert_not_called()
+        self.assertEqual([e.uri for e in p.playlist.entries],
+                         [VALID_TRACK_2["uri"]])
+
+
+class TestPlayMediaAllInvalidDisambiguationKeepsPriorResults(unittest.TestCase):
+
+    def test_all_invalid_disambiguation_leaves_prior_search_playlist_intact(self):
+        p = _make_player()
+        p.media.search_playlist.add_entry(MediaEntry.from_dict(VALID_TRACK_2))
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+
+        p.play_media(VALID_TRACK, disambiguation=[None, 42, "str"])
+
+        self.assertEqual([e.uri for e in p.media.search_playlist.entries],
+                         [VALID_TRACK_2["uri"]])
 
 
 if __name__ == "__main__":
