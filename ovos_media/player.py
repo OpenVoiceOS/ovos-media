@@ -540,8 +540,12 @@ class NowPlaying(MediaEntry):
             return
         if message.data.get("tracks"):
             # backwards compat / old style
-            playlist = message.data["tracks"]
-            media = playlist[0]
+            tracks = message.data["tracks"]
+            if not isinstance(tracks, (list, tuple)):
+                LOG.warning(f"ignoring '{message.msg_type}' now_playing update, "
+                            f"expected a list of tracks, got: {type(tracks)}")
+                return
+            media = tracks[0]
         else:
             media = message.data.get("media", {})
         if not media:
