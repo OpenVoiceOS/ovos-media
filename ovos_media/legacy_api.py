@@ -165,6 +165,9 @@ class LegacyAudioServiceCompat:
             return
 
         entries = _tracks_to_entries(tracks)
+        if not entries:
+            LOG.warning("mycroft.audio.service.play: no valid tracks in request")
+            return
         media = entries[0]
         playlist = entries
 

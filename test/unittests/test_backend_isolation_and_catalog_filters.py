@@ -87,6 +87,36 @@ class TestAdultFilterBypass(unittest.TestCase):
         skills = cat.get_featured_skills(adult=False)
         self.assertNotIn("list.skill", [s["skill_id"] for s in skills])
 
+    def test_dict_keys_containing_adult_is_excluded_from_featured_skills(self):
+        cat, bus = _make_catalog()
+        d = {MediaType.ADULT: True, MediaType.MUSIC: True}
+        self._announce(cat, "dictkeys.skill", d.keys())
+        skills = cat.get_featured_skills(adult=False)
+        self.assertNotIn("dictkeys.skill", [s["skill_id"] for s in skills])
+
+    def test_generator_yielding_adult_is_excluded_from_featured_skills(self):
+        cat, bus = _make_catalog()
+
+        def gen():
+            yield MediaType.ADULT
+            yield MediaType.MUSIC
+
+        self._announce(cat, "gen.skill", gen())
+        skills = cat.get_featured_skills(adult=False)
+        self.assertNotIn("gen.skill", [s["skill_id"] for s in skills])
+
+    def test_nested_list_of_set_containing_adult_is_excluded_from_featured_skills(self):
+        cat, bus = _make_catalog()
+        self._announce(cat, "nested.skill", [{MediaType.ADULT}])
+        skills = cat.get_featured_skills(adult=False)
+        self.assertNotIn("nested.skill", [s["skill_id"] for s in skills])
+
+    def test_flat_list_without_adult_is_included(self):
+        cat, bus = _make_catalog()
+        self._announce(cat, "safe.skill", [MediaType.MUSIC, MediaType.PODCAST])
+        skills = cat.get_featured_skills(adult=False)
+        self.assertIn("safe.skill", [s["skill_id"] for s in skills])
+
 
 # ---------------------------------------------------------------------------
 # _safe_supported_uris / available_backends
@@ -178,6 +208,23 @@ class TestAvailableBackendsToleratesRaisingService(unittest.TestCase):
         result = svc.available_backends()
         self.assertIn("good", result)
         self.assertEqual(len(result), 1)
+
+
+class TestGetPreferredPlayersToleratesRaisingService(unittest.TestCase):
+
+    def test_name_raising_backend_is_skipped_not_fatal(self):
+        raiser = _NameRaisesBackend()
+        good = _ListUriBackend(name="good", uris=["http"])
+        svc, bus = _make_base_svc(services=[raiser, good])
+        result = svc.get_preferred_players()
+        self.assertEqual(result, ["good"])
+
+    def test_all_good_backends_are_all_returned(self):
+        a = _ListUriBackend(name="a", uris=["http"])
+        b = _ListUriBackend(name="b", uris=["http"])
+        svc, bus = _make_base_svc(services=[a, b])
+        result = svc.get_preferred_players()
+        self.assertEqual(set(result), {"a", "b"})
 
 
 # ---------------------------------------------------------------------------
