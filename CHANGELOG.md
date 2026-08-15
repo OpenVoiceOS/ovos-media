@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.24a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.24a1) (2026-08-15)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.23a1...0.4.24a1)
+
+**Merged pull requests:**
+
+- fix: guard preferred-backend matching and validate play\_media payloads before mutation [\#143](https://github.com/OpenVoiceOS/ovos-media/pull/143) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.23a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.23a1) (2026-08-15)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.22a1...0.4.23a1)
@@ -203,19 +211,19 @@
 
 ## [0.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.0a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.4.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.4.0a1)
 
 **Merged pull requests:**
 
 - feat: now-playing voice intents \(WhatSong/WhatAlbum/WhatArtist\) + shuffle on/off [\#90](https://github.com/OpenVoiceOS/ovos-media/pull/90) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.3.4a1)
-
 ## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.3.3a5)
+
+## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.4a1)
 
 **Merged pull requests:**
 
@@ -449,10 +457,6 @@
 ## [V0.0.1a13](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a13) (2024-02-02)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a12...V0.0.1a13)
-
-**Merged pull requests:**
-
-- gui fixes [\#11](https://github.com/OpenVoiceOS/ovos-media/pull/11) ([NeonJarbas](https://github.com/NeonJarbas))
 
 ## [V0.0.1a12](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a12) (2024-02-02)
 
