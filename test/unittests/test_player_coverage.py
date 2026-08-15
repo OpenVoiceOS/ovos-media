@@ -398,6 +398,35 @@ class TestNowPlayingInit(unittest.TestCase):
         np.handle_external_play(msg)  # must not raise
         self.assertEqual(np.title, "unchanged")
 
+    def test_handle_external_play_dict_tracks_ignored(self):
+        """An old-style 'tracks' value that is a dict (not a list/tuple)
+        must be rejected before indexing, not raise KeyError out of the
+        raw bus handler."""
+        np, _ = self._make_now_playing()
+        np.title = "unchanged"
+        msg = Message("ovos.common_play.play", {"tracks": {"a": 1}})
+        np.handle_external_play(msg)  # must not raise
+        self.assertEqual(np.title, "unchanged")
+
+    def test_handle_external_play_set_tracks_ignored(self):
+        """An old-style 'tracks' value that is a set (not subscriptable)
+        must be rejected before indexing, not raise TypeError out of the
+        raw bus handler."""
+        np, _ = self._make_now_playing()
+        np.title = "unchanged"
+        msg = Message("ovos.common_play.play", {"tracks": {1, 2}})
+        np.handle_external_play(msg)  # must not raise
+        self.assertEqual(np.title, "unchanged")
+
+    def test_handle_external_play_list_tracks_single_dict_still_updates(self):
+        """Control: a proper list of one valid dict track still updates."""
+        np, _ = self._make_now_playing()
+        msg = Message("ovos.common_play.play",
+                      {"tracks": [{"title": "List Track",
+                                   "uri": "http://example.com/lt.mp3"}]})
+        np.handle_external_play(msg)
+        self.assertEqual(np.title, "List Track")
+
     def test_handle_track_state_change_updates_status(self):
         np, _ = self._make_now_playing()
         msg = Message("ovos.common_play.track.state",

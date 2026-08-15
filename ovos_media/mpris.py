@@ -483,11 +483,12 @@ class OcpMprisExporter(Thread):
                 player_name = properties.bus_name
                 if player_name in self.ignored_players:
                     continue
+                meta = self.player_meta.setdefault(player_name, {})
                 if changed == "PlaybackStatus":
                     await self.handle_player_state(variant.value)
-                    state = self.player_meta[player_name].get("state")
+                    state = meta.get("state")
                     if state != variant.value or not state:
-                        self.player_meta[player_name]["state"] = variant.value
+                        meta["state"] = variant.value
                         await self.handle_sync_player(
                             {"state": variant.value,
                              "external_player": player_name})
@@ -498,7 +499,7 @@ class OcpMprisExporter(Thread):
                     if name == self.main_player:
                         self._update_ocp()
                 elif changed == "Shuffle":
-                    self.player_meta[player_name]["shuffle"] = variant.value
+                    meta["shuffle"] = variant.value
                     await self.handle_player_shuffle(variant.value)
                 elif changed == "LoopStatus":
                     if variant.value == "Track":
@@ -507,7 +508,7 @@ class OcpMprisExporter(Thread):
                         state = LoopState.REPEAT
                     else:
                         state = LoopState.NONE
-                    self.player_meta[player_name]["loop_state"] = state
+                    meta["loop_state"] = state
                     await self.handle_player_loop_state(state)
                 # else:
                 #    LOG.debug(f'{changed} - {variant.value}')
