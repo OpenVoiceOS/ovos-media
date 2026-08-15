@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.23a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.23a1) (2026-08-15)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.22a1...0.4.23a1)
+
+**Merged pull requests:**
+
+- fix: flatten nested/generator media\_types, guard backend name lookup, guard empty legacy play entries [\#141](https://github.com/OpenVoiceOS/ovos-media/pull/141) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.22a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.22a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.21a1...0.4.22a1)
@@ -453,10 +461,6 @@
 ## [V0.0.1a11](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a11) (2024-01-29)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a10...V0.0.1a11)
-
-**Implemented enhancements:**
-
-- feat/favorite\_tracks [\#10](https://github.com/OpenVoiceOS/ovos-media/pull/10) ([NeonJarbas](https://github.com/NeonJarbas))
 
 ## [V0.0.1a10](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a10) (2024-01-28)
 
