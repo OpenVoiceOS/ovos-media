@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.26a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.26a1) (2026-08-15)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.25a1...0.4.26a1)
+
+**Merged pull requests:**
+
+- fix: guard non-list tracks payload and populate player\_meta before mpris signal branches write to it [\#147](https://github.com/OpenVoiceOS/ovos-media/pull/147) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.25a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.25a1) (2026-08-15)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.24a1...0.4.25a1)
@@ -219,19 +227,19 @@
 
 ## [0.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.0a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.4.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.4.0a1)
 
 **Merged pull requests:**
 
 - feat: now-playing voice intents \(WhatSong/WhatAlbum/WhatArtist\) + shuffle on/off [\#90](https://github.com/OpenVoiceOS/ovos-media/pull/90) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.3.3a5)
-
 ## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.4a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.3.4a1)
+
+## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
 
 **Merged pull requests:**
 
@@ -433,10 +441,6 @@
 ## [V0.0.1a18](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a18) (2024-03-29)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a17...V0.0.1a18)
-
-**Merged pull requests:**
-
-- update player.py to avoid no keyword arguments error [\#13](https://github.com/OpenVoiceOS/ovos-media/pull/13) ([mike99mac](https://github.com/mike99mac))
 
 ## [V0.0.1a17](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a17) (2024-03-21)
 
