@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.25a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.25a1) (2026-08-15)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.24a1...0.4.25a1)
+
+**Merged pull requests:**
+
+- fix: guard external-play tracks and play\_media track types from crashing bus handlers [\#145](https://github.com/OpenVoiceOS/ovos-media/pull/145) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [0.4.24a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.24a1) (2026-08-15)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.23a1...0.4.24a1)
@@ -445,10 +453,6 @@
 ## [V0.0.1a15](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a15) (2024-02-07)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a14...V0.0.1a15)
-
-**Fixed bugs:**
-
-- handle malformed MPRIS xml [\#12](https://github.com/OpenVoiceOS/ovos-media/pull/12) ([NeonJarbas](https://github.com/NeonJarbas))
 
 ## [V0.0.1a14](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a14) (2024-02-02)
 
