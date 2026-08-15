@@ -103,3 +103,45 @@ class TestPropertiesChangedBeforeMetaExists(unittest.IsolatedAsyncioTestCase):
                         {"PlaybackStatus": _Variant("Playing")}, [])
 
         self.assertEqual(ctl.player_meta[name]["state"], "Playing")
+
+
+class TestOcpUpdateWithManagedPlayersAndMissingMeta(unittest.IsolatedAsyncioTestCase):
+    """With manage_external_players enabled, a PlaybackStatus signal for an
+    unknown player must reach _update_ocp without raising, and the reflected
+    metadata must carry a usable skill_id.
+    """
+
+    async def test_playback_status_before_metadata_completes_ocp_update(self):
+        ctl, player = _make_exporter({"manage_external_players": True})
+        name = "org.mpris.MediaPlayer2.mpv"
+        callback = _register_handler(ctl, name)
+        self.assertNotIn(name, ctl.player_meta)
+
+        # unknown player -> no crash reaching _update_ocp, half-mutated OCP
+        # state must still finish with a real skill_id
+        await callback("org.mpris.MediaPlayer2.Player",
+                        {"PlaybackStatus": _Variant("Playing")}, [])
+
+        self.assertEqual(ctl.main_player, name)
+        self.assertIn(name, ctl.player_meta)
+        self.assertEqual(ctl.player_meta[name]["skill_id"], name)
+        player.set_now_playing.assert_called()
+
+    async def test_playback_status_with_full_metadata_flows_unchanged(self):
+        ctl, player = _make_exporter({"manage_external_players": True})
+        name = "org.mpris.MediaPlayer2.mpv"
+        ctl.player_meta[name] = {
+            "external_player": name,
+            "state": "Stopped",
+            "title": "Song",
+            "artist": "Band",
+            "uri": "mpris://mpv",
+        }
+        callback = _register_handler(ctl, name)
+
+        await callback("org.mpris.MediaPlayer2.Player",
+                        {"PlaybackStatus": _Variant("Playing")}, [])
+
+        self.assertEqual(ctl.player_meta[name]["skill_id"], name)
+        self.assertEqual(ctl.player_meta[name]["title"], "Song")
+        player.set_now_playing.assert_called()

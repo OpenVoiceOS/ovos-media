@@ -160,7 +160,7 @@ class OcpMprisExporter(Thread):
             self._ocp_player.playback_type = PlaybackType.MPRIS
 
             # update ocp metadata
-            data["skill_id"] = data["external_player"]
+            data["skill_id"] = data.get("external_player") or self.main_player
             data["bg_image"] = data.get("image") or data.get("thumbnail")
             data["playback"] = PlaybackType.MPRIS
             data["status"] = TrackState.PLAYING_MPRIS
@@ -483,7 +483,7 @@ class OcpMprisExporter(Thread):
                 player_name = properties.bus_name
                 if player_name in self.ignored_players:
                     continue
-                meta = self.player_meta.setdefault(player_name, {})
+                meta = self.player_meta.setdefault(player_name, {"external_player": player_name})
                 if changed == "PlaybackStatus":
                     await self.handle_player_state(variant.value)
                     state = meta.get("state")
