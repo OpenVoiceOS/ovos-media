@@ -35,7 +35,7 @@ backends play streams, extractors resolve URIs.**
               ▼
    ovos-media (this daemon)
               │   pick a playback backend, manage the queue / now-playing,
-              │   expose state over the bus / MPRIS / GUI
+              │   broadcast state over the bus / MPRIS
               ▼
    playback backend (opm.media.audio | .video | .web)
               │   hand the URI to vlc / mpv / spotify / chromecast / browser …
@@ -50,12 +50,12 @@ Every arrow is a plugin boundary, so each piece can be replaced independently:
 | **Find media** (catalogs/search) | `opm.media.provider` | youtube, bandcamp, soundcloud, tunein, somafm, pyradios |
 | **Play audio** | `opm.media.audio` | vlc, mplayer, simple (cli), ffplay, spotify, chromecast, mass, mpris |
 | **Play video** | `opm.media.video` | vlc, mplayer, chromecast |
-| **Render web/webview** | `opm.media.web` | (rendered via the GUI WebView) |
+| **Render web/webview** | `opm.media.web` | (rendered directly by the backend plugin) |
 | **Resolve a stream URI** | `opm.ocp.extractor` | youtube, m3u, rss, files |
 
 Search results flow as [`mediavocab.Release`](https://github.com/TigreGotico/mediavocab)
 objects: a typed catalog model shared across the whole media ecosystem. A
-provider written once works for playback, MPRIS metadata, and the GUI alike.
+provider written once works for both playback and MPRIS metadata.
 
 ---
 
@@ -122,7 +122,7 @@ All configuration lives under the `"media"` key in `mycroft.conf`. The essential
 ```
 
 See **[docs/configuration.md](docs/configuration.md)** for every option (per-backend
-config, MPRIS roles, GUI update interval, queue behaviour).
+config, MPRIS roles, queue behaviour).
 
 ---
 

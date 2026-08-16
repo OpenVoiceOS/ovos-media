@@ -182,7 +182,6 @@ class OcpMprisExporter(Thread):
                 data["skill_icon"] = f"{os.path.dirname(__file__)}/qt5/images/mpris.png"
 
             self._ocp_player.set_now_playing(data)
-            self._ocp_player._update_gui()
 
     async def handle_new_player(self, data):
         if data['name'] not in self._player_fails:
@@ -192,7 +191,6 @@ class OcpMprisExporter(Thread):
         LOG.info(f"MPRIS Player Shuffle: {shuffle}")
         if self.manage_players:
             self._ocp_player.shuffle = shuffle
-            self._ocp_player._update_gui()
 
     async def handle_player_loop_state(self, state):
         LOG.info(f"MPRIS Player Repeat: {state}")
@@ -203,7 +201,6 @@ class OcpMprisExporter(Thread):
                 self._ocp_player.loop_state = LoopState.REPEAT_TRACK
             else:
                 self._ocp_player.loop_state = LoopState.NONE
-            self._ocp_player._update_gui()
 
     async def handle_player_state(self, state):
         LOG.info(f"MPRIS Player State: {state}")
@@ -216,7 +213,6 @@ class OcpMprisExporter(Thread):
                 self._ocp_player.set_player_state(PlayerState.PLAYING)
             else:
                 self._ocp_player.set_player_state(PlayerState.STOPPED)
-            self._ocp_player._update_gui()
 
     async def handle_lost_player(self, name):
         LOG.info(f"Lost MPRIS Player: {name}")

@@ -15,7 +15,6 @@ import math
 import unicodedata
 from functools import wraps
 
-from ovos_config import Configuration
 from ovos_bus_client.session import SessionManager
 from ovos_utils.log import LOG
 
@@ -105,29 +104,3 @@ def require_default_session():
         return func_wrapper
 
     return _decorator
-
-
-def validate_message_context(message, native_sources=None):
-    destination = message.context.get("destination")
-    if destination:
-        # a bare string destination is legitimate (ovos-bus-client's
-        # .reply()/.forward() produce one) - normalize it to a single-element
-        # list so membership below is exact, not substring containment
-        # (destination "audio_settings_skill" must NOT match native source
-        # "audio")
-        if isinstance(destination, str):
-            destination = [destination]
-        elif not isinstance(destination, (list, tuple, set)):
-            # anything else (int, dict, ...) is not a valid destination
-            # container - refuse without raising, treat as external
-            return False
-        native_sources = native_sources or \
-                        Configuration().get("native_sources") or \
-                        ["debug_cli", "audio"]
-        if any(s in destination for s in native_sources):
-            # request from device
-            return True
-        # external request, do not handle
-        return False
-    # broadcast for everyone
-    return True

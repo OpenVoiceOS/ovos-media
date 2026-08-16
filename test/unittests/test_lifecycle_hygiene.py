@@ -24,7 +24,6 @@ def _make_service(bus):
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
          patch("ovos_media.player.OcpMprisExporter"), \
-         patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog") as MockCatalog, \
          patch("ovos_media.service.ProcessStatus") as MockStatus, \
@@ -75,8 +74,7 @@ class TestL1ZombieServiceShutdown(unittest.TestCase):
              patch("ovos_media.player.VideoService"), \
              patch("ovos_media.player.WebService"), \
              patch("ovos_media.player.OcpMprisExporter"), \
-             patch("ovos_media.player.GUIInterface"), \
-             patch("ovos_media.player.Configuration", return_value={"media": {}}), \
+                 patch("ovos_media.player.Configuration", return_value={"media": {}}), \
              patch("ovos_media.player.OCPMediaCatalog"), \
              patch("ovos_media.service.ProcessStatus") as MockStatus, \
              patch("ovos_media.service.Configuration", return_value={"media": {}}):
@@ -91,13 +89,6 @@ class TestL1ZombieServiceShutdown(unittest.TestCase):
         self.assertTrue(registered_pairs, "construction should have registered handlers")
         self.assertEqual(registered_pairs - removed_pairs, set(),
                         "shutdown left some registered handlers un-removed")
-        # OCPMediaPlayer.shutdown() must also tear down its GUIInterface
-        # (self.gui = GUIInterface("ovos.common_play", bus=bus)), which
-        # registers its own 'ovos.common_play.set' listener on construction
-        # via bus.on() outside of register_bus_handlers()/_bus_events. Without
-        # gui.shutdown() that listener leaked for the lifetime of the process
-        # — one per OCPMediaPlayer ever constructed.
-        svc.ocp.gui.shutdown.assert_called_once()
 
     def test_ping_gets_no_pong_after_shutdown(self):
         bus = FakeBus()
@@ -184,7 +175,6 @@ class TestL3EmptyLikeGuarded(unittest.TestCase):
                 pass
         p.media.liked_songs = _FakeStore()
         p.media.speak_dialog = MagicMock()
-        p._update_gui = MagicMock()
         p._liked_songs_lock = threading.RLock()
         return p
 
@@ -231,8 +221,7 @@ class TestL4LateQueryBinding(unittest.TestCase):
              patch("ovos_media.player.VideoService"), \
              patch("ovos_media.player.WebService"), \
              patch("ovos_media.player.OcpMprisExporter"), \
-             patch("ovos_media.player.GUIInterface"), \
-             patch("ovos_media.player.Configuration", return_value={"media": {}}), \
+                 patch("ovos_media.player.Configuration", return_value={"media": {}}), \
              patch("ovos_media.player.OCPMediaCatalog"), \
              patch("ovos_media.service.ProcessStatus") as MockStatus, \
              patch("ovos_media.service.Configuration", return_value={"media": {}}), \

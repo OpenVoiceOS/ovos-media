@@ -12,13 +12,11 @@ from json_database import JsonStorageXDG
 from ovos_bus_client import MessageBusClient
 from ovos_config import Configuration
 from ovos_config.meta import get_xdg_base
-from ovos_gui_api_client import GUIInterface
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
 from ovos_media.utils import require_default_session, is_real_number, is_injection_char
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
-from ovos_utils.gui import is_gui_connected, is_gui_running
 from ovos_utils.log import LOG
 from ovos_bus_client.message import Message
 from ovos_bus_client.session import SessionManager
@@ -652,8 +650,6 @@ class NowPlaying(MediaEntry):
             updates[field] = int(value)
         for field, value in updates.items():
             setattr(self, field, value)
-        if self._player is not None:
-            self._player._update_gui()
 
 
 class OCPMediaPlayer:
@@ -685,11 +681,10 @@ class OCPMediaPlayer:
         self._init_runtime_state()
 
         self.now_playing: NowPlaying = NowPlaying(bus, player=self)
-        # The per-namespace 'ovos.{ns}.service.stop' bus handler lives on
-        # BaseMediaService; this callback lets it flag the stop on the player
-        # BEFORE the backend's ocp_stop() emits END_OF_MEDIA, in the same
-        # thread. A second bus subscription would have had no such ordering
-        # guarantee against the END_OF_MEDIA it causes.
+        # BaseMediaService.stop() calls this on_stop callback to flag the
+        # stop on the player BEFORE the backend's ocp_stop() emits
+        # END_OF_MEDIA, in the same thread. A bus subscription would have
+        # had no such ordering guarantee against the END_OF_MEDIA it causes.
         self.audio_service = AudioService(bus, on_stop=self._mark_stop_requested)
         self.video_service = VideoService(bus, on_stop=self._mark_stop_requested)
         self.web_service = WebService(bus, on_stop=self._mark_stop_requested)
@@ -704,7 +699,6 @@ class OCPMediaPlayer:
             self.mpris = OcpMprisExporter(self, config=self.ocp_config,
                                           manage_players=manage_players)
 
-        self.gui = GUIInterface("ovos.common_play", bus=bus)
         # tracks every (event, handler) pair registered via self._register()
         # below so unregister_bus_handlers() can remove exactly what was
         # added, without hand-maintaining a second list that can drift out
@@ -868,7 +862,11 @@ class OCPMediaPlayer:
         self._register('ovos.common_play.repeat.set', self.handle_set_repeat)
         self._register('ovos.common_play.repeat.unset', self.handle_unset_repeat)
         self._register('ovos.common_play.SEI.get', self.handle_get_SEIs)
-        self._register('ovos.common_play.search.start', self.handle_search_start)
+        # 'ovos.common_play.search.start'/'.search.end'/'.home' are
+        # pipeline-side signals (the OCP pipeline plugin uses them to drive
+        # a GUI's own loading/navigation state); this daemon has no
+        # in-process GUI and no other state to change in response to them,
+        # so none of the three is subscribed here.
         self._register("ovos.common_play.like", self.handle_like)
         self._register("ovos.common_play.unlike", self.handle_unlike)
         self._register("ovos.common_play.status", self.handle_status)
@@ -876,28 +874,6 @@ class OCPMediaPlayer:
         self._register("ovos.common_play.mpris.now_playing", self.handle_mpris_now_playing)
         self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))  # report to ovos-core
         self.handle_status(Message("ovos.common_play.status"))  # report to ovos-core
-
-    def _update_gui(self) -> None:
-        """Push current OCP state to GUI adapters via show_media_player."""
-        state_map = {
-            PlayerState.PLAYING: "playing",
-            PlayerState.PAUSED: "paused",
-            PlayerState.STOPPED: "stopped",
-        }
-        np = self.now_playing
-        now_playing = None
-        if np and np.uri:
-            # MediaEntry.as_dict has no 'position' field (it is a
-            # plain attribute, not a dataclass field) and reports 'length'
-            # rather than 'duration' — the GUI seekbar contract needs both
-            # 'position' and 'duration' (milliseconds), so merge them in.
-            now_playing = {**np.as_dict, "position": np.position, "duration": np.length}
-        self.gui.show_media_player(
-            now_playing=now_playing,
-            playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
-            search_results=[e.as_dict for e in self.search_results],
-            state=state_map.get(self.state, "stopped"),
-        )
 
     def handle_status(self, message):
         self.bus.emit(message.response({
@@ -936,7 +912,6 @@ class OCPMediaPlayer:
                                            "image": image, "uri": uri}
             self.media.liked_songs.store()
         LOG.info(f"liked song: {uri}")
-        self._update_gui()
         self.bus.emit(message.forward("mycroft.audio.play_sound",
                                       {"uri": "snd/acknowledge.mp3"}))
 
@@ -949,21 +924,6 @@ class OCPMediaPlayer:
                 self.media.liked_songs.pop(uri)
                 self.media.liked_songs.store()
                 LOG.info(f"unliked song: {uri}")
-
-    # This and service.py's MediaService.handle_search_start both
-    # registered on 'ovos.common_play.search.start' unconditionally, so a
-    # satellite/non-default session's search double-pushed the "loading" GUI
-    # state (once from each handler). Gate this one to the default session
-    # (mirrors every other playback-affecting handler in this class) and the
-    # redundant registration in service.py was deleted outright.
-    @require_default_session()
-    def handle_search_start(self, message):
-        self.gui.show_media_player(
-            now_playing=None,
-            playlist=[],
-            search_results=[],
-            state="loading",
-        )
 
     @property
     def active_skill(self) -> str:
@@ -1033,8 +993,8 @@ class OCPMediaPlayer:
         """Flag that the current playback is ending because it was stopped.
 
         Called from OCPMediaPlayer.stop() and, via the ``on_stop`` callback,
-        from BaseMediaService.stop() (the 'ovos.{ns}.service.stop' bus handler)
-        before the backend's ocp_stop() emits END_OF_MEDIA.
+        from BaseMediaService.stop() before the backend's ocp_stop() emits
+        END_OF_MEDIA.
 
         Also cancels any pending invalid-stream retry timer. Without this,
         a stop arriving during the post-INVALID_MEDIA retry window left the
@@ -1125,7 +1085,7 @@ class OCPMediaPlayer:
 
     def set_player_state(self, state: PlayerState):
         """
-        Set self.state, update the GUI and MPRIS (if available), and emit an
+        Set self.state, update MPRIS (if available), and emit an
         event announcing this state change.
         @param state: New PlayerState
         """
@@ -1147,13 +1107,12 @@ class OCPMediaPlayer:
             self.mpris.update_props({"CanPause": state == PlayerState.PLAYING,
                                      "CanPlay": state == PlayerState.PAUSED,
                                      "PlaybackStatus": state2str[state]})
-        self._update_gui()
         self.handle_status(Message("ovos.common_play.status"))  # report full status to ovos-core
 
     def set_now_playing(self, track: Union[dict, MediaEntry, Playlist]):
         """
         Set `track` as the currently playing media, update the playlist, and
-        notify any GUI or MPRIS clients. Adds `track` to `playlist`
+        notify any MPRIS clients. Adds `track` to `playlist`
         @param track: MediaEntry or dict representation of a MediaEntry to play
         """
         if isinstance(track, dict):
@@ -1202,8 +1161,9 @@ class OCPMediaPlayer:
 
         This is the playback-less path: it updates now_playing + player/media
         state to mirror a player OCP does not itself drive (Spotify, a browser,
-        VLC, …), so the GUI / voice queries see what's actually playing, WITHOUT
-        invoking any OCP backend (``PlaybackType.MPRIS`` is external).
+        VLC, …), so bus subscribers and voice queries see what's actually
+        playing, WITHOUT invoking any OCP backend (``PlaybackType.MPRIS`` is
+        external).
 
         Used both in-process by :class:`~ovos_media.mpris.OcpMprisExporter` and,
         out-of-process, by the standalone ``ovos-media-plugin-mpris`` watcher via
@@ -1240,7 +1200,7 @@ class OCPMediaPlayer:
         data["bg_image"] = (data.get("bg_image") or data.get("image")
                             or data.get("thumbnail"))
 
-        # update metadata first so the GUI shows the right track for every state
+        # update metadata first so subscribers see the right track for every state
         self.set_now_playing(data)
         if state == "Paused":
             self.set_player_state(PlayerState.PAUSED)
@@ -1251,7 +1211,6 @@ class OCPMediaPlayer:
         else:  # Playing
             self.set_player_state(PlayerState.PLAYING)
             self.set_media_state(MediaState.BUFFERED_MEDIA)
-        self._update_gui()
 
     def handle_mpris_now_playing(self, message: Message):
         """Bus entry point for :meth:`set_external_now_playing`.
@@ -1290,10 +1249,25 @@ class OCPMediaPlayer:
                     continue
         return None
 
+    def _playback_mode(self) -> Optional[PlaybackMode]:
+        """Read the configured ``playback_mode``, accepting both a
+        ``PlaybackMode`` member and its name as a string (eg. config loaded
+        from JSON/YAML, where enums round-trip as their name)."""
+        mode = self.ocp_config.get("playback_mode")
+        if isinstance(mode, str):
+            try:
+                return PlaybackMode[mode.upper()]
+            except KeyError:
+                LOG.warning(f"Unknown playback_mode: {mode!r}")
+                return None
+        if isinstance(mode, PlaybackMode):
+            return mode
+        return None
+
     # stream handling
     def validate_stream(self) -> bool:
         """
-        Validate that self.now_playing is playable and update the GUI if it is
+        Validate that self.now_playing is playable
         @return: True if the `now_playing` stream can be handled
         """
         if self.playback_type not in [PlaybackType.SKILL,
@@ -1304,11 +1278,7 @@ class OCPMediaPlayer:
             except Exception as e:
                 LOG.exception(e)
                 return False
-            # check for is_gui_running is much faster as it doesnt need bus messages back and forth
-            has_gui = is_gui_running() or is_gui_connected(self.bus)
-            if not has_gui or self.ocp_config.get("force_audioservice", False) or \
-                    self.ocp_config.get("playback_mode") == PlaybackMode.FORCE_AUDIO:
-                # No gui, so lets force playback to use audio only
+            if self._playback_mode() == PlaybackMode.FORCE_AUDIO:
                 self.now_playing.playback = PlaybackType.AUDIO
 
         return True
@@ -1335,12 +1305,6 @@ class OCPMediaPlayer:
         Handle media playback errors. Show an error and play the next track.
         """
         self.bus.emit(Message("mycroft.audio.play_sound", {"uri": "snd/error.mp3"}))
-        self.gui.show_media_player(
-            now_playing=None,
-            playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
-            search_results=[e.as_dict for e in self.search_results],
-            state="error",
-        )
         LOG.warning(f"Failed to play: {self.now_playing}")
         # remember this uri as broken so LoopState.REPEAT cannot restart a
         # queue whose every track has failed (that was an unbounded hot loop:
@@ -1432,9 +1396,9 @@ class OCPMediaPlayer:
 
     def play(self):
         """
-        Start playback of the current `now_playing` MediaEntry. Displays the GUI
-        player, updates track history, emits events for any listeners, and
-        updates mpris (if configured).
+        Start playback of the current `now_playing` MediaEntry. Updates
+        track history, emits events for any listeners, and updates mpris
+        (if configured).
         """
         # stop any external media players
         if self.mpris and not self.mpris.stop_event.is_set():
@@ -1507,15 +1471,42 @@ class OCPMediaPlayer:
             self.bus.emit(Message("ovos.common_play.track.state",
                                   {"state": TrackState.PLAYING_SKILL}))
 
-        elif self.playback_type == PlaybackType.VIDEO:
-            LOG.debug("Requesting playback: PlaybackType.VIDEO")
-            preferred = self._resolve_preferred_service(self.video_service)
-            self.video_service.play(self.now_playing.uri, preferred_service=preferred)
-
-        elif self.playback_type == PlaybackType.WEBVIEW:
-            LOG.debug("Requesting playback: PlaybackType.WEBVIEW")
-            preferred = self._resolve_preferred_service(self.web_service)
-            self.web_service.play(self.now_playing.uri, preferred_service=preferred)
+        elif self.playback_type in (PlaybackType.VIDEO, PlaybackType.WEBVIEW):
+            svc = self.video_service if self.playback_type == PlaybackType.VIDEO else self.web_service
+            LOG.debug(f"Requesting playback: {self.playback_type}")
+            preferred = self._resolve_preferred_service(svc)
+            if svc.can_play(self.now_playing.uri, preferred_service=preferred):
+                svc.play(self.now_playing.uri, preferred_service=preferred)
+            else:
+                # No installed video/web backend claims this uri (eg. a
+                # headless install with only audio backends configured).
+                # Degrade to audio instead of dead-ending in
+                # MediaState.INVALID_MEDIA — the same fallback the old
+                # GUI-presence heuristic used to trigger, now driven by
+                # actual backend availability instead of GUI detection.
+                LOG.warning(f"No {svc.namespace} backend can play "
+                           f"{self.now_playing.uri!r}; falling back to audio")
+                # The playback-type switch loop above ran while
+                # self.playback_type was still VIDEO/WEBVIEW, so it left
+                # this service's `current` alone (it was, at that point,
+                # the intended backend). Now that we're abandoning it for
+                # AUDIO, stop and clear it ourselves — same idiom as that
+                # loop — or a still-playing prior track on this service
+                # keeps running alongside the new audio stream.
+                if svc.current is not None:
+                    try:
+                        svc.current.stop()
+                    except Exception as e:
+                        LOG.exception(f"Failed to stop abandoned {svc.namespace} "
+                                      f"backend on audio fallback: {e}")
+                    svc.current = None
+                self.now_playing.playback = PlaybackType.AUDIO
+                preferred = self._resolve_preferred_service(self.audio_service)
+                if self.audio_service.can_play(self.now_playing.uri, preferred_service=preferred):
+                    self.audio_service.play(self.now_playing.uri, preferred_service=preferred)
+                else:
+                    self.bus.emit(Message("ovos.common_play.media.state",
+                                          {"state": MediaState.INVALID_MEDIA}))
 
         else:
             raise ValueError("invalid playback request")
@@ -1525,7 +1516,6 @@ class OCPMediaPlayer:
             self.mpris.update_props({"CanGoPrevious": self.can_prev})
 
         self.set_player_state(PlayerState.PLAYING)
-        self._update_gui()
 
     def play_shuffle(self) -> bool:
         """
@@ -1742,7 +1732,6 @@ class OCPMediaPlayer:
             self.mpris.pause()
         self.set_player_state(PlayerState.PAUSED)
         self._paused_on_duck = False
-        self._update_gui()
 
     def resume(self):
         """
@@ -1764,7 +1753,6 @@ class OCPMediaPlayer:
             self.mpris.resume()
 
         self.set_player_state(PlayerState.PLAYING)
-        self._update_gui()
 
     def seek(self, position: int):
         """
@@ -1828,7 +1816,6 @@ class OCPMediaPlayer:
             self.video_service.restore_volume()
             self.audio_service.restore_volume()
         self._paused_on_duck = False
-        self._update_gui()
 
     def handle_MPRIS_takeover(self):
         """ Called when a MPRIS external player becomes active"""
@@ -1865,11 +1852,6 @@ class OCPMediaPlayer:
         # use the authoritative setter (emits ovos.common_play.player.state,
         # updates MPRIS) instead of a bare attribute assignment that bypassed it.
         self.set_player_state(PlayerState.STOPPED)
-        # stop -> home (reset) previously left a zombie now_playing entry
-        # on the GUI — now_playing.reset() above already clears uri/original_uri,
-        # but set_player_state() above is a no-op (incl. no _update_gui) when
-        # the player was already STOPPED, so push explicitly here too.
-        self._update_gui()
 
     def shutdown(self):
         """
@@ -1892,12 +1874,6 @@ class OCPMediaPlayer:
         self.audio_service.shutdown()
         self.video_service.shutdown()
         self.web_service.shutdown()
-        # self.gui is a GUIInterface("ovos.common_play", bus=bus) — its own
-        # shutdown() removes the 'ovos.common_play.set' listener it
-        # registers on construction. Without this call, every OCPMediaPlayer
-        # created (eg. in a test loop, or a real service restart) leaked one
-        # such bus listener for the lifetime of the process.
-        self.gui.shutdown()
         # register_bus_handlers() above bound ~35 handlers directly via
         # self.bus.on() (not add_event(), since OCPMediaPlayer is not an
         # OVOSSkill) — remove exactly what was registered so a shut-down
@@ -1947,7 +1923,6 @@ class OCPMediaPlayer:
             # cleared both guards on every single failing track.
 
         if ended:
-            # handle_playback_ended manages its own _update_gui() call
             self.handle_playback_ended(message, playback_type=playback_type,
                                        playback_uri=playback_uri,
                                        stop_requested=stop_requested)
@@ -1959,19 +1934,8 @@ class OCPMediaPlayer:
                 # straight back into play() and, with a permanently failing
                 # backend, spun without bound.
                 self.on_invalid_stream()
-            # on_invalid_stream defers; nothing else pushed the GUI
-            else:
-                self._update_gui()
-        else:
-            self._update_gui()
 
     def handle_invalid_media(self, message=None):
-        self.gui.show_media_player(
-            now_playing=None,
-            playlist=[e.as_dict for e in self.playlist.entries] if self.playlist else [],
-            search_results=[e.as_dict for e in self.search_results],
-            state="error",
-        )
         # rate-limited to once per queue (see _track_failed_spoken), not once
         # per skipped track, so a queue of several broken tracks in a row
         # does not talk over itself
@@ -2003,11 +1967,9 @@ class OCPMediaPlayer:
 
         if stop_requested:
             # an explicit stop must never advance the queue. OPM backends
-            # emit END_OF_MEDIA from ocp_stop(), so both the API path
-            # (OCPMediaPlayer.stop) and the external path
-            # ('ovos.{ns}.service.stop') land here.
+            # emit END_OF_MEDIA from ocp_stop(), so a stop reaches here
+            # regardless of which BaseMediaService instance it was called on.
             LOG.debug("Playback ended by an explicit stop request; not advancing")
-            self._update_gui()
             return
 
         if len(self.playlist) and self.ocp_config.get("autoplay", True) and \
@@ -2019,7 +1981,6 @@ class OCPMediaPlayer:
             return
 
         LOG.info("Playback ended")
-        self._update_gui()
         # NOTE: no queue.finished speak here. This branch is reached
         # whenever play_next() is NOT invoked automatically — autoplay
         # disabled after any track, or an MPRIS-external player's track
@@ -2098,22 +2059,18 @@ class OCPMediaPlayer:
     @require_default_session()
     def handle_set_shuffle(self, message):
         self.shuffle = True
-        self._update_gui()
 
     @require_default_session()
     def handle_unset_shuffle(self, message):
         self.shuffle = False
-        self._update_gui()
 
     @require_default_session()
     def handle_set_repeat(self, message):
         self.loop_state = LoopState.REPEAT
-        self._update_gui()
 
     @require_default_session()
     def handle_unset_repeat(self, message):
         self.loop_state = LoopState.NONE
-        self._update_gui()
 
     # playlist control bus api
     @require_default_session()
@@ -2127,7 +2084,6 @@ class OCPMediaPlayer:
         LOG.info(f"Repeat: {self.loop_state}")
         if self.mpris and self.playback_type == PlaybackType.MPRIS:
             self.mpris.toggle_repeat()
-        self._update_gui()
 
     @require_default_session()
     def handle_shuffle_toggle_request(self, message):
@@ -2135,7 +2091,6 @@ class OCPMediaPlayer:
         LOG.info(f"Shuffle: {self.shuffle}")
         if self.mpris and self.playback_type == PlaybackType.MPRIS:
             self.mpris.toggle_shuffle()
-        self._update_gui()
 
     @require_default_session()
     def handle_playlist_set_request(self, message):

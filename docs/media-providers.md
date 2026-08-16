@@ -251,7 +251,7 @@ without uninstalling it.
 ```
 
 See [Configuration reference](configuration.md) for the daemon-side `media` block
-(backends, MPRIS, GUI).
+(backends, MPRIS).
 
 ---
 

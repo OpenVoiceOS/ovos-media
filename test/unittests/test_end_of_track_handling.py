@@ -17,13 +17,8 @@ pins one invariant that coordination must hold:
   locating the current track by uri alone;
 - a 1-track repeat playlist on a permanently failing backend must not spin
   without bound from INVALID_MEDIA calling play_next() inline;
-- two rapid legacy 'service.play' requests must not each arm a 0.5s Timer,
-  loading two backends at once and orphaning the first, nor ignore a stop
-  that arrives inside that window;
 - a stop within 1s of playback starting must not be dropped silently, leaving
-  the player reporting STOPPED while audio keeps playing;
-- a legacy tracklist that was never exhausted must not stay queued on the
-  service and hijack later, unrelated OCP playback.
+  the player reporting STOPPED while audio keeps playing.
 
 Every test drives the scenario through the real objects (FakeBus + a stub
 backend), never by hand-calling the handler under test in isolation.
@@ -492,63 +487,16 @@ def _make_service(bus=None, backends=None):
     # _init_runtime_state(), so this fixture also builds against the
     # pre-fix source when proving these tests fail before the fix
     svc.on_stop = None
-    svc._pending_playlist = []
-    svc._pending_repeat = False
-    svc._last_full_playlist = []
-    svc._play_timer = None
     svc._deferred_stop_timer = None
     svc.bus = bus
     svc.namespace = "audio"
     svc.config = {}
     svc.service_lock = threading.Lock()
-    svc.validate_source = False
     svc.current = None
     svc.play_start_time = 0
     svc.volume_is_low = False
     svc.services = backends if backends is not None else [_StubBackend(bus)]
     return svc, bus
-
-
-class TestDeferredPlayTimer(unittest.TestCase):
-
-    def test_rapid_double_legacy_play_loads_one_backend(self):
-        """Two rapid 'service.play' requests must leave exactly one load.
-
-        Pre-fix each request armed its own un-cancellable 0.5s Timer, so both
-        fired: two backends loaded, the first orphaned.
-        """
-        svc, bus = _make_service()
-        backend = svc.services[0]
-        svc.handle_play(Message("ovos.audio.service.play",
-                                {"tracks": ["http://example.com/1.mp3"]}))
-        first_timer = svc._play_timer
-        svc.handle_play(Message("ovos.audio.service.play",
-                                {"tracks": ["http://example.com/2.mp3"]}))
-        time.sleep(1.0)
-
-        self.assertFalse(first_timer.is_alive(),
-                         "the superseded play timer was not cancelled")
-        self.assertEqual(backend.loaded, ["http://example.com/2.mp3"],
-                         f"expected only the second request to load, got "
-                         f"{backend.loaded}")
-
-    def test_stop_before_timer_fires_prevents_playback(self):
-        """A stop inside the 0.5s scheduling window must cancel the start."""
-        svc, bus = _make_service()
-        backend = svc.services[0]
-        svc.handle_play(Message("ovos.audio.service.play",
-                                {"tracks": ["http://example.com/1.mp3"]}))
-        svc.stop(Message("ovos.audio.service.stop"))
-        time.sleep(1.0)
-        self.assertEqual(backend.loaded, [],
-                         "playback started despite being stopped first")
-
-    def test_play_timer_is_daemonic(self):
-        svc, bus = _make_service()
-        svc.handle_play(Message("ovos.audio.service.play",
-                                {"tracks": ["http://example.com/1.mp3"]}))
-        self.assertTrue(svc._play_timer.daemon)
-        svc._play_timer.cancel()
 
 
 class TestDeferredStop(unittest.TestCase):
@@ -585,51 +533,6 @@ class TestDeferredStop(unittest.TestCase):
         time.sleep(1.5)
         self.assertEqual(backend.stopped, 0,
                          "a superseded deferred stop killed the new playback")
-
-
-class TestPendingPlaylistIsolation(unittest.TestCase):
-
-    def test_legacy_tracklist_does_not_hijack_later_ocp_playback(self):
-        """A stale legacy tracklist must not interleave into later playback.
-
-        Pre-fix the queued remainder of a legacy 'service.play' survived and
-        track_start() advanced into it, producing the loaded sequence
-        x, a, y, b instead of x, y.
-        """
-        svc, bus = _make_service()
-        backend = svc.services[0]
-
-        # legacy request queues x + the leftovers a, b
-        svc.handle_play(Message("ovos.audio.service.play", {
-            "tracks": ["http://legacy/x.mp3",
-                       "http://legacy/a.mp3",
-                       "http://legacy/b.mp3"]}))
-        time.sleep(0.8)
-        self.assertEqual(backend.loaded, ["http://legacy/x.mp3"])
-
-        # now OCP plays something else entirely
-        svc.play("http://ocp/y.mp3")
-        svc.track_start(None)   # y finishes
-        time.sleep(0.1)
-
-        leftovers = [u for u in backend.loaded if u.startswith("http://legacy/a")
-                     or u.startswith("http://legacy/b")]
-        self.assertEqual(leftovers, [],
-                         f"stale legacy tracks hijacked OCP playback: "
-                         f"{backend.loaded}")
-        self.assertEqual(svc._pending_playlist, [])
-        self.assertEqual(svc._last_full_playlist, [])
-
-    def test_internal_advance_still_consumes_the_pending_tracklist(self):
-        """The C6 legacy-tracklist advance must keep working."""
-        svc, bus = _make_service()
-        backend = svc.services[0]
-        svc.handle_play(Message("ovos.audio.service.play", {
-            "tracks": ["http://legacy/x.mp3", "http://legacy/a.mp3"]}))
-        time.sleep(0.8)
-        svc.track_start(None)
-        self.assertEqual(backend.loaded,
-                         ["http://legacy/x.mp3", "http://legacy/a.mp3"])
 
 
 if __name__ == "__main__":

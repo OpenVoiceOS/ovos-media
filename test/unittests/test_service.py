@@ -61,23 +61,16 @@ class TestMediaServiceHandlers(unittest.TestCase):
         msg.reply.assert_called_once_with("ovos.common_play.pong")
         svc.bus.emit.assert_called_with("pong_msg")
 
-    def test_handle_home_calls_update_gui(self):
+    def test_no_home_or_search_end_handler_methods(self):
+        """MediaService does not implement handle_home or handle_search_end
+        at all — 'ovos.common_play.home'/'.search.start'/'.search.end' are
+        pipeline-side signals with nothing for this daemon to do in
+        response; see test_autoplay_and_search_gating.py::
+        TestPipelineSideSignalsAreNotHandled for the bus-level no-op proof
+        (home must not disturb playback in progress)."""
         svc = self._make_service()
-        svc.ocp = MagicMock()
-        svc.handle_home(MagicMock())
-        svc.ocp._update_gui.assert_called_once()
-
-    # MediaService does not register its own
-    # 'ovos.common_play.search.start' handler — that duplicated
-    # OCPMediaPlayer.handle_search_start (player.py) and double-pushed the
-    # GUI "loading" state on every search. See
-    # test_autoplay_and_search_gating.py::TestSearchStartSessionGating.
-
-    def test_handle_search_end_calls_update_gui(self):
-        svc = self._make_service()
-        svc.ocp = MagicMock()
-        svc.handle_search_end(MagicMock())
-        svc.ocp._update_gui.assert_called_once()
+        self.assertFalse(hasattr(svc, "handle_home"))
+        self.assertFalse(hasattr(svc, "handle_search_end"))
 
 
 if __name__ == "__main__":

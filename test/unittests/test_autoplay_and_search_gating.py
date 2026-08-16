@@ -21,9 +21,9 @@ handle_seek_request must treat `seekValue: 0` as an absolute seek, not as
 handle_playlist_set_request must validate 'tracks' before clearing the
     existing playlist, so a malformed/absent 'tracks' key does not KeyError
     with the playlist already wiped.
-'ovos.common_play.search.start' must be handled exactly once — solely by
-    OCPMediaPlayer.handle_search_start, session-gated — not double-pushing
-    the GUI "loading" state, including for non-default sessions.
+'ovos.common_play.home'/'.search.start'/'.search.end' are pipeline-side
+    signals this daemon does not subscribe to at all — emitting them must
+    be a pure no-op, never stopping or resetting playback in progress.
 Switching playback type (eg. VIDEO -> AUDIO) must clear the previous
     BaseMediaService's `current`, so a later stray LOADED_MEDIA event cannot
     revive it and run two backends at once.
@@ -163,32 +163,8 @@ class TestEndOfQueueStops(unittest.TestCase):
         self.assertEqual(player.state, PlayerState.STOPPED)
 
 
-class TestGuiSeekbarPayload(unittest.TestCase):
-    def test_update_gui_includes_position_and_duration(self):
-        from ovos_media.player import OCPMediaPlayer
-
-        bus = FakeBus()
-        player = OCPMediaPlayer(bus, config={})
-        t1 = _track("http://example.com/a.mp3", "A")
-        player.set_now_playing(t1)
-        player.now_playing.position = 4200
-        player.now_playing.length = 90000
-
-        captured = {}
-        player.gui.show_media_player = lambda **kw: captured.update(kw)
-        player._update_gui()
-
-        np = captured["now_playing"]
-        self.assertIn("position", np)
-        self.assertIn("duration", np)
-        self.assertEqual(np["position"], 4200)
-        self.assertEqual(np["duration"], 90000)
-        # 'length' round-trips too since it's still a real MediaEntry field
-        self.assertEqual(np["length"], 90000)
-
-
 class TestResetClearsZombieEntry(unittest.TestCase):
-    def test_stop_then_reset_clears_now_playing_uri_and_pushes_gui(self):
+    def test_stop_then_reset_clears_now_playing_uri(self):
         from ovos_media.player import OCPMediaPlayer
 
         bus = FakeBus()
@@ -197,16 +173,10 @@ class TestResetClearsZombieEntry(unittest.TestCase):
         player.set_now_playing(t1)
         self.assertEqual(player.now_playing.uri, t1.uri)
 
-        captured = []
-        player.gui.show_media_player = lambda **kw: captured.append(kw)
         player.reset()
 
         self.assertEqual(player.now_playing.uri, "")
         self.assertEqual(player.now_playing.original_uri, "")
-        self.assertTrue(captured, "reset() must push a GUI update")
-        self.assertIsNone(captured[-1]["now_playing"],
-                          "GUI must not keep showing the stopped track "
-                          "(zombie now_playing entry)")
 
 
 class TestSeekZeroIsAbsolute(unittest.TestCase):
@@ -266,44 +236,72 @@ class TestPlaylistSetMissingTracks(unittest.TestCase):
         self.assertEqual(player.playlist[0].uri, new_track.uri)
 
 
-class TestSearchStartSessionGating(unittest.TestCase):
-    def test_named_session_search_start_pushes_no_gui_update(self):
+class TestPipelineSideSignalsAreNotHandled(unittest.TestCase):
+    """'ovos.common_play.home'/'.search.start'/'.search.end' are pipeline-side
+    signals the OCP pipeline plugin uses to drive a GUI's own loading/
+    navigation state. This daemon has no in-process GUI and no other state
+    to change in response to them, so none of the three is subscribed —
+    emitting them must be a pure no-op, in particular NOT stopping or
+    resetting playback that is genuinely in progress."""
+
+    def test_neither_player_nor_service_subscribes_to_home_or_search(self):
         from ovos_media.player import OCPMediaPlayer
-        from ovos_bus_client.session import Session
-
-        bus = FakeBus()
-        player = OCPMediaPlayer(bus, config={})
-        captured = []
-        player.gui.show_media_player = lambda **kw: captured.append(kw)
-
-        msg = Message("ovos.common_play.search.start", {})
-        msg.context["session"] = Session("some-satellite-session").serialize()
-        bus.emit(msg)
-
-        self.assertEqual(len(captured), 0)
-
-    def test_default_session_search_start_pushes_exactly_one_gui_update(self):
-        from ovos_media.player import OCPMediaPlayer
-
-        bus = FakeBus()
-        player = OCPMediaPlayer(bus, config={})
-        captured = []
-        player.gui.show_media_player = lambda **kw: captured.append(kw)
-
-        bus.emit(Message("ovos.common_play.search.start", {}))
-
-        self.assertEqual(len(captured), 1)
-        self.assertEqual(captured[0]["state"], "loading")
-
-    def test_media_service_no_longer_registers_its_own_search_start_handler(self):
         from ovos_media.service import MediaService
 
         bus = FakeBus()
-        service = MediaService(bus=bus)
+        player = OCPMediaPlayer(bus, config={})
+        self.assertFalse(hasattr(player, "handle_search_start"))
+        player.shutdown()
+
+        bus2 = FakeBus()
+        service = MediaService(bus=bus2)
         try:
-            self.assertFalse(hasattr(service, "handle_search_start"))
+            self.assertFalse(hasattr(service, "handle_home"))
+            self.assertFalse(hasattr(service, "handle_search_end"))
         finally:
             service.shutdown()
+
+    def test_home_mid_playback_does_not_touch_player_state(self):
+        """Emitting 'ovos.common_play.home' while a track is genuinely
+        playing must not stop it or reset now_playing/playlist — the
+        pipeline emits this on routine 'open media player' intents, and a
+        prior version of MediaService.handle_home called ocp.reset(),
+        which cleared state and broadcast STOPPED/NO_MEDIA while the
+        backend kept playing. Drives it through the real MediaService (the
+        component that used to own handle_home), not just OCPMediaPlayer
+        directly, since the regression lived in MediaService's own bus
+        binding. Fails against a build where MediaService still binds
+        handle_home to ocp.reset()."""
+        from unittest.mock import MagicMock, patch
+        from ovos_media.service import MediaService
+
+        bus = FakeBus()
+        with patch("ovos_media.player.AudioService"), \
+             patch("ovos_media.player.VideoService"), \
+             patch("ovos_media.player.WebService"), \
+             patch("ovos_media.player.OcpMprisExporter"), \
+             patch("ovos_media.player.Configuration", return_value={"media": {}}), \
+             patch("ovos_media.player.OCPMediaCatalog"), \
+             patch("ovos_media.service.ProcessStatus") as MockStatus, \
+             patch("ovos_media.service.Configuration", return_value={"media": {}}):
+            MockStatus.return_value = MagicMock()
+            service = MediaService(bus=bus)
+
+        player = service.ocp
+        track = MediaEntry(uri="http://example.com/a.mp3", title="A",
+                           playback=PlaybackType.AUDIO)
+        player.set_now_playing(track)
+        player.set_player_state(PlayerState.PLAYING)
+
+        bus.emit(Message("ovos.common_play.home", {}))
+
+        self.assertEqual(player.state, PlayerState.PLAYING,
+                         "home must not stop playback in progress")
+        self.assertEqual(player.now_playing.uri, track.uri,
+                         "home must not reset now_playing")
+        self.assertEqual(len(player.playlist), 1,
+                         "home must not clear the playlist")
+        service.shutdown()
 
 
 class TestPlaybackTypeSwitchStopsOtherBackend(unittest.TestCase):
@@ -330,7 +328,7 @@ class TestPlaybackTypeSwitchStopsOtherBackend(unittest.TestCase):
                           "backend's `current`, not just leave it dangling")
 
 
-class TestTracklistAndRepeat(unittest.TestCase):
+class TestTrackStartQueueEnd(unittest.TestCase):
     def _make_service(self):
         from ovos_media.media_backends.base import BaseMediaService
         svc = BaseMediaService.__new__(BaseMediaService)
@@ -338,74 +336,16 @@ class TestTracklistAndRepeat(unittest.TestCase):
         svc.bus = FakeBus()
         svc.services = []
         svc.current = None
-        svc.validate_source = False
         svc.volume_is_low = False
         svc.service_lock = threading.Lock()
         svc.play_start_time = 0.0
         svc.namespace = "audio"
         svc.config = {}
-        svc._pending_playlist = []
-        svc._pending_repeat = False
-        svc._last_full_playlist = []
         svc._loaded = threading.Event()
         svc._loaded.set()
         return svc
 
-    def test_handle_play_with_empty_track_entry_does_not_raise(self):
-        svc = self._make_service()
-        with patch("threading.Timer") as mock_timer:
-            svc.handle_play(Message("ovos.audio.service.play",
-                                    {"tracks": [[]]}))
-            mock_timer.assert_not_called()
-
-    def test_handle_play_with_empty_entry_then_real_track_uses_the_real_one(self):
-        svc = self._make_service()
-        with patch("threading.Timer") as mock_timer:
-            svc.handle_play(Message("ovos.audio.service.play",
-                                    {"tracks": [[], "http://example.com/a.mp3"]}))
-            mock_timer.assert_called_once()
-            call_args = mock_timer.call_args[1].get("args") or mock_timer.call_args[0][2]
-            self.assertEqual(call_args[0], "http://example.com/a.mp3")
-
-    def test_handle_play_stores_remaining_tracks_and_repeat(self):
-        svc = self._make_service()
-        with patch("threading.Timer"):
-            svc.handle_play(Message("ovos.audio.service.play", {
-                "tracks": ["http://example.com/a.mp3",
-                          "http://example.com/b.mp3",
-                          "http://example.com/c.mp3"],
-                "repeat": True,
-            }))
-        self.assertEqual(svc._pending_playlist,
-                         ["http://example.com/b.mp3", "http://example.com/c.mp3"])
-        self.assertTrue(svc._pending_repeat)
-        self.assertEqual(svc._last_full_playlist,
-                         ["http://example.com/a.mp3",
-                          "http://example.com/b.mp3",
-                          "http://example.com/c.mp3"])
-
-    def test_track_start_none_advances_to_next_pending_track(self):
-        svc = self._make_service()
-        svc._pending_playlist = ["http://example.com/b.mp3"]
-        svc._last_full_playlist = ["http://example.com/a.mp3", "http://example.com/b.mp3"]
-        # The internal advance goes through _play, which (unlike the
-        # public play()) preserves the pending tracklist it is consuming.
-        with patch.object(svc, "_play") as mock_play:
-            svc.track_start(None)
-        mock_play.assert_called_once_with("http://example.com/b.mp3")
-        self.assertEqual(svc._pending_playlist, [])
-
-    def test_track_start_none_repeats_full_playlist_when_exhausted(self):
-        svc = self._make_service()
-        svc._pending_playlist = []
-        svc._pending_repeat = True
-        svc._last_full_playlist = ["http://example.com/a.mp3", "http://example.com/b.mp3"]
-        with patch.object(svc, "_play") as mock_play:
-            svc.track_start(None)
-        mock_play.assert_called_once_with("http://example.com/a.mp3")
-        self.assertEqual(svc._pending_playlist, ["http://example.com/b.mp3"])
-
-    def test_track_start_none_emits_queue_end_when_no_repeat_and_exhausted(self):
+    def test_track_start_none_emits_queue_end(self):
         svc = self._make_service()
         received = []
         svc.bus.on(f"ovos.{svc.namespace}.queue_end", lambda m: received.append(m))

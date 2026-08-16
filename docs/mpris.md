@@ -6,7 +6,7 @@ external media controllers, such as KDE Connect, the Plasma media widget,
 same desktop session. `ovos-media` participates in MPRIS in three ways:
 
 1. **OCP as an MPRIS server (Role A, outbound).** OCP exposes itself as a controllable `org.mpris.MediaPlayer2.OCP` player so desktop tools and media keys can drive it.
-2. **External player to OCP now-playing (inbound reflection).** What another MPRIS player is playing is mirrored *into* OCP as its now-playing, without OCP driving any backend, so the GUI and voice queries reflect reality.
+2. **External player to OCP now-playing (inbound reflection).** What another MPRIS player is playing is mirrored *into* OCP as its now-playing, without OCP driving any backend, so voice queries and any bus-subscribed UI reflect reality.
 3. **OCP managing external players (Role B, opt-in).** OCP polls the session bus and proxies its transport controls onto a chosen external player.
 
 All three are gated behind `enable_mpris: true`. Roles B and the in-process reflection
@@ -65,8 +65,9 @@ Volume reads and writes are delegated to the OCP bus rather than a direct audio 
 Independent of who *controls* whom, OCP can mirror what an external MPRIS player
 is playing into its own now-playing state, title, artist, art, and player/media
 state, **without driving any OCP backend**. This is the playback-less path: it
-exists so the OCP GUI and voice queries ("what song is this?") reflect a player
-that OCP did not itself start, such as Spotify, a browser, or VLC.
+exists so voice queries ("what song is this?") and any bus-subscribed UI
+reflect a player that OCP did not itself start, such as Spotify, a browser, or
+VLC.
 
 The entry point is `OCPMediaPlayer.set_external_now_playing(data)`, reachable two
 ways:
@@ -109,7 +110,7 @@ When `manage_external_players: true`, `OcpMprisExporter` also scans the session 
 
 ### OCP takeover
 
-When an external player becomes active, `handle_player_state` calls `OCPMediaPlayer.handle_MPRIS_takeover()` and sets `playback_type = PlaybackType.MPRIS`. OCP then reflects the external player's metadata (title, artist, album, art) via `_update_ocp`, which calls `set_now_playing` so the reflected track shows in the GUI (see [Inbound reflection](#inbound-reflection-an-external-player-as-ocp-now-playing)).
+When an external player becomes active, `handle_player_state` calls `OCPMediaPlayer.handle_MPRIS_takeover()` and sets `playback_type = PlaybackType.MPRIS`. OCP then reflects the external player's metadata (title, artist, album, art) via `_update_ocp`, which calls `set_now_playing` so the reflected track is broadcast on the bus (see [Inbound reflection](#inbound-reflection-an-external-player-as-ocp-now-playing)).
 
 Dedicated icons are substituted for known players: Spotify, Firefox, Chromium, VLC, MPV, and Audacious. All others receive the generic MPRIS icon.
 

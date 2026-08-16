@@ -19,7 +19,7 @@ daemon, and how it sits inside the wider OCP media flow.
    ▼
  ovos-media (this daemon)
    │   receives the winning result, picks a playback backend, manages the
-   │   queue / now-playing, exposes state over the bus / MPRIS / GUI
+   │   queue / now-playing, broadcasts state over the bus and MPRIS
    ▼
  playback backend (opm.media.audio | .video | .web)
    │   plays the URI via vlc / mplayer / spotify / chromecast / browser …
@@ -51,8 +51,11 @@ The rest of this document focuses on the daemon itself.
    a plain bus-connected class (it is *not* a skill or an `OVOSAbstractApplication`)
    that manages the playback state machine (`PlayerState`, `MediaState`), owns the
    `NowPlaying` tracker and three backend service objects (`AudioService`,
-   `VideoService`, `WebService`), drives the GUI via `GUIInterface`, and optionally
-   drives MPRIS. All of this is wired up in `OCPMediaPlayer.__init__`.
+   `VideoService`, `WebService`), broadcasts every state change on the bus, and
+   optionally drives MPRIS. All of this is wired up in `OCPMediaPlayer.__init__`.
+   There is no GUI client in-process: a UI (`ovos-webui` or otherwise) consumes
+   the same bus broadcasts any other client does, live — see
+   [Bus as the UI contract](#bus-as-the-ui-contract).
 
 3. **Backend services** (`ovos_media/media_backends/`), three concrete
    `BaseMediaService` subclasses (`AudioService`, `VideoService`, `WebService`).
@@ -88,15 +91,21 @@ Registered in `MediaService.__init__` and `MediaService.init_messagebus`
 
 | Message type | Handler | Notes |
 | :--- | :--- | :--- |
-| `ovos.common_play.home` | `handle_home` | Calls `ocp._update_gui()` to refresh the GUI home screen. |
 | `ovos.common_play.ping` | `handle_ping` | Replies immediately with `ovos.common_play.pong`. |
-| `ovos.common_play.search.start` | `handle_search_start` | Calls `ocp.gui.show_media_player(state="loading")` to display a loading animation. |
-| `ovos.common_play.search.end` | `handle_search_end` | Dismisses the spinner and refreshes the player GUI. |
 | `opm.audio.query` | `handle_opm_audio_query` | Replies with the dict returned by `audio_service.available_backends()`, preserving the legacy OPM discovery contract. |
 
 `ovos-media` does not implement the classic `mycroft.audio.service.*` API.
 Skills that still call it are served by the old ovos-audio/OCP stack, which
 stays installed alongside `ovos-media` and answers that surface directly.
+
+`ovos.common_play.home`, `.search.start`, and `.search.end` are pipeline-side
+signals the OCP pipeline plugin uses to drive a GUI's own navigation/loading
+state. Neither `MediaService` nor `OCPMediaPlayer` subscribes to any of the
+three — this daemon has no other state to change in response to them, and a
+prior version's `home` binding to a player reset was a bug: the pipeline
+emits `home` on routine "open media player" intents, and resetting killed
+in-progress playback the reset never actually stopped at the backend. A bus
+message with no subscriber here is legal.
 
 ### OCPMediaPlayer handlers
 
@@ -111,7 +120,7 @@ Registered in `OCPMediaPlayer.register_bus_handlers` (`ovos_media/player.py`).
 | `ovos.common_play.stop` | `handle_stop_request` | Stops all active backends and sets `PlayerState.STOPPED`. |
 | `ovos.common_play.next` | `handle_next_request` | Advances to the next track, respecting shuffle and loop state. |
 | `ovos.common_play.previous` | `handle_prev_request` | Returns to the previous track. |
-| `ovos.common_play.seek` | `handle_seek_request` | Seeks to a position (data in seconds or a GUI `seekValue`). |
+| `ovos.common_play.seek` | `handle_seek_request` | Seeks to a position (data in seconds or an absolute `seekValue`). |
 | `ovos.common_play.get_track_length` | `handle_track_length_request` | Replies with the current track length. |
 | `ovos.common_play.set_track_position` | `handle_set_track_position_request` | Seeks to an absolute track position. |
 | `ovos.common_play.get_track_position` | `handle_track_position_request` | Replies with current playback position. |
@@ -127,7 +136,6 @@ Registered in `OCPMediaPlayer.register_bus_handlers` (`ovos_media/player.py`).
 | `ovos.common_play.cork` | `handle_cork_request` | Pauses playback while the mic is open. |
 | `ovos.common_play.uncork` | `handle_uncork_request` | Resumes playback after recording finishes. |
 | `ovos.common_play.SEI.get` | `handle_get_SEIs` | Replies with the supported stream-extractor identifiers. |
-| `ovos.common_play.search.start` | `handle_search_start` | Shows the GUI loading state. |
 | `ovos.common_play.like` / `.unlike` | `handle_like` / `handle_unlike` | Add/remove the current track in the liked-songs store. |
 | `ovos.common_play.status` | `handle_status` | Replies with full player status (state, media type, position, shuffle, loop). |
 | `ovos.common_play.mpris.now_playing` | `handle_mpris_now_playing` | Reflects an **external** MPRIS player as OCP now-playing, see [MPRIS](#mpris-integration). |
@@ -171,8 +179,7 @@ Represents the action the player is currently performing.
 
 State changes are made exclusively through `OCPMediaPlayer.set_player_state`,
 which updates `self.state`, emits `ovos.common_play.player.state`, updates MPRIS
-props, refreshes the GUI, and calls `handle_status` to report full status to
-ovos-core.
+props, and calls `handle_status` to report full status to ovos-core.
 
 ### MediaState
 
@@ -191,33 +198,23 @@ State changes are made through `OCPMediaPlayer.set_media_state`, which emits
 
 ---
 
-## GUI Integration
+## Bus as the UI contract
 
-`OCPMediaPlayer` holds a `GUIInterface("ovos.common_play")` instance, created in
-`OCPMediaPlayer.__init__`.
+`ovos-media` has no GUI client in-process. Every state transition — track
+changes, play/pause/stop, queue and shuffle/repeat updates — is broadcast on
+the bus as it happens: `ovos.common_play.player.state`,
+`ovos.common_play.media.state`, `ovos.common_play.track.state`, and the full
+snapshot on `ovos.common_play.status.response` (see
+[Emitted events](#emitted-events)). A UI is just another bus client: it
+subscribes to those broadcasts and to `ovos.common_play.status` for an
+on-demand snapshot, the same way `ovos-webui` does. This keeps `ovos-media`
+itself free of any rendering, theming, or display-technology dependency —
+any future GUI is an outboard client, not a component this daemon loads or
+manages.
 
-After every state change, `OCPMediaPlayer._update_gui` is called. It maps the
-current `PlayerState` to one of the strings `"playing"`, `"paused"`, or
-`"stopped"` and invokes:
-
-```python
-self.gui.show_media_player(
-    now_playing=np.as_dict if np and np.uri else None,
-    playlist=[e.as_dict for e in self.playlist.entries],
-    search_results=self._last_search_results or [],
-    state=state_map.get(self.state, "stopped"),
-)
-```
-
-Other `state` strings are pushed directly: `"loading"` while the OCP pipeline is
-searching (`MediaService.handle_search_start` / `OCPMediaPlayer.handle_search_start`)
-and `"error"` when a stream is invalid (`on_invalid_stream` /
-`handle_invalid_media`).
-
-The GUI client (`ovos-gui` with the `ovos-media-plugin-qt5` rendering backend, or
-another `GUIInterface` consumer) renders the media-player screen. Video and web
-backend plugins that draw their own content render in their own GUI namespaces,
-independent of the `"ovos.common_play"` namespace.
+Video and web backend plugins that render their own content (a webview, a
+Chromecast target, …) do so independently; `ovos-media` only reports their
+state over the bus.
 
 ---
 

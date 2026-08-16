@@ -81,13 +81,15 @@ Any plugin installed from the `opm.plugin.audio` entry-point group. Common ones:
 
 See [backends.md](docs/backends.md) for more.
 
-## How does the GUI update?
+## How does a GUI stay in sync?
 
-`OCPMediaPlayer._update_gui()` — `ovos_media/player.py` — calls
-`self.gui.show_media_player(now_playing, playlist, search_results, state)` after
-every playback state change. Individual backend plugins handle their own video and
-web rendering in separate GUI namespaces. `ovos-media` itself only calls
-`show_media_player()`.
+`ovos-media` has no GUI client in-process. Every playback state change is
+broadcast on the bus (`ovos.common_play.player.state`,
+`ovos.common_play.media.state`, `ovos.common_play.track.state`, and a full
+snapshot on `ovos.common_play.status.response`). A UI subscribes to those
+broadcasts like any other bus client — `ovos-webui` does exactly this.
+Individual video/web backend plugins render their own content directly and
+report their state over the same bus.
 
 See [architecture.md](docs/architecture.md) for the full picture.
 

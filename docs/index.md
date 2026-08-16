@@ -2,8 +2,8 @@
 
 `ovos-media` is the OCP-native media daemon for OpenVoiceOS. It plays audio,
 video, and web content on behalf of OVOS, managing the queue, now-playing
-state, and playback backends, while exposing that state over the MessageBus,
-MPRIS/D-Bus, and the GUI. It runs alongside `ovos-audio`, which continues to
+state, and playback backends, while broadcasting that state over the
+MessageBus and MPRIS/D-Bus. It runs alongside `ovos-audio`, which continues to
 handle TTS.
 
 Apache-2.0 · Python 3.10+
@@ -40,7 +40,7 @@ Apache-2.0 · Python 3.10+
               ▼
    ovos-media (this daemon)
               │   pick a playback backend, manage queue / now-playing,
-              │   expose state over the bus / MPRIS / GUI
+              │   broadcast state over the bus / MPRIS
               ▼
    playback backend (opm.media.audio | .video | .web)
               │   hand the URI to vlc / mplayer / spotify / chromecast / browser …
@@ -55,12 +55,12 @@ Every arrow is a plugin boundary, so each concern can be replaced independently:
 | **Find media** (catalog/search) | `opm.media.provider` | youtube, bandcamp, soundcloud, tunein, somafm, pyradios |
 | **Play audio** | `opm.media.audio` | vlc, mplayer, simple (cli), ffplay, spotify, chromecast, mass, mpris |
 | **Play video** | `opm.media.video` | vlc, mplayer, chromecast |
-| **Render web/webview** | `opm.media.web` | rendered via the GUI WebView |
+| **Render web/webview** | `opm.media.web` | rendered directly by the backend plugin |
 | **Resolve a stream URI** | `opm.ocp.extractor` | youtube, m3u, rss, files |
 
 Search results flow as [`mediavocab.Release`](https://github.com/TigreGotico/mediavocab)
 objects, a typed catalog model shared across the media ecosystem, so a provider
-written once feeds playback, MPRIS metadata, and the GUI alike.
+written once feeds both playback and MPRIS metadata.
 
 ---
 
@@ -70,7 +70,7 @@ written once feeds playback, MPRIS metadata, and the GUI alike.
 |---|---|
 | [Glossary & core concepts](glossary.md) | **Read first.** Every acronym + the mental model (provider vs. backend vs. extractor, `Signals`/`Release`) |
 | [Getting started](getting-started.md) | Install, enable the daemon, run your first playback |
-| [Architecture](architecture.md) | The daemon's layers, bus API, state machine, GUI/MPRIS integration |
+| [Architecture](architecture.md) | The daemon's layers, bus API, state machine, MPRIS integration |
 | [Sessions](sessions.md) | The default/local session filter, how a HiveMind server ignores satellite sessions (`validate_source`) |
 | [Media providers](media-providers.md) | Writing a catalog/search plugin (`opm.media.provider`), the new search layer |
 | [Playback backends](backends.md) | Audio/video/web backend plugins, discovery, writing a custom backend |

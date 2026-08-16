@@ -20,7 +20,6 @@ def _make_service():
     svc.bus = bus
     svc.services = []
     svc.current = None
-    svc.validate_source = False
     svc.volume_is_low = False
     svc.service_lock = threading.Lock()
     svc.play_start_time = 0.0
@@ -121,7 +120,7 @@ class TestPauseWithCurrent(unittest.TestCase):
         svc, bus = _make_service()
         svc.current = MagicMock()
 
-        svc.pause(Message("x"))
+        svc.pause()
 
         svc.current.pause.assert_not_called()
         svc.current.ocp_pause.assert_called_once()
@@ -131,7 +130,7 @@ class TestPauseWithCurrent(unittest.TestCase):
         svc, bus = _make_service()
         svc.current = None
 
-        svc.pause(Message("x"))  # should not raise
+        svc.pause()  # should not raise
 
 
 class TestResumeWithCurrent(unittest.TestCase):
@@ -144,7 +143,7 @@ class TestResumeWithCurrent(unittest.TestCase):
         svc, bus = _make_service()
         svc.current = MagicMock()
 
-        svc.resume(Message("x"))
+        svc.resume()
 
         svc.current.resume.assert_not_called()
         svc.current.ocp_resume.assert_called_once()
@@ -154,7 +153,7 @@ class TestResumeWithCurrent(unittest.TestCase):
         svc, bus = _make_service()
         svc.current = None
 
-        svc.resume(Message("x"))  # should not raise
+        svc.resume()  # should not raise
 
 
 class TestPerformStop(unittest.TestCase):
@@ -170,8 +169,7 @@ class TestPerformStop(unittest.TestCase):
         received = []
         bus.on("mycroft.stop.handled", lambda m: received.append(m))
 
-        msg = Message("mycroft.stop")
-        svc._perform_stop(msg)
+        svc._perform_stop()
 
         # Check that stop was called before svc.current was set to None
         mock_current.stop.assert_called_once()
@@ -193,7 +191,7 @@ class TestStopWithPlayStartTime(unittest.TestCase):
         svc.play_start_time = time.monotonic()  # just now
 
         with patch.object(svc, "_perform_stop") as mock_perform:
-            svc.stop(Message("mycroft.stop"))
+            svc.stop()
 
         # Should not call _perform_stop because < 1 second elapsed
         mock_perform.assert_not_called()
@@ -208,7 +206,7 @@ class TestLowerVolumeWithCurrent(unittest.TestCase):
         svc.current = MagicMock()
         svc.volume_is_low = False
 
-        svc.lower_volume(Message("x"))
+        svc.lower_volume()
 
         svc.current.lower_volume.assert_called_once()
         self.assertTrue(svc.volume_is_low)
@@ -218,7 +216,7 @@ class TestLowerVolumeWithCurrent(unittest.TestCase):
         svc, bus = _make_service()
         svc.current = None
 
-        svc.lower_volume(Message("x"))  # should not raise
+        svc.lower_volume()  # should not raise
 
     def test_lower_volume_when_already_low_skips(self):
         """lower_volume() should skip if volume_is_low is already True."""
@@ -226,7 +224,7 @@ class TestLowerVolumeWithCurrent(unittest.TestCase):
         svc.current = MagicMock()
         svc.volume_is_low = True
 
-        svc.lower_volume(Message("x"))
+        svc.lower_volume()
 
         svc.current.lower_volume.assert_not_called()
 
@@ -240,7 +238,7 @@ class TestRestoreVolumeWithCurrent(unittest.TestCase):
         svc.current = MagicMock()
         svc.volume_is_low = True
 
-        svc.restore_volume(Message("x"))
+        svc.restore_volume()
 
         svc.current.restore_volume.assert_called_once()
         self.assertFalse(svc.volume_is_low)
@@ -250,7 +248,7 @@ class TestRestoreVolumeWithCurrent(unittest.TestCase):
         svc, bus = _make_service()
         svc.current = None
 
-        svc.restore_volume(Message("x"))  # should not raise
+        svc.restore_volume()  # should not raise
 
     def test_restore_volume_when_not_low_skips(self):
         """restore_volume() should skip if volume_is_low is False."""
@@ -258,169 +256,9 @@ class TestRestoreVolumeWithCurrent(unittest.TestCase):
         svc.current = MagicMock()
         svc.volume_is_low = False
 
-        svc.restore_volume(Message("x"))
+        svc.restore_volume()
 
         svc.current.restore_volume.assert_not_called()
-
-
-class TestHandleTrackInfo(unittest.TestCase):
-    """Test handle_track_info."""
-
-    def test_handle_track_info_with_current(self):
-        """handle_track_info should emit response with current track info."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-        svc.current.track_info.return_value = {"title": "Test", "artist": "Artist"}
-
-        received = []
-        bus.on("ovos.common_play.track_info.response", lambda m: received.append(m))
-
-        svc.handle_track_info(Message("ovos.common_play.track_info"))
-
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].data["title"], "Test")
-
-    def test_handle_track_info_without_current(self):
-        """handle_track_info without current should emit empty response."""
-        svc, bus = _make_service()
-        svc.current = None
-
-        received = []
-        bus.on("ovos.common_play.track_info.response", lambda m: received.append(m))
-
-        svc.handle_track_info(Message("ovos.common_play.track_info"))
-
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].data, {})
-
-
-class TestHandleListBackends(unittest.TestCase):
-    """Test handle_list_backends."""
-
-    def test_handle_list_backends_emits_response(self):
-        """handle_list_backends should emit response with available backends."""
-        svc, bus = _make_service()
-
-        with patch.object(svc, "available_backends", return_value={"vlc": {}}):
-            received = []
-            bus.on("ovos.common_play.list_backends.response", lambda m: received.append(m))
-
-            svc.handle_list_backends(Message("ovos.common_play.list_backends"))
-
-            self.assertEqual(len(received), 1)
-            self.assertIn("vlc", received[0].data)
-
-
-class TestHandleGetTrackLength(unittest.TestCase):
-    """Test handle_get_track_length."""
-
-    def test_get_track_length_with_current(self):
-        """handle_get_track_length should emit current.get_track_length()."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-        svc.current.get_track_length.return_value = 180000
-
-        received = []
-        bus.on("ovos.common_play.get_track_length.response", lambda m: received.append(m))
-
-        svc.handle_get_track_length(Message("ovos.common_play.get_track_length"))
-
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].data["length"], 180000)
-
-    def test_get_track_length_without_current(self):
-        """handle_get_track_length without current should emit None."""
-        svc, bus = _make_service()
-        svc.current = None
-
-        received = []
-        bus.on("ovos.common_play.get_track_length.response", lambda m: received.append(m))
-
-        svc.handle_get_track_length(Message("ovos.common_play.get_track_length"))
-
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].data["length"], None)
-
-
-class TestHandleGetTrackPosition(unittest.TestCase):
-    """Test handle_get_track_position."""
-
-    def test_get_track_position_with_current(self):
-        """handle_get_track_position should emit current.get_track_position()."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-        svc.current.get_track_position.return_value = 45000
-
-        received = []
-        bus.on("ovos.common_play.get_track_position.response", lambda m: received.append(m))
-
-        svc.handle_get_track_position(Message("ovos.common_play.get_track_position"))
-
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].data["position"], 45000)
-
-    def test_get_track_position_without_current(self):
-        """handle_get_track_position without current should emit None."""
-        svc, bus = _make_service()
-        svc.current = None
-
-        received = []
-        bus.on("ovos.common_play.get_track_position.response", lambda m: received.append(m))
-
-        svc.handle_get_track_position(Message("ovos.common_play.get_track_position"))
-
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].data["position"], None)
-
-
-class TestHandleSetTrackPosition(unittest.TestCase):
-    """Test handle_set_track_position."""
-
-    def test_set_track_position_with_current(self):
-        """handle_set_track_position should call current.set_track_position()."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-
-        svc.handle_set_track_position(Message("ovos.common_play.set_track_position",
-                                             {"position": 90000}))
-
-        svc.current.set_track_position.assert_called_with(90000)
-
-    def test_set_track_position_without_current_does_nothing(self):
-        """handle_set_track_position without current should not raise."""
-        svc, bus = _make_service()
-        svc.current = None
-
-        svc.handle_set_track_position(Message("ovos.common_play.set_track_position",
-                                             {"position": 90000}))
-
-
-class TestHandleSeekForward(unittest.TestCase):
-    """Test handle_seek_forward."""
-
-    def test_seek_forward_with_current(self):
-        """handle_seek_forward should call current.seek_forward()."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-
-        svc.handle_seek_forward(Message("ovos.common_play.seek_forward",
-                                       {"seconds": 10}))
-
-        svc.current.seek_forward.assert_called_with(10)
-
-
-class TestHandleSeekBackward(unittest.TestCase):
-    """Test handle_seek_backward."""
-
-    def test_seek_backward_with_current(self):
-        """handle_seek_backward should call current.seek_backward()."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-
-        svc.handle_seek_backward(Message("ovos.common_play.seek_backward",
-                                        {"seconds": 10}))
-
-        svc.current.seek_backward.assert_called_with(10)
 
 
 class TestTrackStartOcpEmits(unittest.TestCase):
@@ -455,54 +293,6 @@ class TestTrackStartOcpEmits(unittest.TestCase):
 
         self.assertEqual(len(received["ovos"]), 1)
         self.assertEqual(len(received["mycroft"]), 0)
-
-
-class TestHandlePlayUriExtraction(unittest.TestCase):
-    """handle_play must pass a single uri string to self.play(), not the
-    raw tracks list — self.play() does uri.split(':') and would raise
-    AttributeError on a list, killing the Timer thread silently."""
-
-    def _run_handle_play(self, svc, data):
-        """Call handle_play with threading.Timer patched to fire synchronously
-        so we can inspect what was passed to self.play()."""
-        from ovos_bus_client.message import Message
-        with patch("threading.Timer") as mock_timer:
-            svc.handle_play(Message("ovos.audio.service.play", data))
-            self.assertTrue(mock_timer.called)
-            _args, kwargs = mock_timer.call_args
-            # threading.Timer(0.5, self.play, args=[...])
-            target = mock_timer.call_args[0][1]
-            call_args = mock_timer.call_args[1].get("args") or mock_timer.call_args[0][2]
-            return target, call_args
-
-    def test_handle_play_extracts_uri_from_string_track(self):
-        svc, bus = _make_service()
-        svc.services = []
-
-        target, call_args = self._run_handle_play(
-            svc, {"tracks": ["http://example.com/a.mp3"]})
-
-        # handle_play defers to _play so the tracklist it just queued
-        # is not cleared by the public play() entry point.
-        self.assertEqual(target, svc._play)
-        self.assertEqual(call_args[0], "http://example.com/a.mp3")
-
-    def test_handle_play_extracts_uri_from_tuple_track(self):
-        svc, bus = _make_service()
-        svc.services = []
-
-        target, call_args = self._run_handle_play(
-            svc, {"tracks": [("http://example.com/b.mp3", "audio/mpeg")]})
-
-        self.assertEqual(call_args[0], "http://example.com/b.mp3")
-
-    def test_handle_play_with_no_tracks_does_not_start_timer(self):
-        svc, bus = _make_service()
-        svc.services = []
-        from ovos_bus_client.message import Message
-        with patch("threading.Timer") as mock_timer:
-            svc.handle_play(Message("ovos.audio.service.play", {"tracks": []}))
-            mock_timer.assert_not_called()
 
 
 if __name__ == "__main__":

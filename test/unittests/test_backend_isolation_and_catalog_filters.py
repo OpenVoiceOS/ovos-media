@@ -137,7 +137,6 @@ def _make_base_svc(services=None):
     svc.current = None
     svc.play_start_time = 0
     svc.volume_is_low = False
-    svc.validate_source = False
     svc.service_lock = threading.Lock()
     svc._loaded = MonotonicEvent()
     svc._loaded.set()
@@ -258,8 +257,7 @@ class TestLikedSongsLockUsage(unittest.TestCase):
              patch("ovos_media.player.VideoService"), \
              patch("ovos_media.player.WebService"), \
              patch("ovos_media.player.OcpMprisExporter"), \
-             patch("ovos_media.player.GUIInterface"), \
-             patch("ovos_media.player.Configuration", return_value={"media": {}}):
+                 patch("ovos_media.player.Configuration", return_value={"media": {}}):
             p = OCPMediaPlayer(FakeBus(), config={})
 
         # the player's writer lock and the catalog's lock must be the same
@@ -285,8 +283,7 @@ class TestLikedSongsLockUsage(unittest.TestCase):
              patch("ovos_media.player.VideoService"), \
              patch("ovos_media.player.WebService"), \
              patch("ovos_media.player.OcpMprisExporter"), \
-             patch("ovos_media.player.GUIInterface"), \
-             patch("ovos_media.player.Configuration", return_value={"media": {}}):
+                 patch("ovos_media.player.Configuration", return_value={"media": {}}):
             p = OCPMediaPlayer(FakeBus(), config={})
 
         p.media.liked_songs = {
@@ -339,7 +336,6 @@ def _make_player(playback_type=PlaybackType.AUDIO):
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
          patch("ovos_media.player.OcpMprisExporter"), \
-         patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
@@ -362,7 +358,6 @@ def _make_player(playback_type=PlaybackType.AUDIO):
         p.current = None
         p.mpris = None
         p.bus = FakeBus()
-        p.gui = MagicMock()
     return p
 
 
