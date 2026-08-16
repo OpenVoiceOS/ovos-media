@@ -124,10 +124,10 @@ svc.shutdown()
 ```
 
 `MediaService.__init__` reads the `media` section of `mycroft.conf` / `ovos.conf`,
-opens (or reuses) a `MessageBusClient`, creates an `OCPMediaPlayer`, installs the
-`LegacyAudioServiceCompat` shim, and wires up the bus handlers. The thread's
-`run()` emits the `READY` status signal. This is exactly what the `ovos-media`
-console entry point (`ovos_media/__main__.py`) does.
+opens (or reuses) a `MessageBusClient`, creates an `OCPMediaPlayer`, and wires
+up the bus handlers. The thread's `run()` emits the `READY` status signal.
+This is exactly what the `ovos-media` console entry point
+(`ovos_media/__main__.py`) does.
 
 ---
 

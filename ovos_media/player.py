@@ -536,16 +536,7 @@ class NowPlaying(MediaEntry):
             LOG.debug(f"ignoring '{message.msg_type}' now_playing update, "
                       f"not from the default/local session")
             return
-        if message.data.get("tracks"):
-            # backwards compat / old style
-            tracks = message.data["tracks"]
-            if not isinstance(tracks, (list, tuple)):
-                LOG.warning(f"ignoring '{message.msg_type}' now_playing update, "
-                            f"expected a list of tracks, got: {type(tracks)}")
-                return
-            media = tracks[0]
-        else:
-            media = message.data.get("media", {})
+        media = message.data.get("media", {})
         if not media:
             return
         if not isinstance(media, dict):
@@ -663,14 +654,6 @@ class NowPlaying(MediaEntry):
             setattr(self, field, value)
         if self._player is not None:
             self._player._update_gui()
-
-    def handle_sync_trackinfo(self, message):
-        """
-        Handle 'mycroft.audio.service.track_info_reply' Messages with current
-        media defined in message.data
-        @param message: Message with dict MediaEntry data
-        """
-        self.update(message.data)
 
 
 class OCPMediaPlayer:
@@ -828,23 +811,44 @@ class OCPMediaPlayer:
         self._register('ovos.common_play.unduck', self.handle_unduck_request)
         self._register('ovos.common_play.cork', self.handle_cork_request)
         self._register('ovos.common_play.uncork', self.handle_uncork_request)
-        # legacy recognizer_loop ducking — same semantics as the ocp equivalents.
+        # ovos-audio emits 'ovos.audio.output.started'/'ovos.audio.output.ended'
+        # unconditionally on every TTS output (ovos_audio/playback.py
+        # begin_audio/end_audio). The ovos.common_play.duck/cork messages are
+        # an alternative ducking path, but only emitted when tts.ocp_duck /
+        # tts.ocp_cork are enabled in config (both default False). Binding
+        # these spec topics to the same handlers keeps ducking working on
+        # default installs.
         #
-        # NOTE: these are bound through distinct per-topic wrapper functions
-        # rather than the bare self.handle_*_request methods, on purpose.
-        # 'recognizer_loop:audio_output_start'/'_end'/'record_begin' are
-        # migrated legacy topics (ovos_spec_tools.messages.MIGRATION_MAP), so
-        # ovos-bus-client's MessageBusClient.on() (client.py) wraps them in a
-        # per-HANDLER dedup guard and tracks that wrapper in
-        # self._dedup_registrations[func]. Because a bound method compares
-        # equal (and hashes the same) across separate attribute accesses,
-        # self.handle_duck_request used here is "the same" func as the one
-        # passed to _register('ovos.common_play.duck', ...) above. remove()
-        # branches on `if target in self._dedup_registrations`, and once ANY
-        # topic put that func in the dedup table, remove() takes the dedup
-        # path for EVERY topic registered under it — including the plain,
-        # non-migrated 'ovos.common_play.duck' registration, whose entry
-        # never lived in that table. The dedup path then filters
+        # NOTE: bound through per-topic wrapper functions, not the bare
+        # self.handle_duck_request/self.handle_unduck_request methods, for
+        # the same reason as the record_begin/record_end binding above:
+        # 'ovos.audio.output.started'/'ended' ARE migrated legacy topics
+        # (ovos-bus-client's MessageBusClient._mirror_guard_for wraps them in
+        # a per-HANDLER dedup guard), so sharing the bare bound method with
+        # the plain 'ovos.common_play.duck'/'unduck' registrations above
+        # would put remove() on the dedup path for both topics and leave the
+        # plain one un-removable — see the block comment on the
+        # record_begin/record_end registration for the full mechanism.
+        self._register('ovos.audio.output.started', lambda message: self.handle_duck_request(message))
+        self._register('ovos.audio.output.ended', lambda message: self.handle_unduck_request(message))
+        # mic-cork integration — no listener emits an OCP cork equivalent for
+        # the mic recording window, so these stay bound directly here.
+        #
+        # NOTE: bound through a per-topic wrapper function rather than the
+        # bare self.handle_cork_request method, on purpose.
+        # 'recognizer_loop:record_begin' is a migrated legacy topic
+        # (ovos_spec_tools.messages.MIGRATION_MAP), so ovos-bus-client's
+        # MessageBusClient.on() (client.py) wraps it in a per-HANDLER dedup
+        # guard and tracks that wrapper in self._dedup_registrations[func].
+        # Because a bound method compares equal (and hashes the same) across
+        # separate attribute accesses, self.handle_duck_request used here
+        # would be "the same" func as the one passed to
+        # _register('ovos.common_play.duck', ...) above. remove() branches on
+        # `if target in self._dedup_registrations`, and once ANY topic put
+        # that func in the dedup table, remove() takes the dedup path for
+        # EVERY topic registered under it — including the plain, non-migrated
+        # 'ovos.common_play.duck' registration, whose entry never lived in
+        # that table. The dedup path then filters
         # self._dedup_registrations[target] for the given event_name, finds
         # nothing (the plain topic was never recorded there), and silently
         # removes zero listeners instead of falling through to
@@ -852,8 +856,6 @@ class OCPMediaPlayer:
         # 'ovos.common_play.duck'/'unduck'/'cork' forever. Binding the
         # bridged topic to its own wrapper object keeps it out of the plain
         # topic's identity entirely, so each remove() call resolves cleanly.
-        self._register('recognizer_loop:audio_output_start', lambda message: self.handle_duck_request(message))
-        self._register('recognizer_loop:audio_output_end', lambda message: self.handle_unduck_request(message))
         self._register('recognizer_loop:record_begin', lambda message: self.handle_cork_request(message))
         self._register('recognizer_loop:record_end', self.handle_record_end)
         self._register('ovos.utterance.handled', self.handle_utterance_handled)
@@ -2291,7 +2293,7 @@ class OCPMediaPlayer:
     @require_default_session()
     def handle_duck_request(self, message):
         """
-        Lower volume on 'recognizer_loop:record_begin'
+        Lower volume on 'ovos.common_play.duck'
         @param message: Message associated with event
         """
         if self.state == PlayerState.PLAYING:
@@ -2304,7 +2306,7 @@ class OCPMediaPlayer:
     @require_default_session()
     def handle_unduck_request(self, message):
         """
-        Restore volume on 'recognizer_loop:audio_output_end'.
+        Restore volume on 'ovos.common_play.unduck'.
 
         Restores audio service volume whenever ``_paused_on_duck`` is True,
         regardless of player state.  This covers both the duck path (player

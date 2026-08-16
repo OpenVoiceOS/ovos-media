@@ -44,8 +44,7 @@ class TestMediaServiceBusInitialization(unittest.TestCase):
         with patch("ovos_media.service.MessageBusClient") as mock_mbc_class, \
              patch("ovos_media.service.OCPMediaPlayer"), \
              patch("ovos_media.service.ProcessStatus") as mock_status, \
-             patch("ovos_media.service.Configuration", return_value={"media": {}}), \
-             patch("ovos_media.service.LegacyAudioServiceCompat"):
+             patch("ovos_media.service.Configuration", return_value={"media": {}}):
             mock_mbc_instance = MagicMock()
             mock_mbc_class.return_value = mock_mbc_instance
             mock_status.return_value = MagicMock()
@@ -69,8 +68,7 @@ class TestMediaServiceBusInitialization(unittest.TestCase):
         with patch("ovos_media.service.MessageBusClient") as mock_mbc_class, \
              patch("ovos_media.service.OCPMediaPlayer"), \
              patch("ovos_media.service.ProcessStatus") as mock_status, \
-             patch("ovos_media.service.Configuration", return_value={"media": {}}), \
-             patch("ovos_media.service.LegacyAudioServiceCompat"):
+             patch("ovos_media.service.Configuration", return_value={"media": {}}):
             mock_status.return_value = MagicMock()
             provided_bus = MagicMock()
 

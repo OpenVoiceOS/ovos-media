@@ -50,6 +50,23 @@ def _audio_entry(uri: str, title: str = "Test Track") -> MediaEntry:
     return MediaEntry(uri=uri, playback=PlaybackType.AUDIO, title=title)
 
 
+def _duck(h: OCPPlayerHarness) -> None:
+    """Emit ``ovos.common_play.duck`` directly.
+
+    ``OCPPlayerHarness.duck()`` still emits the removed
+    ``recognizer_loop:audio_output_start`` alias, so tests exercise the
+    native OCP topic here instead.
+    """
+    h.bus.emit(Message("ovos.common_play.duck"))
+    time.sleep(0.05)
+
+
+def _unduck(h: OCPPlayerHarness) -> None:
+    """Emit ``ovos.common_play.unduck`` directly (see ``_duck``)."""
+    h.bus.emit(Message("ovos.common_play.unduck"))
+    time.sleep(0.05)
+
+
 # ---------------------------------------------------------------------------
 # TestPlayPauseStop
 # ---------------------------------------------------------------------------
@@ -199,9 +216,8 @@ class TestInvalidStream(unittest.TestCase):
 class TestDuckUnduck(unittest.TestCase):
     """Volume ducking — lower/restore audio service volume while player keeps playing.
 
-    Ducking is triggered by TTS speech starting (``recognizer_loop:audio_output_start``
-    / ``ovos.common_play.duck``) and ending (``recognizer_loop:audio_output_end``
-    / ``ovos.common_play.unduck``).
+    Ducking is triggered by TTS speech starting (``ovos.common_play.duck``)
+    and ending (``ovos.common_play.unduck``).
 
     Key behavioural invariant: ducking does NOT pause the player.  The audio
     backend continues playing at a lower volume and ``restore_volume`` is called
@@ -219,14 +235,14 @@ class TestDuckUnduck(unittest.TestCase):
         """
         with OCPPlayerHarness() as h:
             h.play(_audio_entry("http://example.com/song.mp3"))
-            h.duck()
+            _duck(h)
             h.player.audio_service.lower_volume.assert_called()
 
     def test_duck_player_remains_playing(self) -> None:
         """Player state must stay PLAYING after duck — only volume is lowered."""
         with OCPPlayerHarness() as h:
             h.play(_audio_entry("http://example.com/song.mp3"))
-            h.duck()
+            _duck(h)
             h.assert_player_state(PlayerState.PLAYING)
 
     def test_duck_sets_paused_on_duck_flag(self) -> None:
@@ -237,7 +253,7 @@ class TestDuckUnduck(unittest.TestCase):
         """
         with OCPPlayerHarness() as h:
             h.play(_audio_entry("http://example.com/song.mp3"))
-            h.duck()
+            _duck(h)
             self.assertTrue(
                 h.player._paused_on_duck,
                 "Expected _paused_on_duck=True after duck",
@@ -247,7 +263,7 @@ class TestDuckUnduck(unittest.TestCase):
         """duck() must be a no-op when player is STOPPED (no speech to lower around)."""
         with OCPPlayerHarness() as h:
             # Do not play anything — player starts STOPPED
-            h.duck()
+            _duck(h)
             h.player.audio_service.lower_volume.assert_not_called()
             self.assertFalse(h.player._paused_on_duck)
 
@@ -260,23 +276,56 @@ class TestDuckUnduck(unittest.TestCase):
         """
         with OCPPlayerHarness() as h:
             h.play(_audio_entry("http://example.com/song.mp3"))
-            h.duck()
+            _duck(h)
             h.assert_player_state(PlayerState.PLAYING)  # still PLAYING after duck
-            h.unduck()
+            _unduck(h)
             # restore_volume IS called — no PAUSED guard
             h.player.audio_service.restore_volume.assert_called()
             # _paused_on_duck cleared
             self.assertFalse(h.player._paused_on_duck)
 
-    def test_legacy_bus_messages_trigger_duck(self) -> None:
-        """``recognizer_loop:audio_output_start`` must be equivalent to duck."""
+    def test_ocp_duck_message_triggers_duck(self) -> None:
+        """``ovos.common_play.duck`` must lower the audio backend volume."""
         with OCPPlayerHarness() as h:
             h.play(_audio_entry("http://example.com/song.mp3"))
-            # The legacy bus message is wired in register_bus_handlers()
-            h.bus.emit(Message("recognizer_loop:audio_output_start"))
+            h.bus.emit(Message("ovos.common_play.duck"))
             time.sleep(0.05)
             h.player.audio_service.lower_volume.assert_called()
             h.assert_player_state(PlayerState.PLAYING)
+
+
+# ---------------------------------------------------------------------------
+# TestAudioOutputSpecTopicsDuck
+# ---------------------------------------------------------------------------
+
+class TestAudioOutputSpecTopicsDuck(unittest.TestCase):
+    """ovos-audio emits 'ovos.audio.output.started'/'ovos.audio.output.ended'
+    unconditionally on every TTS output (ovos_audio/playback.py begin_audio/
+    end_audio) — the ovos.common_play.duck/cork messages are only emitted
+    when tts.ocp_duck/tts.ocp_cork are enabled (both default False). These
+    spec topics must be bound to the same duck/unduck handlers so ducking
+    works on default installs, not only when that config is opted into.
+    """
+
+    def test_audio_output_started_triggers_duck(self) -> None:
+        """'ovos.audio.output.started' must lower the audio backend volume."""
+        with OCPPlayerHarness() as h:
+            h.play(_audio_entry("http://example.com/song.mp3"))
+            h.bus.emit(Message("ovos.audio.output.started"))
+            time.sleep(0.05)
+            h.player.audio_service.lower_volume.assert_called()
+            h.assert_player_state(PlayerState.PLAYING)
+
+    def test_audio_output_ended_triggers_unduck(self) -> None:
+        """'ovos.audio.output.ended' must restore the audio backend volume."""
+        with OCPPlayerHarness() as h:
+            h.play(_audio_entry("http://example.com/song.mp3"))
+            h.bus.emit(Message("ovos.audio.output.started"))
+            time.sleep(0.05)
+            h.bus.emit(Message("ovos.audio.output.ended"))
+            time.sleep(0.05)
+            h.player.audio_service.restore_volume.assert_called()
+            self.assertFalse(h.player._paused_on_duck)
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +447,7 @@ class TestCorkUncork(unittest.TestCase):
 
         When a ``speak`` message is detected within 8 s, ``handle_record_end``
         returns without uncorking — the player stays PAUSED until the TTS
-        finishes and ``ovos.utterance.handled`` (or ``audio_output_end``) fires.
+        finishes and ``ovos.utterance.handled`` fires.
         """
         from unittest.mock import patch as _patch
 

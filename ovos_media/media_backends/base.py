@@ -126,11 +126,6 @@ class BaseMediaService:
             LOG.info(f'New {self.namespace} track coming up!')
             self.bus.emit(Message(f'ovos.{self.namespace}.playing_track',
                                   data={'track': track}))
-            if self.namespace == "audio":
-                # legacy ovos-audio twin — some skills still block on this
-                # exact message type waiting for playback to start
-                self.bus.emit(Message('mycroft.audio.playing_track',
-                                      data={'track': track}))
         elif self._pending_playlist:
             # handle_play() was given more than one track — advance to
             # the next queued uri instead of reporting end-of-playlist after
@@ -149,10 +144,6 @@ class BaseMediaService:
             # played.
             LOG.debug('End of playlist!')
             self.bus.emit(Message(f'ovos.{self.namespace}.queue_end'))
-            if self.namespace == "audio":
-                # legacy ovos-audio twin — some skills block forever waiting
-                # on this exact message type at the end of playback
-                self.bus.emit(Message('mycroft.audio.queue_end'))
 
     def load_services(self):
         """Method for loading services.

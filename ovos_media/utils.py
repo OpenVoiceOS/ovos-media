@@ -121,10 +121,8 @@ def validate_message_context(message, native_sources=None):
             # anything else (int, dict, ...) is not a valid destination
             # container - refuse without raising, treat as external
             return False
-        # moved to global config level, used to be in "Audio" subsection
         native_sources = native_sources or \
                         Configuration().get("native_sources") or \
-                        Configuration().get("Audio", {}).get("native_sources") or \
                         ["debug_cli", "audio"]
         if any(s in destination for s in native_sources):
             # request from device

@@ -193,7 +193,7 @@ https://github.com/OpenVoiceOS/ovos-media/issues
 |---|---|---|
 | TTS synthesis and playback | YES | NO |
 | OCP media playback (audio/video/web) | Legacy only | YES |
-| `mycroft.audio.service.*` bus API | YES | YES (via `LegacyAudioServiceCompat`) |
+| `mycroft.audio.service.*` bus API | YES | NO |
 | Volume ducking during TTS | YES | YES |
 | MPRIS integration | NO | YES |
 | Shuffle / repeat / liked songs | NO | YES |

@@ -123,28 +123,29 @@ class TestSetMediaStateStateAssignment(unittest.TestCase):
 
 
 class TestRecognizerLoopDuckingHandlers(unittest.TestCase):
-    """recognizer_loop:* events must trigger correct cork/duck handlers."""
+    """ovos.common_play.duck/unduck and recognizer_loop:record_* events must
+    trigger correct cork/duck handlers."""
 
-    def test_audio_output_start_calls_duck(self):
-        """recognizer_loop:audio_output_start → handle_duck_request"""
+    def test_duck_calls_duck(self):
+        """ovos.common_play.duck → handle_duck_request"""
         p = _make_player()
         p.state = PlayerState.PLAYING
         p.now_playing.playback = PlaybackType.AUDIO
         # Invoke the handler directly (the event is registered via add_event,
         # which we can't easily test in isolation without a full skill setup)
         from ovos_bus_client.message import Message
-        p.handle_duck_request(Message("recognizer_loop:audio_output_start"))
+        p.handle_duck_request(Message("ovos.common_play.duck"))
         p.audio_service.lower_volume.assert_called_once()
         self.assertTrue(p._paused_on_duck)
 
-    def test_audio_output_end_calls_unduck(self):
-        """recognizer_loop:audio_output_end → handle_unduck_request"""
+    def test_unduck_calls_unduck(self):
+        """ovos.common_play.unduck → handle_unduck_request"""
         p = _make_player()
         p.state = PlayerState.PAUSED
         p._paused_on_duck = True
         p.now_playing.playback = PlaybackType.AUDIO
         from ovos_bus_client.message import Message
-        p.handle_unduck_request(Message("recognizer_loop:audio_output_end"))
+        p.handle_unduck_request(Message("ovos.common_play.unduck"))
         p.audio_service.restore_volume.assert_called_once()
         self.assertFalse(p._paused_on_duck)
 

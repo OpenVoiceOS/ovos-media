@@ -45,8 +45,7 @@ The rest of this document focuses on the daemon itself.
 
 1. **`MediaService`** (`ovos_media/service.py`), the process entry point. It runs
    as a `Thread`, owns the `MessageBusClient` connection, instantiates
-   `OCPMediaPlayer`, installs the `LegacyAudioServiceCompat` shim, and registers a
-   small set of top-level bus handlers.
+   `OCPMediaPlayer`, and registers a small set of top-level bus handlers.
 
 2. **`OCPMediaPlayer`** (`ovos_media/player.py`), the virtual media player. It is
    a plain bus-connected class (it is *not* a skill or an `OVOSAbstractApplication`)
@@ -95,10 +94,9 @@ Registered in `MediaService.__init__` and `MediaService.init_messagebus`
 | `ovos.common_play.search.end` | `handle_search_end` | Dismisses the spinner and refreshes the player GUI. |
 | `opm.audio.query` | `handle_opm_audio_query` | Replies with the dict returned by `audio_service.available_backends()`, preserving the legacy OPM discovery contract. |
 
-The `LegacyAudioServiceCompat` shim (`ovos_media/legacy_api.py`) registers all
-`mycroft.audio.service.*` handlers and translates them to `ovos.common_play.*`
-commands, so unmigrated skills that still call the classic AudioService API keep
-working.
+`ovos-media` does not implement the classic `mycroft.audio.service.*` API.
+Skills that still call it are served by the old ovos-audio/OCP stack, which
+stays installed alongside `ovos-media` and answers that surface directly.
 
 ### OCPMediaPlayer handlers
 
@@ -133,8 +131,8 @@ Registered in `OCPMediaPlayer.register_bus_handlers` (`ovos_media/player.py`).
 | `ovos.common_play.like` / `.unlike` | `handle_like` / `handle_unlike` | Add/remove the current track in the liked-songs store. |
 | `ovos.common_play.status` | `handle_status` | Replies with full player status (state, media type, position, shuffle, loop). |
 | `ovos.common_play.mpris.now_playing` | `handle_mpris_now_playing` | Reflects an **external** MPRIS player as OCP now-playing, see [MPRIS](#mpris-integration). |
-| `recognizer_loop:audio_output_start` / `:audio_output_end` | `handle_duck_request` / `handle_unduck_request` | Legacy ducking aliases, same semantics as `ovos.common_play.duck` / `.unduck`. |
-| `recognizer_loop:record_begin` / `:record_end` | `handle_cork_request` / `handle_record_end` | Legacy cork alias; `record_end` auto-uncorks if no `speak` arrives within 8 s. |
+| `ovos.audio.output.started` / `ovos.audio.output.ended` | `handle_duck_request` / `handle_unduck_request` | ovos-audio emits these unconditionally on every TTS output; bound to the same handlers as `ovos.common_play.duck` / `.unduck`. |
+| `recognizer_loop:record_begin` / `:record_end` | `handle_cork_request` / `handle_record_end` | Bound to the microphone recording window; `record_end` auto-uncorks if no `speak` arrives within 8 s. |
 | `ovos.utterance.handled` | `handle_utterance_handled` | Restores volume once speech finishes. |
 | `mycroft.stop` | `handle_mycroft_stop` | Global stop, stops all backends, resets state, replies `mycroft.stop.handled`. |
 
