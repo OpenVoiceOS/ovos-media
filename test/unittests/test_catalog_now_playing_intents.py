@@ -431,6 +431,28 @@ class TestConstructsWithoutAhocorasickNer(unittest.TestCase):
             labels = {r["label"] for r in registered}
             self.assertIn("playlist_name", labels)
 
+    def test_song_name_label_registers_even_with_no_liked_songs(self):
+        """register_ocp_keyword (the real, NER-backed path) always emits
+        'ovos.common_play.register_keyword' regardless of sample count - the
+        classifier still needs to know the "song_name" label exists even
+        when the liked-songs store is empty. The fallback used when
+        ahocorasick_ner is missing must mirror that: a fresh install with no
+        liked songs must still register the song_name label with an empty
+        samples list, not silently skip it."""
+        with patch("ovos_workshop.skills.common_play.AhocorasickNER", None):
+            bus = FakeBus()
+            registered = []
+            bus.on("ovos.common_play.register_keyword",
+                  lambda m: registered.append(m.data))
+
+            OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
+
+            song_name_msgs = [r for r in registered if r["label"] == "song_name"]
+            self.assertEqual(len(song_name_msgs), 1)
+            self.assertEqual(song_name_msgs[0]["samples"], [])
+            self.assertEqual(set(song_name_msgs[0].keys()),
+                              {"skill_id", "label", "samples", "media_type"})
+
 
 class TestSkillAnnounceMediaTypesNormalization(unittest.TestCase):
     """D2: a skill announcing with the singular "media_type" key can send

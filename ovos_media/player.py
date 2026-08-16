@@ -147,8 +147,6 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         Used as a fallback when ahocorasick_ner is not installed.
         """
         samples = list(set(samples))
-        if not samples:
-            return
         for lang in self.native_langs:
             if len(samples) >= 20:
                 csv_path = f"{self.ocp_cache_dir}/{self.skill_id}_{label}_{lang}.csv"
