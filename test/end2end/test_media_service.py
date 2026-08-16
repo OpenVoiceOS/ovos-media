@@ -89,11 +89,6 @@ class MediaServiceHarness:
         )
         ocp_cls_mock.return_value = self.ocp_mock
 
-        # Patch LegacyAudioServiceCompat so it doesn't connect
-        legacy_patch = patch("ovos_media.service.LegacyAudioServiceCompat")
-        legacy_patch.start()
-        self._patches.append(legacy_patch)
-
     def _stop_patches(self) -> None:
         for p in reversed(self._patches):
             try:

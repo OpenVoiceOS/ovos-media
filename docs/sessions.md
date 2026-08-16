@@ -53,7 +53,10 @@ Gated handlers (the ones that change playback or persistent state):
 |---|---|
 | `OCPMediaPlayer` (`player.py`) | play, pause, resume, stop, play/pause toggle, next, previous, seek, set track position, playlist set/queue/clear, shuffle set/unset/toggle, repeat set/unset/toggle, duck, cork, uncork (and unduck restore), like, unlike |
 | `NowPlaying` (`player.py`) | `handle_external_play` (so a non-default play does not bleed metadata into the local now-playing) |
-| `LegacyAudioServiceCompat` (`legacy_api.py`) | `mycroft.audio.service.*`: play, queue, pause, resume, stop, next, prev, set/seek position |
+
+`ovos-media` does not implement the classic `mycroft.audio.service.*` API;
+those handlers, and their session gating, live in the old ovos-audio/OCP
+stack that stays installed alongside `ovos-media`.
 
 **Read-only query handlers are *not* gated**, `status`, `track_info`,
 `get_track_length`, `get_track_position`, `list_backends`. These reply to the

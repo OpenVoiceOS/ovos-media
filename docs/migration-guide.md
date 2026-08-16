@@ -157,13 +157,16 @@ All media control uses the `ovos.common_play.*` namespace.
 
 | Action | Legacy | ovos-media |
 |---|---|---|
-| Duck (TTS speaking) | `recognizer_loop:audio_output_start` | `ovos.common_play.duck` (legacy alias kept) |
-| Unduck | `recognizer_loop:audio_output_end` | `ovos.common_play.unduck` (legacy alias kept) |
-| Cork (mic open) | `recognizer_loop:record_begin` | `ovos.common_play.cork` (legacy alias kept) |
+| Duck (TTS speaking) | `recognizer_loop:audio_output_start` | `ovos.common_play.duck`, also bound to ovos-audio's `ovos.audio.output.started` |
+| Unduck | `recognizer_loop:audio_output_end` | `ovos.common_play.unduck`, also bound to ovos-audio's `ovos.audio.output.ended` |
+| Cork (mic open) | `recognizer_loop:record_begin` | `ovos.common_play.cork`, also bound directly to `recognizer_loop:record_begin` |
 | Uncork | (implicit in `record_end`) | `ovos.common_play.uncork` + auto-uncork on `record_end` |
 
-The legacy `recognizer_loop:*` messages remain wired as aliases, so existing
-callers keep working.
+ovos-audio emits `ovos.audio.output.started` / `ovos.audio.output.ended`
+unconditionally on every TTS output, so ducking works on default installs
+without any config. The `recognizer_loop:record_begin` / `record_end`
+subscriptions bind the microphone recording window directly, since no
+listener emits an OCP cork equivalent for it.
 
 ### Status and info
 

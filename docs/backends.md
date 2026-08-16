@@ -142,7 +142,7 @@ Delegate to `self.current.pause()` / `resume()` / `stop()` and emit the correspo
 
 ### `lower_volume()` / `restore_volume()`
 
-Ducking hooks. `lower_volume` calls `self.current.lower_volume()` and sets `self.volume_is_low = True`. `restore_volume` calls `self.current.restore_volume()` and clears the flag. These are invoked by the `ovos.common_play.duck` / `ovos.common_play.unduck` bus events, which are also aliased to the legacy `recognizer_loop:audio_output_start` / `recognizer_loop:audio_output_end` events.
+Ducking hooks. `lower_volume` calls `self.current.lower_volume()` and sets `self.volume_is_low = True`. `restore_volume` calls `self.current.restore_volume()` and clears the flag. These are invoked by the `ovos.common_play.duck` / `ovos.common_play.unduck` bus events, and by ovos-audio's `ovos.audio.output.started` / `ovos.audio.output.ended` events, which it emits unconditionally on every TTS output.
 
 ### `handle_media_state_change(message)`
 

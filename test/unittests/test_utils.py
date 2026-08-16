@@ -85,17 +85,19 @@ class TestValidateMessageContextNativeSources(unittest.TestCase):
             result = validate_message_context(msg)
         self.assertTrue(result)
 
-    def test_native_sources_falls_back_to_audio_subsection(self):
-        """Falls back to Configuration()['Audio']['native_sources']."""
+    def test_audio_subsection_native_sources_is_ignored(self):
+        """The old ``Audio.native_sources`` config key is not consulted —
+        only the top-level ``native_sources`` key and the built-in default
+        matter."""
         from ovos_media.utils import validate_message_context
-        msg = _make_message(destination=["audio"])
+        msg = _make_message(destination=["custom_source"])
 
         def _fake_config():
-            return {"Audio": {"native_sources": ["audio"]}}
+            return {"Audio": {"native_sources": ["custom_source"]}}
 
         with patch("ovos_media.utils.Configuration", side_effect=_fake_config):
             result = validate_message_context(msg)
-        self.assertTrue(result)
+        self.assertFalse(result)
 
     def test_provided_native_sources_take_priority(self):
         """Explicitly passed native_sources override config values."""

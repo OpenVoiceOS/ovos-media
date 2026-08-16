@@ -351,13 +351,20 @@ class TestDuckCork(unittest.TestCase):
     """Duck/unduck and cork/uncork reached through the daemon player."""
 
     def test_duck_unduck_cycle_keeps_playing(self) -> None:
-        """duck lowers volume (still PLAYING); unduck restores it."""
+        """duck lowers volume (still PLAYING); unduck restores it.
+
+        Emits ``ovos.common_play.duck``/``unduck`` directly —
+        ``OCPPlayerHarness.duck()``/``unduck()`` still emit the removed
+        ``recognizer_loop:audio_output_start``/``_end`` aliases.
+        """
         with OCPPlayerHarness() as h:
             h.play(_audio("http://example.com/song.mp3"))
-            h.duck()
+            h.bus.emit(Message("ovos.common_play.duck"))
+            time.sleep(0.05)
             h.player.audio_service.lower_volume.assert_called()
             h.assert_player_state(PlayerState.PLAYING)
-            h.unduck()
+            h.bus.emit(Message("ovos.common_play.unduck"))
+            time.sleep(0.05)
             h.player.audio_service.restore_volume.assert_called()
 
     def test_cork_uncork_cycle_pauses_then_resumes(self) -> None:

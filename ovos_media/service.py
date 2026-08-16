@@ -5,7 +5,6 @@ from ovos_utils.log import LOG
 from ovos_utils.process_utils import ProcessStatus, StatusCallbackMap
 
 from ovos_config.config import Configuration
-from ovos_media.legacy_api import LegacyAudioServiceCompat
 from ovos_media.player import OCPMediaPlayer
 
 def on_ready():
@@ -84,7 +83,6 @@ class MediaService(Thread):
         # (after OCPMediaPlayer's plugin-loading construction above), not in
         # init_messagebus() which runs before self.ocp is assigned.
         self.bus.on("opm.audio.query", self.handle_opm_audio_query)
-        self.legacy_compat = LegacyAudioServiceCompat(self.ocp, self.bus)
 
     def handle_home(self, message):
         self.ocp._update_gui()
@@ -125,7 +123,6 @@ class MediaService(Thread):
         # TODO - update gui for no-media in now_playing page
         self.ocp.reset()
         self.status.set_stopping()
-        self.legacy_compat.shutdown()
         self.ocp.shutdown()
         # Remove the four handlers registered directly on MediaService
         # (not on self.ocp) so a shut-down service stops answering

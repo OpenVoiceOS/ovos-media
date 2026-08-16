@@ -423,12 +423,12 @@ class TestHandleSeekBackward(unittest.TestCase):
         svc.current.seek_backward.assert_called_with(10)
 
 
-class TestTrackStartLegacyTwins(unittest.TestCase):
-    """track_start must emit mycroft.audio.* twins alongside ovos.audio.*
-    so legacy skills blocking on mycroft.audio.playing_track /
-    mycroft.audio.queue_end do not hang forever."""
+class TestTrackStartOcpEmits(unittest.TestCase):
+    """track_start must emit ovos.{namespace}.playing_track / queue_end and
+    nothing else — the mycroft.audio.* twins served by the old ovos-audio
+    stack are not this service's concern."""
 
-    def test_track_start_emits_ovos_and_mycroft_playing_track(self):
+    def test_track_start_emits_ovos_playing_track(self):
         svc, bus = _make_service()
         svc.namespace = "audio"
 
@@ -439,11 +439,11 @@ class TestTrackStartLegacyTwins(unittest.TestCase):
         svc.track_start("http://example.com/track.mp3")
 
         self.assertEqual(len(received["ovos"]), 1)
-        self.assertEqual(len(received["mycroft"]), 1)
-        self.assertEqual(received["mycroft"][0].data["track"],
+        self.assertEqual(received["ovos"][0].data["track"],
                          "http://example.com/track.mp3")
+        self.assertEqual(len(received["mycroft"]), 0)
 
-    def test_track_start_none_emits_ovos_and_mycroft_queue_end(self):
+    def test_track_start_none_emits_ovos_queue_end(self):
         svc, bus = _make_service()
         svc.namespace = "audio"
 
@@ -454,31 +454,7 @@ class TestTrackStartLegacyTwins(unittest.TestCase):
         svc.track_start(None)
 
         self.assertEqual(len(received["ovos"]), 1)
-        self.assertEqual(len(received["mycroft"]), 1)
-
-    def test_track_start_video_namespace_does_not_emit_mycroft_twin(self):
-        """mycroft.audio.* is audio-specific legacy — video/web must not
-        emit it (there is no mycroft.video.*/mycroft.web.* legacy type)."""
-        svc, bus = _make_service()
-        svc.namespace = "video"
-
-        received = []
-        bus.on("mycroft.audio.playing_track", lambda m: received.append(m))
-
-        svc.track_start("http://example.com/movie.mp4")
-
-        self.assertEqual(len(received), 0)
-
-    def test_track_start_video_namespace_does_not_emit_mycroft_queue_end(self):
-        svc, bus = _make_service()
-        svc.namespace = "video"
-
-        received = []
-        bus.on("mycroft.audio.queue_end", lambda m: received.append(m))
-
-        svc.track_start(None)
-
-        self.assertEqual(len(received), 0)
+        self.assertEqual(len(received["mycroft"]), 0)
 
 
 class TestHandlePlayUriExtraction(unittest.TestCase):
