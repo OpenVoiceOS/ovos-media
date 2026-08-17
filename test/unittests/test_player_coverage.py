@@ -15,7 +15,7 @@
 
 Targets uncovered regions:
 - NowPlaying: reset, update, handle_track_state_change, handle_media_state_change,
-  handle_sync_seekbar, handle_external_play, as_entry, shutdown
+  handle_sync_seekbar, handle_external_play, as_entry
 - OCPMediaPlayer: play_media, play_next, play_prev, set_now_playing,
   handle_duck_request, handle_unduck_request, handle_cork_request,
   handle_uncork_request, handle_playback_ended, handle_invalid_media,
@@ -151,12 +151,6 @@ class TestNowPlayingInit(unittest.TestCase):
         self.assertEqual(np.title, "")
         self.assertEqual(np.artist, "")
         self.assertEqual(np.position, 0)
-
-    def test_shutdown_removes_bus_handlers(self):
-        """Calling shutdown() should not raise and should remove bus events."""
-        np, bus = self._make_now_playing()
-        # Should not raise
-        np.shutdown()
 
     def test_update_with_dict(self):
         np, _ = self._make_now_playing()

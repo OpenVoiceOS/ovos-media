@@ -63,11 +63,11 @@ User says "play jazz"
 
 ## NowPlaying
 
-`NowPlaying` is a `MediaEntry` subclass that additionally subscribes to bus events to track live playback state. It is instantiated in `OCPMediaPlayer.__init__` and stored as `OCPMediaPlayer.now_playing`.
+`NowPlaying` is a `MediaEntry` subclass that additionally tracks live playback state. It is instantiated in `OCPMediaPlayer.__init__` and stored as `OCPMediaPlayer.now_playing`; the bus edge (`ovos_media/bus/api.py`) delivers the track-state, play and playback-time messages that update it.
 
 The `as_dict` property returns a plain `dict` with the current track's metadata fields (uri, title, artist, image, playback type, etc.). It is a property, not a method; access it as `player.now_playing.as_dict` without calling it.
 
-`NowPlaying` tracks the seek position via the `ovos.common_play.playback_time` bus event. This position is exposed through MPRIS as `Position` in microseconds, see [mpris.md](mpris.md).
+`NowPlaying` tracks the seek position from the `ovos.common_play.playback_time` bus message. This position is exposed through MPRIS as `Position` in microseconds, see [mpris.md](mpris.md).
 
 ## Writing an OCP skill
 

@@ -80,8 +80,8 @@ class TestNowPlayingTrackStateChange(unittest.TestCase):
         np._player = mock_player
         np.status = TrackState.QUEUED_AUDIO  # different state
 
-        bus.emit(Message("ovos.common_play.track.state",
-                        {"state": TrackState.PLAYING_VIDEO}))
+        np.handle_track_state_change(Message("ovos.common_play.track.state",
+                                             {"state": TrackState.PLAYING_VIDEO}))
 
         mock_player.set_player_state.assert_called_with(PlayerState.PLAYING)
 
@@ -91,8 +91,8 @@ class TestNowPlayingTrackStateChange(unittest.TestCase):
         mock_player = MagicMock()
         np._player = mock_player
 
-        bus.emit(Message("ovos.common_play.track.state",
-                        {"state": TrackState.PLAYING_SKILL}))
+        np.handle_track_state_change(Message("ovos.common_play.track.state",
+                                             {"state": TrackState.PLAYING_SKILL}))
 
         mock_player.set_player_state.assert_called_with(PlayerState.PLAYING)
 

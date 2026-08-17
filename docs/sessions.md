@@ -37,9 +37,10 @@ This mirrors how `ovos-audio` scopes TTS to native/local sources
 
 ## Implementation
 
-A `require_default_session()` decorator
-(`ovos_media/utils.py`) gates each playback-**executing** bus handler. A handler
-runs only if:
+The bus edge (`ovos_media/bus/api.py`) marks every playback-**executing**
+topic as gated in its registration table and applies
+`is_default_session()` (`ovos_media/utils.py`) before dispatching. A gated
+topic reaches its handler only if:
 
 - the message is internal/synthetic (`message is None`), **or**
 - `validate_source` is False (act on everything, see below), **or**
@@ -47,12 +48,16 @@ runs only if:
 
 Otherwise it logs at debug level and returns without acting.
 
-Gated handlers (the ones that change playback or persistent state):
+Gated topics (the ones that change playback or persistent state):
 
-| Layer | Handlers |
+| Target | Topics |
 |---|---|
-| `OCPMediaPlayer` (`player.py`) | play, pause, resume, stop, play/pause toggle, next, previous, seek, set track position, playlist set/queue/clear, shuffle set/unset/toggle, repeat set/unset/toggle, duck, cork, uncork (and unduck restore), like, unlike |
+| `OCPMediaPlayer` (`player.py`) | play, pause, resume, stop, play/pause toggle, next, previous, seek, set track position, playlist set/queue/clear, shuffle set/unset/toggle, repeat set/unset/toggle, duck, cork, uncork (and unduck restore), like, unlike, record begin/end, utterance handled |
 | `NowPlaying` (`player.py`) | `handle_external_play` (so a non-default play does not bleed metadata into the local now-playing) |
+
+`recognizer_loop:record_end` and `ovos.utterance.handled` do nothing except
+resume or unduck, both of which are gated, so the gate sits on the topic
+itself.
 
 `ovos-media` does not implement the classic `mycroft.audio.service.*` API;
 those handlers, and their session gating, live in the old ovos-audio/OCP

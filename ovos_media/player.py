@@ -13,14 +13,17 @@ from ovos_config import Configuration
 from ovos_config.meta import get_xdg_base
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
-from ovos_media.bus.schemas import (decode_playback_time, flatten_media_types,
-                                    is_injection_char, is_number, validated_entries)
-from ovos_media.utils import require_default_session
+from ovos_media.bus.api import OCPBusApi
+from ovos_media.utils import is_default_session
+from ovos_media.bus.schemas import (decode_media, decode_media_state,
+                                    decode_playback_time, decode_playlist_tracks,
+                                    decode_seek, decode_track_position,
+                                    decode_track_state, flatten_media_types,
+                                    is_injection_char, validated_entries)
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.log import LOG
 from ovos_bus_client.message import Message
-from ovos_bus_client.session import SessionManager
 from ovos_utils.ocp import MediaType, Playlist
 from ovos_utils.ocp import OCP_ID, PlayerState, LoopState, PlaybackType, PlaybackMode, TrackState, MediaState, \
     MediaEntry, PluginStream
@@ -31,9 +34,8 @@ from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 class OCPMediaCatalog(OVOSCommonPlaybackSkill):
     def __init__(self, *args, validate_source: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
-        # mirrors NowPlaying.handle_external_play / require_default_session:
-        # gates playback-affecting intent handlers (shuffle on/off) to the
-        # local/"default" session, unless the owning service was configured
+        # mirrors the bus edge's session gate: keeps playback-affecting
+        # intent handlers (shuffle on/off) on the local/"default" session, unless the owning service was configured
         # with media.validate_source: false (satellite acting on everything)
         self.validate_source = validate_source
         self.skill_icon = f"{dirname(__file__)}/qt5/images/liked.svg"
@@ -51,9 +53,6 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         self.search_playlist = Playlist()
         self.ocp_skills = {}
         self.featured_skills = {}
-        self.add_event("ovos.common_play.skills.detach", self.handle_ocp_skill_detach)
-        self.add_event("ovos.common_play.announce", self.handle_skill_announce)
-
         # TODO - add search results clear/replace events
 
         # register keywords
@@ -189,7 +188,7 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
     # WhatSong/WhatAlbum/WhatArtist are deliberately UN-gated by session:
     # they mirror OCPMediaPlayer.handle_status, which itself answers every
     # session's "ovos.common_play.status" query with the single shared
-    # player's state (it is not decorated with @require_default_session()).
+    # player's state (its bus topic is not gated).
     # The consistency rule this repo follows is that each intent front-end
     # mirrors its backing handler's own gating - handle_status is global
     # read-only state, so these read handlers stay global too. Only the
@@ -236,20 +235,14 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
             self.speak_dialog("no.artist.info")
 
     def _is_default_session(self, message: Message) -> bool:
-        """Mirror ovos_media.utils.require_default_session in full, including
-        the validate_source short-circuit: only the
-        local/"default" session may trigger playback-affecting actions here,
-        UNLESS this catalog's owning service was configured with
-        media.validate_source: false (satellite acting on every session).
-        OCPMediaPlayer.handle_set_shuffle/handle_unset_shuffle are gated by
-        that same decorator/config value, so on a non-default (e.g. HiveMind
-        satellite) session with validate_source left True, the emitted
-        shuffle.set/unset message is silently dropped by the player - this
-        must not be reported back as a success. When validate_source is
+        """Whether the player will act on a request forwarded from this
+        message, using the same rule the bus edge applies to
+        'ovos.common_play.shuffle.set'/'.unset'. On a non-default (e.g.
+        HiveMind satellite) session with validate_source left True the
+        emitted message is silently dropped by the player - this must not be
+        reported back to the user as a success. When validate_source is
         False the player WILL act on it, so this front-end must agree."""
-        if not self.validate_source:
-            return True
-        return SessionManager.get(message).session_id == "default"
+        return is_default_session(message, self.validate_source)
 
     def handle_shuffle_on(self, message):
         if not self._is_default_session(message):
@@ -378,17 +371,6 @@ class NowPlaying(MediaEntry):
         self.position = 0
         super().__init__(*args, **kwargs)
         self.original_uri = self.uri
-        self.bus.on("ovos.common_play.track.state", self.handle_track_state_change)
-        # NOTE: NowPlaying deliberately does NOT subscribe to
-        # 'ovos.common_play.media.state'. OCPMediaPlayer.handle_player_media_update
-        # is the SINGLE subscriber to that topic and calls
-        # NowPlaying.on_end_of_media() as a plain method call, in order, after it
-        # has captured the pre-reset playback type / uri. Two independent
-        # subscribers had no ordering guarantee (pyee's ExecutorEventEmitter
-        # submits every handler to a thread pool independently), which raced the
-        # end-of-track reset against the autoplay decision that reads it.
-        self.bus.on("ovos.common_play.play", self.handle_external_play)
-        self.bus.on("ovos.common_play.playback_time", self.handle_sync_seekbar)
 
     def as_entry(self) -> MediaEntry:
         """
@@ -416,14 +398,6 @@ class NowPlaying(MediaEntry):
         """
         fields = {f.name: getattr(self, f.name) for f in dataclasses.fields(MediaEntry)}
         return MediaEntry(**fields).as_dict
-
-    def shutdown(self):
-        """
-        Remove NowPlaying events from the MessageBusClient
-        """
-        self.bus.remove("ovos.common_play.track.state", self.handle_track_state_change)
-        self.bus.remove('ovos.common_play.play', self.handle_external_play)
-        self.bus.remove('ovos.common_play.playback_time', self.handle_sync_seekbar)
 
     def reset(self):
         """
@@ -511,22 +485,8 @@ class NowPlaying(MediaEntry):
         bleed into the new track
         @param message: Message associated with request
         """
-        # NowPlaying is part of the single local player; a play command from a
-        # non-default session (e.g. a HiveMind satellite, routed by the
-        # server-side OCP pipeline) must not bleed its metadata into the local
-        # now_playing. Mirror require_default_session() using the owning
-        # player's validate_source flag.
-        validate = self._player.validate_source if self._player else True
-        if validate and SessionManager.get(message).session_id != "default":
-            LOG.debug(f"ignoring '{message.msg_type}' now_playing update, "
-                      f"not from the default/local session")
-            return
-        media = message.data.get("media", {})
-        if not media:
-            return
-        if not isinstance(media, dict):
-            LOG.warning(f"ignoring '{message.msg_type}' now_playing update, "
-                        f"expected a dict track, got: {media!r}")
+        media = decode_media(message.data)
+        if media is None:
             return
         self.update(media, newonly=False)
 
@@ -537,15 +497,7 @@ class NowPlaying(MediaEntry):
         @param message: Message with updated `state` data
         @return:
         """
-        state = message.data.get("state")
-        if state is None:
-            raise ValueError(f"Got state update message with no state: "
-                             f"{message}")
-        if isinstance(state, int):
-            state = TrackState(state)
-        if not isinstance(state, TrackState):
-            raise ValueError(f"Expected int or TrackState, but got: {state}")
-
+        state = decode_track_state(message.data)
         if state == self.status:
             return
         LOG.info(f"TrackState changed: {repr(self.status)} -> {repr(state)}")
@@ -586,9 +538,9 @@ class NowPlaying(MediaEntry):
     def on_end_of_media(self):
         """
         End-of-media reset, invoked as a plain method call by
-        OCPMediaPlayer.handle_player_media_update (the single subscriber to
-        'ovos.common_play.media.state') AFTER it has captured the pre-reset
-        playback type and uri. Playback ended, so allow the next track to
+        OCPMediaPlayer.handle_player_media_update (the only consumer of
+        END_OF_MEDIA on 'ovos.common_play.media.state') AFTER it has captured
+        the pre-reset playback type and uri. Playback ended, so allow the next track to
         change metadata again.
         """
         self.reset()
@@ -601,15 +553,7 @@ class NowPlaying(MediaEntry):
         point for out-of-tree callers that drive NowPlaying directly.
         @param message: Message with updated MediaState
         """
-        state = message.data.get("state")
-        if state is None:
-            raise ValueError(f"Got state update message with no state: "
-                             f"{message}")
-        if isinstance(state, int):
-            state = MediaState(state)
-        if not isinstance(state, MediaState):
-            raise ValueError(f"Expected int or TrackState, but got: {state}")
-
+        state = decode_media_state(message.data)
         if state == MediaState.END_OF_MEDIA:
             self.on_end_of_media()
 
@@ -635,7 +579,7 @@ class OCPMediaPlayer:
         self.bus = bus
         self.ocp_config = config or Configuration().get("media", {})
         # When True, playback-executing handlers act only on the local/"default"
-        # session (see ovos_media.utils.require_default_session). A satellite
+        # session (see ovos_media.utils.is_default_session). A satellite
         # whose sessions are not NAT'd to "default" by hivemind-core should set
         # this False so its embedded ovos-media acts on all sessions.
         self.validate_source = validate_source
@@ -669,12 +613,18 @@ class OCPMediaPlayer:
             self.mpris = OcpMprisExporter(self, config=self.ocp_config,
                                           manage_players=manage_players)
 
-        # tracks every (event, handler) pair registered via self._register()
-        # below so unregister_bus_handlers() can remove exactly what was
-        # added, without hand-maintaining a second list that can drift out
-        # of sync with register_bus_handlers().
-        self._bus_events: List[tuple] = []
-        self.register_bus_handlers()
+        # every bus subscription of this player, its NowPlaying and its
+        # OCPMediaCatalog lives in one registration table (see
+        # ovos_media.bus.api), which is also what shutdown() tears down.
+        self.bus_api = OCPBusApi(bus, player=self)
+        self._report_to_core()
+
+    def _report_to_core(self) -> None:
+        """Broadcast the supported StreamExtractorIds and the initial player
+        status, so ovos-core learns this daemon's capabilities and state
+        without having to ask for them."""
+        self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))
+        self.handle_status(Message("ovos.common_play.status"))
 
     def _init_runtime_state(self) -> None:
         """Initialise the plain in-memory playback bookkeeping.
@@ -731,120 +681,6 @@ class OCPMediaPlayer:
         # finds zero backends loaded, never again
         self._no_backend_dialog_spoken: bool = False
 
-    def _register(self, event: str, handler) -> None:
-        """Register a bus handler and remember it for unregister_bus_handlers().
-
-        Every handler added by register_bus_handlers() must go through this
-        method — it is the single source of truth for what needs to be torn
-        down again, so add/remove can never drift out of sync.
-        """
-        self.bus.on(event, handler)
-        self._bus_events.append((event, handler))
-
-    def unregister_bus_handlers(self) -> None:
-        """Remove every bus handler registered via self._register()."""
-        for event, handler in self._bus_events:
-            self.bus.remove(event, handler)
-        self._bus_events.clear()
-
-    def register_bus_handlers(self) -> None:
-        """Register all OCP bus event handlers."""
-        # ovos common play bus api
-        # NOTE: OCPMediaPlayer does NOT subscribe to its own
-        # 'ovos.common_play.player.state' event — set_player_state() is the
-        # single authoritative writer of self.state; external subscribers
-        # (MPRIS, GUI clients) may still listen on the bus.
-        self._register('ovos.common_play.media.state', self.handle_player_media_update)
-        self._register('ovos.common_play.play', self.handle_play_request)
-        self._register('ovos.common_play.pause', self.handle_pause_request)
-        self._register('ovos.common_play.play_pause', self.handle_pause_toggle_request)
-        self._register('ovos.common_play.resume', self.handle_resume_request)
-        self._register('ovos.common_play.stop', self.handle_stop_request)
-        self._register('ovos.common_play.next', self.handle_next_request)
-        self._register('ovos.common_play.previous', self.handle_prev_request)
-        self._register('ovos.common_play.seek', self.handle_seek_request)
-        self._register('ovos.common_play.get_track_length', self.handle_track_length_request)
-        self._register('ovos.common_play.set_track_position', self.handle_set_track_position_request)
-        self._register('ovos.common_play.get_track_position', self.handle_track_position_request)
-        self._register('ovos.common_play.track_info', self.handle_track_info_request)
-        self._register('ovos.common_play.list_backends', self.handle_list_backends_request)
-        self._register('ovos.common_play.playlist.set', self.handle_playlist_set_request)
-        self._register('ovos.common_play.playlist.clear', self.handle_playlist_clear_request)
-        self._register('ovos.common_play.playlist.queue', self.handle_playlist_queue_request)
-        self._register('ovos.common_play.duck', self.handle_duck_request)
-        self._register('ovos.common_play.unduck', self.handle_unduck_request)
-        self._register('ovos.common_play.cork', self.handle_cork_request)
-        self._register('ovos.common_play.uncork', self.handle_uncork_request)
-        # ovos-audio emits 'ovos.audio.output.started'/'ovos.audio.output.ended'
-        # unconditionally on every TTS output (ovos_audio/playback.py
-        # begin_audio/end_audio). The ovos.common_play.duck/cork messages are
-        # an alternative ducking path, but only emitted when tts.ocp_duck /
-        # tts.ocp_cork are enabled in config (both default False). Binding
-        # these spec topics to the same handlers keeps ducking working on
-        # default installs.
-        #
-        # NOTE: bound through per-topic wrapper functions, not the bare
-        # self.handle_duck_request/self.handle_unduck_request methods, for
-        # the same reason as the record_begin/record_end binding above:
-        # 'ovos.audio.output.started'/'ended' ARE migrated legacy topics
-        # (ovos-bus-client's MessageBusClient._mirror_guard_for wraps them in
-        # a per-HANDLER dedup guard), so sharing the bare bound method with
-        # the plain 'ovos.common_play.duck'/'unduck' registrations above
-        # would put remove() on the dedup path for both topics and leave the
-        # plain one un-removable — see the block comment on the
-        # record_begin/record_end registration for the full mechanism.
-        self._register('ovos.audio.output.started', lambda message: self.handle_duck_request(message))
-        self._register('ovos.audio.output.ended', lambda message: self.handle_unduck_request(message))
-        # mic-cork integration — no listener emits an OCP cork equivalent for
-        # the mic recording window, so these stay bound directly here.
-        #
-        # NOTE: bound through a per-topic wrapper function rather than the
-        # bare self.handle_cork_request method, on purpose.
-        # 'recognizer_loop:record_begin' is a migrated legacy topic
-        # (ovos_spec_tools.messages.MIGRATION_MAP), so ovos-bus-client's
-        # MessageBusClient.on() (client.py) wraps it in a per-HANDLER dedup
-        # guard and tracks that wrapper in self._dedup_registrations[func].
-        # Because a bound method compares equal (and hashes the same) across
-        # separate attribute accesses, self.handle_duck_request used here
-        # would be "the same" func as the one passed to
-        # _register('ovos.common_play.duck', ...) above. remove() branches on
-        # `if target in self._dedup_registrations`, and once ANY topic put
-        # that func in the dedup table, remove() takes the dedup path for
-        # EVERY topic registered under it — including the plain, non-migrated
-        # 'ovos.common_play.duck' registration, whose entry never lived in
-        # that table. The dedup path then filters
-        # self._dedup_registrations[target] for the given event_name, finds
-        # nothing (the plain topic was never recorded there), and silently
-        # removes zero listeners instead of falling through to
-        # _remove_normal() — so a shut-down OCPMediaPlayer keeps answering
-        # 'ovos.common_play.duck'/'unduck'/'cork' forever. Binding the
-        # bridged topic to its own wrapper object keeps it out of the plain
-        # topic's identity entirely, so each remove() call resolves cleanly.
-        self._register('recognizer_loop:record_begin', lambda message: self.handle_cork_request(message))
-        self._register('recognizer_loop:record_end', self.handle_record_end)
-        self._register('ovos.utterance.handled', self.handle_utterance_handled)
-        # global stop
-        self._register('mycroft.stop', self.handle_mycroft_stop)
-        self._register('ovos.common_play.shuffle.toggle', self.handle_shuffle_toggle_request)
-        self._register('ovos.common_play.shuffle.set', self.handle_set_shuffle)
-        self._register('ovos.common_play.shuffle.unset', self.handle_unset_shuffle)
-        self._register('ovos.common_play.repeat.toggle', self.handle_repeat_toggle_request)
-        self._register('ovos.common_play.repeat.set', self.handle_set_repeat)
-        self._register('ovos.common_play.repeat.unset', self.handle_unset_repeat)
-        self._register('ovos.common_play.SEI.get', self.handle_get_SEIs)
-        # 'ovos.common_play.search.start'/'.search.end'/'.home' are
-        # pipeline-side signals (the OCP pipeline plugin uses them to drive
-        # a GUI's own loading/navigation state); this daemon has no
-        # in-process GUI and no other state to change in response to them,
-        # so none of the three is subscribed here.
-        self._register("ovos.common_play.like", self.handle_like)
-        self._register("ovos.common_play.unlike", self.handle_unlike)
-        self._register("ovos.common_play.status", self.handle_status)
-        # external MPRIS player → reflect as OCP now_playing (no local backend)
-        self._register("ovos.common_play.mpris.now_playing", self.handle_mpris_now_playing)
-        self.handle_get_SEIs(Message("ovos.common_play.SEI.get"))  # report to ovos-core
-        self.handle_status(Message("ovos.common_play.status"))  # report to ovos-core
-
     def handle_status(self, message):
         self.bus.emit(message.response({
             "playback_type": self.playback_type,
@@ -860,7 +696,6 @@ class OCPMediaPlayer:
             "image": self.now_playing.image
         }))
 
-    @require_default_session()
     def handle_like(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
@@ -885,7 +720,6 @@ class OCPMediaPlayer:
         self.bus.emit(message.forward("mycroft.audio.play_sound",
                                       {"uri": "snd/acknowledge.mp3"}))
 
-    @require_default_session()
     def handle_unlike(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
@@ -1834,37 +1668,30 @@ class OCPMediaPlayer:
                 self._invalid_timer = None
         if self.mpris:
             self.mpris.shutdown()
-        self.now_playing.shutdown()
-        # self.media.shutdown() is the no-op OVOSSkill.shutdown() hook —
-        # it does NOT remove the bus handlers add_event() registered
-        # (ovos.common_play.skills.detach, .announce, the OCP intents, ...).
+        # self.media.shutdown() is the no-op OVOSSkill.shutdown() hook — it
+        # does NOT remove what ovos-workshop registered for the catalog (the
+        # OCP intents, the keyword/announce plumbing of the skill base class).
         # default_shutdown() is the real OVOSSkill teardown that removes
         # them; without it a "shut down" service kept answering intents.
+        # The catalog's own announce/skills.detach topics belong to
+        # self.bus_api, torn down below.
         self.media.default_shutdown()
         self.audio_service.shutdown()
         self.video_service.shutdown()
         self.web_service.shutdown()
-        # register_bus_handlers() above bound ~35 handlers directly via
-        # self.bus.on() (not add_event(), since OCPMediaPlayer is not an
-        # OVOSSkill) — remove exactly what was registered so a shut-down
-        # player stops answering ping/status/search/like/etc.
-        self.unregister_bus_handlers()
+        # a shut-down player must stop answering status/like/duck/etc
+        self.bus_api.shutdown()
 
     def handle_player_media_update(self, message):
         """
         Handles 'ovos.common_play.media.state' messages with media state updates
         @param message: Message providing new "state" data
         """
-        state = message.data.get("state")
-        if state is None:
-            raise ValueError(f"Got state update message with no state: "
-                             f"{message}")
-        if isinstance(state, int):
-            state = MediaState(state)
-        if not isinstance(state, MediaState):
-            raise ValueError(f"Expected int or MediaState, but got: {state}")
+        state = decode_media_state(message.data)
 
-        # this is the SOLE subscriber to 'ovos.common_play.media.state'.
+        # this is the sole consumer of END_OF_MEDIA on
+        # 'ovos.common_play.media.state' (the backend services subscribe too,
+        # but act on LOADED_MEDIA only).
         # The compare-and-set below plus the end-of-media capture happen under
         # one lock, so two concurrent END_OF_MEDIA events can only ever advance
         # the queue once. Nothing that can re-enter the player (autoplay, GUI
@@ -1959,7 +1786,6 @@ class OCPMediaPlayer:
         # for it, lives in play_next()'s end-of-queue branch.
 
     # ovos common play bus api requests
-    @require_default_session()
     def handle_play_request(self, message):
         LOG.debug("Received OCP playback request")
         repeat = message.data.get("repeat", False)
@@ -1975,75 +1801,56 @@ class OCPMediaPlayer:
 
         self.play_media(media, disambiguation, playlist)
 
-    @require_default_session()
     def handle_pause_request(self, message):
         self.pause()
 
-    @require_default_session()
     def handle_stop_request(self, message):
         self.stop()
         self.reset()
 
-    @require_default_session()
     def handle_resume_request(self, message):
         self.resume()
 
-    @require_default_session()
     def handle_pause_toggle_request(self, message):
         if self.state == PlayerState.PAUSED:
             self.handle_resume_request(message)
         else:
             self.handle_pause_request(message)
 
-    @require_default_session()
     def handle_seek_request(self, message):
-        # from bus api
-        seconds = message.data.get("seconds", 0)
-        if not is_number(seconds):
-            LOG.warning(f"Ignoring seek request with non-numeric 'seconds': "
-                        f"{seconds!r}")
+        seek = decode_seek(message.data)
+        if seek is None:
             return
-        miliseconds = seconds * 1000
+        if "seekValue" in seek:
+            # absolute position, from the audio player GUI seekbar
+            self.seek(seek["seekValue"])
+            return
+        # relative offset, from the bus api
+        position = self.now_playing.position or 0
+        if self.playback_type in [PlaybackType.AUDIO,
+                                  PlaybackType.UNDEFINED]:
+            position = self.audio_service.get_track_position() or position
+        self.seek(position + seek["seconds"] * 1000)
 
-        # from audio player GUI
-        position = message.data.get("seekValue")
-        # `seekValue: 0` (seek to the very start) is falsy, so `if not
-        # position` misread it as "no seekValue given" and fell through to
-        # the relative-seek path instead of seeking to 0.
-        if position is None:
-            position = self.now_playing.position or 0
-            if self.playback_type in [PlaybackType.AUDIO,
-                                      PlaybackType.UNDEFINED]:
-                position = self.audio_service.get_track_position() or position
-            position += miliseconds
-        self.seek(position)
-
-    @require_default_session()
     def handle_next_request(self, message):
         self.play_next()
 
-    @require_default_session()
     def handle_prev_request(self, message):
         self.play_prev()
 
-    @require_default_session()
     def handle_set_shuffle(self, message):
         self.shuffle = True
 
-    @require_default_session()
     def handle_unset_shuffle(self, message):
         self.shuffle = False
 
-    @require_default_session()
     def handle_set_repeat(self, message):
         self.loop_state = LoopState.REPEAT
 
-    @require_default_session()
     def handle_unset_repeat(self, message):
         self.loop_state = LoopState.NONE
 
     # playlist control bus api
-    @require_default_session()
     def handle_repeat_toggle_request(self, message):
         if self.loop_state == LoopState.REPEAT_TRACK:
             self.loop_state = LoopState.NONE
@@ -2055,41 +1862,31 @@ class OCPMediaPlayer:
         if self.mpris and self.playback_type == PlaybackType.MPRIS:
             self.mpris.toggle_repeat()
 
-    @require_default_session()
     def handle_shuffle_toggle_request(self, message):
         self.shuffle = not self.shuffle
         LOG.info(f"Shuffle: {self.shuffle}")
         if self.mpris and self.playback_type == PlaybackType.MPRIS:
             self.mpris.toggle_shuffle()
 
-    @require_default_session()
     def handle_playlist_set_request(self, message):
-        # validate (and default to []) BEFORE clearing the existing
-        # playlist — the old code cleared first and then KeyError'd on a
-        # missing 'tracks' key inside handle_playlist_queue_request, leaving
-        # the player with an empty playlist for no reason on a malformed
-        # request.
-        tracks = message.data.get("tracks") or []
-        if not isinstance(tracks, (list, tuple)):
-            LOG.warning(f"ignoring playlist.set payload of type "
-                        f"{type(tracks).__name__} - keeping current playlist")
+        # decode BEFORE clearing the existing playlist, so a malformed
+        # payload never costs the user the playlist they had.
+        tracks = decode_playlist_tracks(message.data)
+        if tracks is None:
             return
         entries = validated_entries(tracks)
         self.playlist.clear()
         for track in entries:
             self.playlist.add_entry(track)
 
-    @require_default_session()
     def handle_playlist_queue_request(self, message):
-        for track in validated_entries(message.data.get("tracks") or []):
+        for track in validated_entries(decode_playlist_tracks(message.data) or []):
             self.playlist.add_entry(track)
 
-    @require_default_session()
     def handle_playlist_clear_request(self, message):
         self.playlist.clear()
 
     # audio ducking - NB: we distinguish ducking vs corking  (lower volume vs pause)
-    @require_default_session()
     def handle_cork_request(self, message):
         """
         Pause audio on 'recognizer_loop:record_begin'
@@ -2099,7 +1896,6 @@ class OCPMediaPlayer:
             self.pause()
             self._paused_on_duck = True
 
-    @require_default_session()
     def handle_uncork_request(self, message):
         """
         Resume paused audio on 'recognizer_loop:record_begin'
@@ -2109,7 +1905,6 @@ class OCPMediaPlayer:
             self.resume()
             self._paused_on_duck = False
 
-    @require_default_session()
     def handle_duck_request(self, message):
         """
         Lower volume on 'ovos.common_play.duck'
@@ -2122,7 +1917,6 @@ class OCPMediaPlayer:
                 self.audio_service.lower_volume()
             self._paused_on_duck = True
 
-    @require_default_session()
     def handle_unduck_request(self, message):
         """
         Restore volume on 'ovos.common_play.unduck'.
@@ -2212,14 +2006,10 @@ class OCPMediaPlayer:
         data = {"position": pos}
         self.bus.emit(message.response(data))
 
-    @require_default_session()
     def handle_set_track_position_request(self, message):
-        miliseconds = message.data.get("position")
-        if is_number(miliseconds):
+        miliseconds = decode_track_position(message.data)
+        if miliseconds is not None:
             self.seek(miliseconds)
-        elif miliseconds is not None:
-            LOG.warning(f"Ignoring set_track_position request with "
-                        f"non-numeric 'position': {miliseconds!r}")
 
     def handle_track_info_request(self, message):
         data = self.now_playing.as_dict

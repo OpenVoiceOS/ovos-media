@@ -10,60 +10,55 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""Unit tests for ovos_media.utils — require_default_session."""
+"""Unit tests for ovos_media.utils — is_default_session."""
 import unittest
 
 
-class TestRequireDefaultSessionMalformedContext(unittest.TestCase):
+class TestIsDefaultSessionMalformedContext(unittest.TestCase):
     """A malformed session context (empty session_id, non-dict session)
     must never crash a gated handler — it must be refused (treated as
     NOT-default) and logged, not raised, so any peer cannot DoS a handler
     with context={"session": {"session_id": ""}}."""
 
-    def _make_handler(self):
-        from ovos_media.utils import require_default_session
-
-        calls = []
-
-        class _Svc:
-            validate_source = True
-
-            @require_default_session()
-            def handle(self, message=None):
-                calls.append(message)
-                return "ran"
-
-        return _Svc(), calls
-
     def test_empty_session_id_refused_no_exception(self):
         from ovos_bus_client.message import Message
-        svc, calls = self._make_handler()
+        from ovos_media.utils import is_default_session
         msg = Message("x", context={"session": {"session_id": ""}})
 
-        result = svc.handle(msg)  # must not raise
-
-        self.assertIsNone(result)
-        self.assertEqual(calls, [])
+        self.assertFalse(is_default_session(msg))  # must not raise
 
     def test_str_session_refused_no_exception(self):
         from ovos_bus_client.message import Message
-        svc, calls = self._make_handler()
+        from ovos_media.utils import is_default_session
         msg = Message("x", context={"session": "not_a_dict"})
 
-        result = svc.handle(msg)  # must not raise
-
-        self.assertIsNone(result)
-        self.assertEqual(calls, [])
+        self.assertFalse(is_default_session(msg))  # must not raise
 
     def test_valid_default_session_still_runs(self):
         from ovos_bus_client.message import Message
-        svc, calls = self._make_handler()
+        from ovos_media.utils import is_default_session
         msg = Message("x", context={"session": {"session_id": "default"}})
 
-        result = svc.handle(msg)
+        self.assertTrue(is_default_session(msg))
 
-        self.assertEqual(result, "ran")
-        self.assertEqual(len(calls), 1)
+    def test_named_session_refused(self):
+        from ovos_bus_client.message import Message
+        from ovos_media.utils import is_default_session
+        msg = Message("x", context={"session": {"session_id": "sat-1"}})
+
+        self.assertFalse(is_default_session(msg))
+
+    def test_named_session_allowed_when_source_not_validated(self):
+        from ovos_bus_client.message import Message
+        from ovos_media.utils import is_default_session
+        msg = Message("x", context={"session": {"session_id": "sat-1"}})
+
+        self.assertTrue(is_default_session(msg, validate_source=False))
+
+    def test_synthetic_call_allowed(self):
+        from ovos_media.utils import is_default_session
+
+        self.assertTrue(is_default_session(None))
 
 
 if __name__ == "__main__":

@@ -173,7 +173,7 @@ class TestDeadPlayerStopsHandlingDuckTopics(unittest.TestCase):
         p._paused_on_duck = True
         p.audio_service = MagicMock()
 
-        p.unregister_bus_handlers()
+        p.bus_api.shutdown()
 
         bus.emit(Message("ovos.common_play.unduck"))
         p.audio_service.restore_volume.assert_not_called()
@@ -185,7 +185,7 @@ class TestDeadPlayerStopsHandlingDuckTopics(unittest.TestCase):
         p.state = PlayerState.PLAYING
         p.audio_service = MagicMock()
 
-        p.unregister_bus_handlers()
+        p.bus_api.shutdown()
 
         bus.emit(Message("ovos.common_play.duck"))
         p.audio_service.lower_volume.assert_not_called()

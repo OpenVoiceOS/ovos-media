@@ -24,25 +24,13 @@ from collections.abc import Iterable
 from typing import Optional
 
 from ovos_utils.log import LOG
-from ovos_utils.ocp import MediaEntry, Playlist, PluginStream
+from ovos_utils.ocp import (MediaEntry, MediaState, Playlist, PluginStream,
+                            TrackState)
 
 # fields carrying a duration/offset in milliseconds on every track-shaped
 # payload; a non-numeric value in any of them poisons Playlist.length,
 # which sums them over every contained entry.
 _NUMERIC_TRACK_FIELDS = ("length", "position")
-
-
-def is_number(value) -> bool:
-    """True for a plain ``int``/``float``.
-
-    ``bool`` is an ``int`` subclass but is never a legitimate numeric value
-    on the wire. ``NaN``/``inf``/``-inf`` pass this check — use
-    :func:`is_real_number` wherever the value is later fed to ``int()`` or
-    summed.
-    """
-    if isinstance(value, bool):
-        return False
-    return isinstance(value, (int, float))
 
 
 def is_real_number(value) -> bool:
@@ -52,10 +40,11 @@ def is_real_number(value) -> bool:
     here (durations/positions/etc), and ``NaN``/``inf``/``-inf`` ARE valid
     ``float`` instances that pass a bare ``isinstance(x, (int, float))``
     check yet blow up downstream (``int(nan)`` raises ``ValueError``,
-    ``int(inf)`` raises ``OverflowError``). Centralizing the check here
-    keeps every bus-fed numeric field guarded the same way.
+    ``int(inf)`` raises ``OverflowError``, ``nan * 1000`` propagates a NaN
+    into the backend). Every bus-fed numeric field is guarded by this one
+    check.
     """
-    if not is_number(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
     return math.isfinite(value)
 
@@ -101,6 +90,128 @@ def decode_playback_time(data: dict) -> dict:
             continue
         decoded[field] = int(value)
     return decoded
+
+
+def decode_track_state(data: dict) -> TrackState:
+    """Decode the 'state' field of an ``ovos.common_play.track.state``
+    payload. An int is coerced to its ``TrackState`` member; anything else
+    is refused."""
+    state = data.get("state")
+    if state is None:
+        raise ValueError(f"Got state update message with no state: {data}")
+    if isinstance(state, int):
+        state = TrackState(state)
+    if not isinstance(state, TrackState):
+        raise ValueError(f"Expected int or TrackState, but got: {state}")
+    return state
+
+
+def decode_media_state(data: dict) -> MediaState:
+    """Decode the 'state' field of an ``ovos.common_play.media.state``
+    payload. An int is coerced to its ``MediaState`` member; anything else
+    is refused."""
+    state = data.get("state")
+    if state is None:
+        raise ValueError(f"Got state update message with no state: {data}")
+    if isinstance(state, int):
+        state = MediaState(state)
+    if not isinstance(state, MediaState):
+        raise ValueError(f"Expected int or MediaState, but got: {state}")
+    return state
+
+
+def decode_media(data: dict) -> Optional[dict]:
+    """Decode the 'media' track of an ``ovos.common_play.play`` payload.
+
+    Returns None when there is nothing to act on: an absent/empty track, or
+    a track that is not a dict (a list/str would bleed into the now_playing
+    metadata field by field).
+    """
+    media = data.get("media")
+    if not media:
+        return None
+    if not isinstance(media, dict):
+        LOG.warning(f"ignoring play request, expected a dict track, "
+                    f"got: {media!r}")
+        return None
+    return media
+
+
+def decode_playlist_tracks(data: dict) -> Optional[list]:
+    """Decode the 'tracks' list of a playlist payload.
+
+    An absent key decodes to an empty list (a legal "set an empty
+    playlist"); a non-list value is refused, so the current playlist is
+    never cleared on account of a malformed request.
+    """
+    tracks = data.get("tracks") or []
+    if not isinstance(tracks, (list, tuple)):
+        LOG.warning(f"ignoring playlist payload of type "
+                    f"{type(tracks).__name__} - keeping current playlist")
+        return None
+    return list(tracks)
+
+
+def decode_seek(data: dict) -> Optional[dict]:
+    """Decode an ``ovos.common_play.seek`` payload into the one path it
+    asks for.
+
+    A seek arrives either as an absolute position in milliseconds
+    ('seekValue', from the audio player GUI's seekbar) or as an offset in
+    seconds from the current position ('seconds', from the bus api). The two
+    fields are decoded independently, so a bad value in one never costs the
+    other:
+
+    - a valid 'seekValue' wins and is returned as ``{"seekValue": ms}``,
+      whatever 'seconds' holds. ``0`` is a legal absolute position (the very
+      start of the track), not a missing field.
+    - 'seekValue' present but not a finite number refuses the whole request:
+      the caller asked to jump to a specific position, so falling back to a
+      relative seek would move the track somewhere nobody asked for.
+    - otherwise the relative path is returned as ``{"seconds": offset}``,
+      an absent 'seconds' meaning 0.
+
+    NaN/inf are refused in both fields: they reach the backend's
+    set_track_position as-is, and raise out of ``int()`` in the MPRIS and
+    GUI paths.
+    """
+    if "seekValue" in data:
+        position = data["seekValue"]
+        if is_real_number(position):
+            return {"seekValue": position}
+        LOG.warning(f"ignoring seek request with non-numeric 'seekValue': "
+                    f"{position!r}")
+        return None
+    seconds = data.get("seconds", 0)
+    if not is_real_number(seconds):
+        LOG.warning(f"ignoring seek request with non-numeric 'seconds': "
+                    f"{seconds!r}")
+        return None
+    return {"seconds": seconds}
+
+
+def decode_track_position(data: dict) -> Optional[float]:
+    """Decode the 'position' of an ``ovos.common_play.set_track_position``
+    payload, in milliseconds. An absent position means there is nothing to
+    seek to; NaN/inf are refused before they reach the backend."""
+    position = data.get("position")
+    if position is None:
+        return None
+    if not is_real_number(position):
+        LOG.warning(f"ignoring set_track_position request with non-numeric "
+                    f"'position': {position!r}")
+        return None
+    return position
+
+
+def decode_skill_id(data: dict) -> Optional[str]:
+    """Decode the 'skill_id' every OCP skill announcement is keyed by."""
+    skill_id = data.get("skill_id")
+    if not skill_id or not isinstance(skill_id, str):
+        LOG.warning(f"ignoring skill announcement with invalid 'skill_id': "
+                    f"{skill_id!r}")
+        return None
+    return skill_id
 
 
 def flatten_media_types(value) -> list:

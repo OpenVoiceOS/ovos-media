@@ -458,7 +458,7 @@ class TestSkillAnnounceMediaTypesNormalization(unittest.TestCase):
     get_featured_skills()'s "in media_types" membership checks."""
 
     def _announce(self, catalog, bus, **data):
-        bus.emit(Message("ovos.common_play.announce", data))
+        catalog.handle_skill_announce(Message("ovos.common_play.announce", data))
 
     def test_singular_int_media_type_is_featured_and_does_not_raise(self):
         bus = FakeBus()
