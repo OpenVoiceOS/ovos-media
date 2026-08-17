@@ -18,6 +18,8 @@ from ovos_media.bus.schemas import (decode_media_state, decode_playlist_tracks,
 from ovos_media.player.queue import (AllFailed, KeepCurrent, PlayQueue,
                                      QueueEnd)
 from ovos_media.player.now_playing import NowPlaying
+from ovos_media.player.adapters import OPMBackendAdapter, SkillPlayerAdapter
+from ovos_media.player.roster import PlayerRoster
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.log import LOG
@@ -476,6 +478,17 @@ class OCPMediaPlayer:
         # of this player — spoken only at the very first play attempt that
         # finds zero backends loaded, never again
         self._no_backend_dialog_spoken: bool = False
+        # every concrete player this virtual player drives, behind one
+        # interface. The backend services stay exactly what they were; the
+        # adapters wrap them, they do not replace them, and they resolve
+        # their service through this player so a player assembled piecemeal
+        # (services supplied after the fact) gets a working roster too.
+        self.roster: PlayerRoster = PlayerRoster([
+            OPMBackendAdapter("opm:audio", self, "audio_service"),
+            OPMBackendAdapter("opm:video", self, "video_service"),
+            OPMBackendAdapter("opm:web", self, "web_service"),
+            SkillPlayerAdapter(self),
+        ])
 
     # views on the owned queue's bookkeeping
     @property
@@ -1009,18 +1022,8 @@ class OCPMediaPlayer:
         # switching playback types must not leave the previously active
         # backend's BaseMediaService.current set — otherwise a later,
         # unrelated global LOADED_MEDIA event revives the stale backend and
-        # two backends end up playing at once. Stop/clear every backend that
-        # is not the one about to be used.
-        for svc, ptype in ((self.audio_service, PlaybackType.AUDIO),
-                           (self.video_service, PlaybackType.VIDEO),
-                           (self.web_service, PlaybackType.WEBVIEW)):
-            if self.playback_type != ptype and svc.current is not None:
-                try:
-                    svc.current.stop()
-                except Exception as e:
-                    LOG.exception(f"Failed to stop inactive {svc.namespace} "
-                                  f"backend on playback-type switch: {e}")
-                svc.current = None
+        # two backends end up playing at once.
+        self.roster.deactivate_others(self.playback_type)
 
         # track play count - store() does a json.dump that iterates the
         # dict, and handle_like()/handle_unlike() can mutate it concurrently
@@ -1041,58 +1044,17 @@ class OCPMediaPlayer:
         self.track_history.setdefault(self.now_playing.uri, 0)
         self.track_history[self.now_playing.uri] += 1
 
-        if self.playback_type == PlaybackType.AUDIO:
-            LOG.debug("Requesting playback: PlaybackType.AUDIO")
-            preferred = self._resolve_preferred_service(self.audio_service)
-            self.audio_service.play(self.now_playing.uri, preferred_service=preferred)
-
-        elif self.playback_type == PlaybackType.SKILL:
-            # skill wants to handle playback
-            LOG.debug("Requesting playback: PlaybackType.SKILL")
-            self.bus.emit(Message(f'ovos.common_play.{self.now_playing.skill_id}.play',
-                                  self.now_playing.infocard))
-            self.bus.emit(Message("ovos.common_play.track.state",
-                                  {"state": TrackState.PLAYING_SKILL}))
-
-        elif self.playback_type in (PlaybackType.VIDEO, PlaybackType.WEBVIEW):
-            svc = self.video_service if self.playback_type == PlaybackType.VIDEO else self.web_service
-            LOG.debug(f"Requesting playback: {self.playback_type}")
-            preferred = self._resolve_preferred_service(svc)
-            if svc.can_play(self.now_playing.uri, preferred_service=preferred):
-                svc.play(self.now_playing.uri, preferred_service=preferred)
-            else:
-                # No installed video/web backend claims this uri (eg. a
-                # headless install with only audio backends configured).
-                # Degrade to audio instead of dead-ending in
-                # MediaState.INVALID_MEDIA — the same fallback the old
-                # GUI-presence heuristic used to trigger, now driven by
-                # actual backend availability instead of GUI detection.
-                LOG.warning(f"No {svc.namespace} backend can play "
-                           f"{self.now_playing.uri!r}; falling back to audio")
-                # The playback-type switch loop above ran while
-                # self.playback_type was still VIDEO/WEBVIEW, so it left
-                # this service's `current` alone (it was, at that point,
-                # the intended backend). Now that we're abandoning it for
-                # AUDIO, stop and clear it ourselves — same idiom as that
-                # loop — or a still-playing prior track on this service
-                # keeps running alongside the new audio stream.
-                if svc.current is not None:
-                    try:
-                        svc.current.stop()
-                    except Exception as e:
-                        LOG.exception(f"Failed to stop abandoned {svc.namespace} "
-                                      f"backend on audio fallback: {e}")
-                    svc.current = None
-                self.now_playing.playback = PlaybackType.AUDIO
-                preferred = self._resolve_preferred_service(self.audio_service)
-                if self.audio_service.can_play(self.now_playing.uri, preferred_service=preferred):
-                    self.audio_service.play(self.now_playing.uri, preferred_service=preferred)
-                else:
-                    self.bus.emit(Message("ovos.common_play.media.state",
-                                          {"state": MediaState.INVALID_MEDIA}))
-
+        LOG.debug(f"Requesting playback: {self.playback_type}")
+        adapter, playback_type = self.roster.select(self.playback_type,
+                                                    self.now_playing.uri)
+        if playback_type != self.playback_type:
+            # demoted to audio because no video/web backend claimed the uri
+            self.now_playing.playback = playback_type
+        if adapter is None:
+            self.bus.emit(Message("ovos.common_play.media.state",
+                                  {"state": MediaState.INVALID_MEDIA}))
         else:
-            raise ValueError("invalid playback request")
+            adapter.play(self.now_playing.uri)
 
         if self.mpris:
             self.mpris.update_props({"CanGoNext": self.can_next})
@@ -1155,7 +1117,7 @@ class OCPMediaPlayer:
             return
         elif self.playback_type in [PlaybackType.SKILL]:
             LOG.debug(f"Defer playing next track to skill")
-            self.bus.emit(Message(f'ovos.common_play.{self.now_playing.skill_id}.next'))
+            self.roster.get("skill").next()
             return
 
         if self.loop_state == LoopState.REPEAT_TRACK:
@@ -1258,8 +1220,7 @@ class OCPMediaPlayer:
                 LOG.warning("MPRIS external player control is disabled; install ovos-media-plugin-mpris to enable it")
             return
         elif self.playback_type in [PlaybackType.SKILL]:
-            self.bus.emit(Message(
-                f'ovos.common_play.{self.now_playing.skill_id}.prev'))
+            self.roster.get("skill").prev()
             return
 
         if self.shuffle:
@@ -1283,17 +1244,12 @@ class OCPMediaPlayer:
         Ask the current playback to pause.
         """
         LOG.debug(f"Pausing playback: {self.playback_type}")
-        if self.playback_type in [PlaybackType.AUDIO,
-                                  PlaybackType.UNDEFINED]:
-            self.audio_service.pause()
-        if self.playback_type in [PlaybackType.VIDEO,
-                                  PlaybackType.UNDEFINED]:
-            self.video_service.pause()
-        if self.playback_type in [PlaybackType.SKILL,
-                                  PlaybackType.UNDEFINED]:
-            self.bus.emit(Message(f'ovos.common_play.{self.active_skill}.pause'))
-        if self.playback_type in [PlaybackType.MPRIS] and self.mpris and self.mpris.manage_players:
-            self.mpris.pause()
+        if self.playback_type in [PlaybackType.MPRIS]:
+            if self.mpris and self.mpris.manage_players:
+                self.mpris.pause()
+        else:
+            for adapter in self.roster.route("pause", self.playback_type):
+                adapter.pause()
         self.set_player_state(PlayerState.PAUSED)
         self._paused_on_duck = False
 
@@ -1302,19 +1258,12 @@ class OCPMediaPlayer:
         Ask any paused or stopped playback to resume.
         """
         LOG.debug(f"Resuming playback: {self.playback_type}")
-        if self.playback_type in [PlaybackType.AUDIO,
-                                  PlaybackType.UNDEFINED]:
-            self.audio_service.resume()
-
-        if self.playback_type in [PlaybackType.SKILL,
-                                  PlaybackType.UNDEFINED]:
-            self.bus.emit(Message(f'ovos.common_play.{self.active_skill}.resume'))
-
-        if self.playback_type in [PlaybackType.VIDEO]:
-            self.video_service.resume()
-
-        if self.playback_type in [PlaybackType.MPRIS] and self.mpris and self.mpris.manage_players:
-            self.mpris.resume()
+        if self.playback_type in [PlaybackType.MPRIS]:
+            if self.mpris and self.mpris.manage_players:
+                self.mpris.resume()
+        else:
+            for adapter in self.roster.route("resume", self.playback_type):
+                adapter.resume()
 
         self.set_player_state(PlayerState.PLAYING)
 
@@ -1328,17 +1277,14 @@ class OCPMediaPlayer:
         doing nothing.
         @param position: milliseconds position to seek to
         """
-        if self.playback_type in [PlaybackType.AUDIO,
-                                  PlaybackType.UNDEFINED]:
-            # audio_service.set_track_position expects milliseconds,
-            # matching the milliseconds contract documented on this
-            # method and on MediaBackend.set_track_position
-            self.audio_service.set_track_position(position)
-        elif self.playback_type == PlaybackType.VIDEO:
-            self.video_service.set_track_position(position)
-        else:
+        # adapters take milliseconds, matching the contract documented on
+        # this method and on MediaBackend.set_track_position
+        adapters = self.roster.route("seek", self.playback_type)
+        if not adapters:
             LOG.warning(f"seek() is not supported for playback_type "
                         f"{self.playback_type}, ignoring")
+        for adapter in adapters:
+            adapter.seek(position)
 
     def stop(self):
         """
@@ -1354,20 +1300,12 @@ class OCPMediaPlayer:
         self.bus.emit(Message("ovos.common_play.search.stop"))
 
         LOG.debug("Stopping playback")
-        if self.playback_type in [PlaybackType.AUDIO,
-                                  PlaybackType.UNDEFINED]:
-            self.audio_service.stop()
-        if self.playback_type in [PlaybackType.SKILL,
-                                  PlaybackType.UNDEFINED]:
-            self.stop_skill()
-        if self.playback_type in [PlaybackType.VIDEO,
-                                  PlaybackType.UNDEFINED]:
-            self.video_service.stop()
-        if self.playback_type in [PlaybackType.WEBVIEW,
-                                  PlaybackType.UNDEFINED]:
-            self.web_service.stop()
-        if self.mpris and self.playback_type in [PlaybackType.MPRIS]:
-            self.mpris.pause()
+        if self.playback_type in [PlaybackType.MPRIS]:
+            if self.mpris:
+                self.mpris.pause()
+        else:
+            for adapter in self.roster.route("stop", self.playback_type):
+                adapter.stop()
         self.set_player_state(PlayerState.STOPPED)
         if self._paused_on_duck:
             # _paused_on_duck is shared by cork (pause-based) and duck
@@ -1377,23 +1315,21 @@ class OCPMediaPlayer:
             # services unconditionally is a no-op for whichever one wasn't
             # ducking (or for the cork path, where volume was never
             # touched in the first place).
-            self.video_service.restore_volume()
-            self.audio_service.restore_volume()
+            self.roster.get("opm:video").restore_volume()
+            self.roster.get("opm:audio").restore_volume()
         self._paused_on_duck = False
 
     def handle_MPRIS_takeover(self):
         """ Called when a MPRIS external player becomes active"""
-        self.audio_service.stop()
-        self.video_service.stop()
-        self.web_service.stop()
-        self.stop_skill()
+        for adapter in self.roster.adapters:
+            adapter.stop()
         self.now_playing.original_uri = ""
 
     def stop_skill(self):
         """
         Emit a Message notifying self.active_skill to stop
         """
-        self.bus.emit(Message(f'ovos.common_play.{self.active_skill}.stop'))
+        self.roster.get("skill").stop()
 
     def reset(self):
         """
@@ -1587,9 +1523,8 @@ class OCPMediaPlayer:
             return
         # relative offset, from the bus api
         position = self.now_playing.position or 0
-        if self.playback_type in [PlaybackType.AUDIO,
-                                  PlaybackType.UNDEFINED]:
-            position = self.audio_service.get_track_position() or position
+        for adapter in self.roster.route("position_offset", self.playback_type):
+            position = adapter.position() or position
         self.seek(position + seek["seconds"] * 1000)
 
     def handle_next_request(self, message):
@@ -1671,10 +1606,8 @@ class OCPMediaPlayer:
         @param message: Message associated with event
         """
         if self.state == PlayerState.PLAYING:
-            if self.playback_type in [PlaybackType.VIDEO]:
-                self.video_service.lower_volume()
-            elif self.playback_type in [PlaybackType.AUDIO]:
-                self.audio_service.lower_volume()
+            for adapter in self.roster.route("volume", self.playback_type):
+                adapter.lower_volume()
             self._paused_on_duck = True
 
     def handle_unduck_request(self, message):
@@ -1690,10 +1623,8 @@ class OCPMediaPlayer:
         @param message: Message associated with event
         """
         if self._paused_on_duck:
-            if self.playback_type in [PlaybackType.VIDEO]:
-                self.video_service.restore_volume()
-            elif self.playback_type in [PlaybackType.AUDIO]:
-                self.audio_service.restore_volume()
+            for adapter in self.roster.route("volume", self.playback_type):
+                adapter.restore_volume()
             self._paused_on_duck = False
 
     def handle_record_end(self, message):
@@ -1754,15 +1685,15 @@ class OCPMediaPlayer:
     # track data
     def handle_track_length_request(self, message):
         l = self.now_playing.length
-        if self.playback_type == PlaybackType.AUDIO:
-            l = self.audio_service.get_track_length() or l
+        for adapter in self.roster.route("position", self.playback_type):
+            l = adapter.length() or l
         data = {"length": l}
         self.bus.emit(message.response(data))
 
     def handle_track_position_request(self, message):
         pos = self.now_playing.position
-        if self.playback_type == PlaybackType.AUDIO:
-            pos = self.audio_service.get_track_position() or pos
+        for adapter in self.roster.route("position", self.playback_type):
+            pos = adapter.position() or pos
         data = {"position": pos}
         self.bus.emit(message.response(data))
 

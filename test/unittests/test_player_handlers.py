@@ -743,6 +743,59 @@ class TestStopVariousPlaybackTypes(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# UNDEFINED playback type — "nothing is loaded, make sure nothing is playing"
+# ---------------------------------------------------------------------------
+
+class TestUndefinedPlaybackFanOut(unittest.TestCase):
+    """With no media loaded, pause and stop must reach every player that
+    could still be holding audio, not just the audio one."""
+
+    def _skill_topic(self, p, verb):
+        return f"ovos.common_play.{p.now_playing.skill_id}.{verb}"
+
+    def test_pause_reaches_audio_video_and_the_skill(self):
+        p = _make_player(PlaybackType.UNDEFINED)
+        p.state = PlayerState.PLAYING
+        p.handle_status = MagicMock()
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m.msg_type)
+        p.pause()
+        p.audio_service.pause.assert_called_once()
+        p.video_service.pause.assert_called_once()
+        self.assertIn(self._skill_topic(p, "pause"), emitted)
+
+    def test_resume_reaches_audio_and_the_skill_but_not_video(self):
+        p = _make_player(PlaybackType.UNDEFINED)
+        p.state = PlayerState.PAUSED
+        p.handle_status = MagicMock()
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m.msg_type)
+        p.resume()
+        p.audio_service.resume.assert_called_once()
+        p.video_service.resume.assert_not_called()
+        self.assertIn(self._skill_topic(p, "resume"), emitted)
+
+    def test_stop_reaches_every_player_in_order(self):
+        p = _make_player(PlaybackType.UNDEFINED)
+        p.state = PlayerState.PLAYING
+        p.handle_status = MagicMock()
+        manager = MagicMock()
+        p.audio_service.stop = manager.audio_stop
+        p.video_service.stop = manager.video_stop
+        p.web_service.stop = manager.web_stop
+        skill_stop = self._skill_topic(p, "stop")
+
+        def emit(message):
+            if message.msg_type == skill_stop:
+                manager.skill_stop()
+
+        p.bus.emit = emit
+        p.stop()
+        self.assertEqual([name for name, _, _ in manager.mock_calls],
+                         ["audio_stop", "skill_stop", "video_stop", "web_stop"])
+
+
+# ---------------------------------------------------------------------------
 # handle_play_request — sets loop_state when repeat=True
 # ---------------------------------------------------------------------------
 
