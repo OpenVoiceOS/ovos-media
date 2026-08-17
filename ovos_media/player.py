@@ -5,7 +5,6 @@ import time
 from os.path import join, dirname
 from threading import RLock
 from typing import List, Optional, Union
-from collections.abc import Iterable
 
 from json_database import JsonStorageXDG
 
@@ -14,7 +13,9 @@ from ovos_config import Configuration
 from ovos_config.meta import get_xdg_base
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
-from ovos_media.utils import require_default_session, is_real_number, is_injection_char
+from ovos_media.bus.schemas import (decode_playback_time, flatten_media_types,
+                                    is_injection_char, is_number, validated_entries)
+from ovos_media.utils import require_default_session
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.log import LOG
@@ -236,7 +237,7 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
 
     def _is_default_session(self, message: Message) -> bool:
         """Mirror ovos_media.utils.require_default_session in full, including
-        the validate_source short-circuit (utils.py ~50-52): only the
+        the validate_source short-circuit: only the
         local/"default" session may trigger playback-affecting actions here,
         UNLESS this catalog's owning service was configured with
         media.validate_source: false (satellite acting on every session).
@@ -314,20 +315,6 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
                    for uri, song in items]
         return sorted(entries, key=lambda e: e.match_confidence, reverse=True)
 
-    @staticmethod
-    def _flatten_media_types(value) -> list:
-        # a skill can announce media_types as a set/tuple/dict_keys/generator,
-        # or nest any of those inside a list - wrapping such a value as
-        # [value] would make membership checks like "MediaType.ADULT in
-        # media_types" always False regardless of contents, so flatten any
-        # non-scalar iterable recursively into one flat list of members
-        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            return [value]
-        flat = []
-        for item in value:
-            flat.extend(OCPMediaCatalog._flatten_media_types(item))
-        return flat
-
     def handle_skill_announce(self, message):
         skill_id = message.data.get("skill_id")
         skill_name = message.data.get("skill_name") or skill_id
@@ -336,7 +323,7 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         media_types = message.data.get("media_types") or \
                       message.data.get("media_type") or \
                       [MediaType.GENERIC]
-        media_types = self._flatten_media_types(media_types)
+        media_types = flatten_media_types(media_types)
 
         if skill_id not in self.ocp_skills:
             LOG.debug(f"Registered {skill_id}")
@@ -631,24 +618,7 @@ class NowPlaying(MediaEntry):
         Handle 'ovos.common_play.playback_time' Messages sent by audio backend
         @param message: Message with 'length' and 'position' data
         """
-        # validate BOTH fields before applying either - a valid 'length'
-        # must not commit before an invalid 'position' is discovered,
-        # which would otherwise leave partial state from a single message
-        updates = {}
-        for field in ("length", "position"):
-            value = message.data.get(field)
-            # real numbers only; bool is a subclass of int but is never a
-            # legitimate ms value, a str would otherwise silently coerce
-            # (eg. int("5000" * 1000) overflowing the MPRIS int64 wire
-            # type) instead of being rejected outright, and NaN/inf/-inf
-            # are valid floats that would otherwise raise out of int()
-            # below (ValueError/OverflowError) instead of being ignored
-            if not is_real_number(value) or value < 0:
-                LOG.debug(f"ignoring invalid '{field}' in playback_time "
-                          f"message: {value!r}")
-                continue
-            updates[field] = int(value)
-        for field, value in updates.items():
+        for field, value in decode_playback_time(message.data).items():
             setattr(self, field, value)
 
 
@@ -1380,13 +1350,13 @@ class OCPMediaPlayer:
                 LOG.exception(f"Failed to speak no.playback.backend dialog: {e}")
 
         if disambiguation:
-            valid_disambiguation = self._validated_entries(disambiguation)
+            valid_disambiguation = validated_entries(disambiguation)
             if valid_disambiguation:
                 self.media.search_playlist.replace([t for t in valid_disambiguation
                                                     if t not in self.media.search_playlist])
                 self.media.search_playlist.sort_by_conf()
         if playlist:
-            valid_playlist = self._validated_entries(playlist)
+            valid_playlist = validated_entries(playlist)
             if valid_playlist:
                 self.playlist.replace(valid_playlist)
         if track in self.playlist:
@@ -2029,7 +1999,7 @@ class OCPMediaPlayer:
     def handle_seek_request(self, message):
         # from bus api
         seconds = message.data.get("seconds", 0)
-        if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
+        if not is_number(seconds):
             LOG.warning(f"Ignoring seek request with non-numeric 'seconds': "
                         f"{seconds!r}")
             return
@@ -2104,120 +2074,14 @@ class OCPMediaPlayer:
             LOG.warning(f"ignoring playlist.set payload of type "
                         f"{type(tracks).__name__} - keeping current playlist")
             return
-        entries = self._validated_entries(tracks)
+        entries = validated_entries(tracks)
         self.playlist.clear()
         for track in entries:
             self.playlist.add_entry(track)
 
-    @staticmethod
-    def _validated_entries(tracks):
-        """Coerce a playlist payload into valid entries, skipping the bad
-        ones with a warning instead of aborting mid-mutation. A non-list
-        payload (eg. a bare string, which would iterate character-wise)
-        yields no entries."""
-        if not isinstance(tracks, (list, tuple)):
-            LOG.warning(f"ignoring playlist payload of type "
-                        f"{type(tracks).__name__}, expected a list of tracks")
-            return []
-        entries = []
-        for track in tracks:
-            try:
-                if isinstance(track, dict):
-                    track = MediaEntry.from_dict(track)
-                if not isinstance(track, (MediaEntry, Playlist, PluginStream)):
-                    raise ValueError(f"not a valid track: {track!r}")
-                # a non-numeric length/position (eg. bus-fed "garbage")
-                # must not poison Playlist.length's later sum() over all
-                # entries - sanitize to 0 rather than reject the whole entry.
-                # Playlist.length is a read-only computed property (sum of
-                # its own entries), so only individual tracks are sanitized.
-                if isinstance(track, (MediaEntry, PluginStream)):
-                    for field in ("length", "position"):
-                        value = getattr(track, field, None)
-                        if not is_real_number(value):
-                            LOG.debug(f"coercing invalid '{field}' on "
-                                      f"playlist entry to 0: {value!r}")
-                            setattr(track, field, 0)
-                elif isinstance(track, Playlist):
-                    # a nested Playlist's own tracks are entries too - bad
-                    # values inside them would otherwise reach the outer
-                    # Playlist.length (a sum over all contained entries)
-                    # unsanitized. Recurse arbitrarily deep.
-                    OCPMediaPlayer._sanitize_nested_playlist(track, set())
-                entries.append(track)
-            except Exception as e:
-                LOG.warning(f"skipping invalid playlist entry: {e}")
-        return entries
-
-    @staticmethod
-    def _sanitize_nested_playlist(playlist, visited):
-        """Sanitize length/position on every MediaEntry/PluginStream
-        reachable inside a (possibly self-referential) tree of nested
-        Playlists, mutating the shared objects in place.
-
-        `Playlist.entries` is a computed property that returns a filtered
-        copy of the list and drops nested Playlist members entirely, so it
-        cannot be used to reach or fix them. Iterating the Playlist itself
-        (it subclasses list) reaches every raw member, including nested
-        Playlists. Dict members are *not* sanitized by reading them either:
-        `Playlist.entries` calls `dict2entry`/`MediaEntry.from_dict` fresh
-        on every read, and neither applies any numeric coercion - so a raw
-        dict member must be sanitized here, in place, or it stays a live
-        landmine for `Playlist.length`'s sum().
-        """
-        if id(playlist) in visited:
-            return
-        visited.add(id(playlist))
-        for member in list.__iter__(playlist):
-            if isinstance(member, (MediaEntry, PluginStream)):
-                for field in ("length", "position"):
-                    value = getattr(member, field, None)
-                    if not is_real_number(value):
-                        LOG.debug(f"coercing invalid '{field}' on "
-                                  f"playlist entry to 0: {value!r}")
-                        setattr(member, field, 0)
-            elif isinstance(member, Playlist):
-                OCPMediaPlayer._sanitize_nested_playlist(member, visited)
-            elif isinstance(member, dict):
-                for field in ("length", "position"):
-                    if field in member and not is_real_number(member[field]):
-                        LOG.debug(f"coercing invalid '{field}' on raw "
-                                  f"playlist entry to 0: {member[field]!r}")
-                        member[field] = 0
-                # dict2entry() only turns a dict into a nested Playlist when
-                # it carries a truthy "playlist" key - recurse into that
-                # list of raw (also unsanitized) member dicts too.
-                if isinstance(member.get("playlist"), list):
-                    OCPMediaPlayer._sanitize_raw_playlist_dicts(
-                        member["playlist"], visited)
-
-    @staticmethod
-    def _sanitize_raw_playlist_dicts(members, visited):
-        """Sanitize length/position in place across a raw list of playlist
-        member dicts/objects, as found under a dict's "playlist" key
-        (see `_sanitize_nested_playlist`)."""
-        if id(members) in visited:
-            return
-        visited.add(id(members))
-        for member in members:
-            if isinstance(member, (MediaEntry, PluginStream)):
-                for field in ("length", "position"):
-                    value = getattr(member, field, None)
-                    if not is_real_number(value):
-                        setattr(member, field, 0)
-            elif isinstance(member, Playlist):
-                OCPMediaPlayer._sanitize_nested_playlist(member, visited)
-            elif isinstance(member, dict):
-                for field in ("length", "position"):
-                    if field in member and not is_real_number(member[field]):
-                        member[field] = 0
-                if isinstance(member.get("playlist"), list):
-                    OCPMediaPlayer._sanitize_raw_playlist_dicts(
-                        member["playlist"], visited)
-
     @require_default_session()
     def handle_playlist_queue_request(self, message):
-        for track in self._validated_entries(message.data.get("tracks") or []):
+        for track in validated_entries(message.data.get("tracks") or []):
             self.playlist.add_entry(track)
 
     @require_default_session()
@@ -2351,7 +2215,7 @@ class OCPMediaPlayer:
     @require_default_session()
     def handle_set_track_position_request(self, message):
         miliseconds = message.data.get("position")
-        if isinstance(miliseconds, (int, float)) and not isinstance(miliseconds, bool):
+        if is_number(miliseconds):
             self.seek(miliseconds)
         elif miliseconds is not None:
             LOG.warning(f"Ignoring set_track_position request with "
