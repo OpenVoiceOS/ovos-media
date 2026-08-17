@@ -62,6 +62,12 @@ The rest of this document focuses on the daemon itself.
    Each loads OPM plugins at startup and delegates actual playback to the selected
    plugin instance.
 
+Payload validation for all three layers lives in `ovos_media/bus/schemas.py`.
+Every rule an incoming bus payload must satisfy — numeric fields that must be
+finite, uri characters that would inject newlines into a log viewer or an HTTP
+stack downstream, track lists that must be coerced entry by entry — is a plain
+function over a raw value there, so no handler restates the numeric, uri, or track-list rules inline.
+
 These layers communicate via the OVOS MessageBus (WebSocket pub/sub). The
 `MediaService` layer handles service-lifecycle and discovery events;
 `OCPMediaPlayer` handles all media-control events from external callers; backend

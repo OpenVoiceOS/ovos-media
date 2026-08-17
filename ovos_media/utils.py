@@ -11,47 +11,10 @@
 # limitations under the License.
 #
 
-import math
-import unicodedata
 from functools import wraps
 
 from ovos_bus_client.session import SessionManager
 from ovos_utils.log import LOG
-
-
-def is_real_number(value) -> bool:
-    """True only for an actual finite real number.
-
-    ``bool`` is an ``int`` subclass but is never a legitimate numeric value
-    here (durations/positions/etc), and ``NaN``/``inf``/``-inf`` ARE valid
-    ``float`` instances that pass a bare ``isinstance(x, (int, float))``
-    check yet blow up downstream (``int(nan)`` raises ``ValueError``,
-    ``int(inf)`` raises ``OverflowError``). Centralizing the check here
-    keeps every bus-fed numeric field guarded the same way.
-    """
-    if isinstance(value, bool):
-        return False
-    if not isinstance(value, (int, float)):
-        return False
-    return math.isfinite(value)
-
-
-def is_injection_char(c: str) -> bool:
-    """True for a character that acts as a newline/format-injection
-    surface in log viewers or HTTP stacks: C0/C1 controls (category Cc,
-    also covering the historical ``< 0x20`` and ``0x7f`` checks) and the
-    Unicode line/paragraph separators U+2028/U+2029 (Zl/Zp) - all of which
-    act as newline-equivalents even though they aren't ASCII control
-    characters.
-
-    Format chars (Cf: soft hyphen U+00AD, zero-width joiner U+200D, BOM
-    U+FEFF, bidi overrides, ...) are deliberately NOT rejected here - they
-    show up in legitimate real-world filenames, and rejecting them refused
-    playback of real local files. Bidi/zero-width spoofing via Cf is
-    cosmetic, not a newline-equivalent, and isn't worth breaking those
-    files over.
-    """
-    return unicodedata.category(c) in ("Cc", "Zl", "Zp")
 
 
 def require_default_session():

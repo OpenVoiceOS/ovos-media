@@ -53,7 +53,7 @@ from ovos_bus_client.message import Message
 from ovos_utils.log import LOG
 from ovos_utils.ocp import TrackState, PlaybackType, PlayerState, LoopState, MediaState
 
-from ovos_media.utils import is_real_number
+from ovos_media.bus.schemas import is_real_number
 
 
 class OcpMprisExporter(Thread):
