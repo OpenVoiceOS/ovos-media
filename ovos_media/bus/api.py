@@ -17,9 +17,11 @@ and what is removed can never drift apart.
 
 An entry names the topic, an optional payload decoder from
 :mod:`ovos_media.bus.schemas`, whether the topic is gated to the local
-session, and the method to call. The wrapper built around each entry
-decodes, gates, and then calls that method synchronously — the objects
-behind the edge see only payloads that already passed both checks.
+session, whether it mutates the player, and the method to call. The
+wrapper built around each entry decodes, gates, and then either submits
+the call to the player's dispatcher (mutating commands, which then run
+one at a time in arrival order) or runs it inline (queries, which answer
+from the published snapshot and must not wait behind a command).
 
 The backend services (:mod:`ovos_media.media_backends`) still bind their
 own 'ovos.common_play.media.state' listener in
@@ -49,11 +51,16 @@ class BusHandler:
         the target is then not called at all.
     gated: True when only the local/"default" session may trigger the
         target (see :func:`ovos_media.utils.is_default_session`).
+    dispatch: True when the target mutates the player and must therefore
+        run on its dispatcher. False for queries (answered from the
+        published snapshot or read live from a backend) and for the one
+        target that blocks on the bus, ``handle_record_end``.
     """
     topic: str
     target: Callable
     decoder: Optional[Callable] = None
     gated: bool = False
+    dispatch: bool = True
 
 
 class OCPBusApi:
@@ -125,13 +132,17 @@ class OCPBusApi:
 
     @staticmethod
     def _catalog_table(catalog) -> List[BusHandler]:
+        # the catalog owns its own bookkeeping (the skill roster, the
+        # search playlist) and touches no player state, so its handlers stay
+        # off the dispatcher: an announce must land inside the 200 ms
+        # settle window get_featured_skills waits, not behind a play command.
         return [
             BusHandler("ovos.common_play.skills.detach",
                        catalog.handle_ocp_skill_detach,
-                       decoder=decode_skill_id),
+                       decoder=decode_skill_id, dispatch=False),
             BusHandler("ovos.common_play.announce",
                        catalog.handle_skill_announce,
-                       decoder=decode_skill_id),
+                       decoder=decode_skill_id, dispatch=False),
         ]
 
     @staticmethod
@@ -167,16 +178,20 @@ class OCPBusApi:
             BusHandler("ovos.common_play.seek", player.handle_seek_request,
                        decoder=decode_seek, gated=True),
             BusHandler("ovos.common_play.get_track_length",
-                       player.handle_track_length_request),
+                       player.handle_track_length_request,
+                       dispatch=False),
             BusHandler("ovos.common_play.set_track_position",
                        player.handle_set_track_position_request,
                        decoder=decode_track_position, gated=True),
             BusHandler("ovos.common_play.get_track_position",
-                       player.handle_track_position_request),
+                       player.handle_track_position_request,
+                       dispatch=False),
             BusHandler("ovos.common_play.track_info",
-                       player.handle_track_info_request),
+                       player.handle_track_info_request,
+                       dispatch=False),
             BusHandler("ovos.common_play.list_backends",
-                       player.handle_list_backends_request),
+                       player.handle_list_backends_request,
+                       dispatch=False),
             BusHandler("ovos.common_play.playlist.set",
                        player.handle_playlist_set_request,
                        decoder=decode_playlist_tracks, gated=True),
@@ -211,8 +226,11 @@ class OCPBusApi:
             # record_end and utterance.handled do nothing except resume or
             # unduck, both of which are gated, so the gate sits on the
             # topic itself.
+            # waits up to 8s for a 'speak' before uncorking — that wait
+            # stays on the bus thread, and only the resume it decides on is
+            # submitted (see OCPMediaPlayer.handle_record_end)
             BusHandler("recognizer_loop:record_end", player.handle_record_end,
-                       gated=True),
+                       gated=True, dispatch=False),
             BusHandler("ovos.utterance.handled",
                        player.handle_utterance_handled, gated=True),
             BusHandler("mycroft.stop", player.handle_mycroft_stop),
@@ -228,12 +246,14 @@ class OCPBusApi:
                        player.handle_set_repeat, gated=True),
             BusHandler("ovos.common_play.repeat.unset",
                        player.handle_unset_repeat, gated=True),
-            BusHandler("ovos.common_play.SEI.get", player.handle_get_SEIs),
+            BusHandler("ovos.common_play.SEI.get", player.handle_get_SEIs,
+                       dispatch=False),
             BusHandler("ovos.common_play.like", player.handle_like,
                        gated=True),
             BusHandler("ovos.common_play.unlike", player.handle_unlike,
                        gated=True),
-            BusHandler("ovos.common_play.status", player.handle_status),
+            BusHandler("ovos.common_play.status", player.handle_status,
+                       dispatch=False),
             # external MPRIS player → reflect as OCP now_playing (no local
             # backend)
             BusHandler("ovos.common_play.mpris.now_playing",
@@ -262,6 +282,15 @@ class OCPBusApi:
         every registration a distinct object, so each remove() resolves on
         its own.
         """
+        # imported here: the player package imports this module
+        from ovos_media.player.dispatcher import Dispatcher
+        dispatcher = getattr(self.player, "dispatcher", None) \
+            if self.player is not None else None
+        if not isinstance(dispatcher, Dispatcher):
+            # a service-only edge, or a player assembled piecemeal: nothing
+            # to serialize against, so every target runs at the edge
+            dispatcher = None
+
         def listener(message):
             if entry.decoder is not None:
                 try:
@@ -275,7 +304,10 @@ class OCPBusApi:
                 LOG.debug(f"ignoring '{entry.topic}' message, not from the "
                           f"default/local session")
                 return
-            entry.target(message)
+            if entry.dispatch and dispatcher is not None:
+                dispatcher.submit(lambda: entry.target(message))
+            else:
+                entry.target(message)
 
         return listener
 

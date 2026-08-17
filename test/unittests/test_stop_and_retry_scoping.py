@@ -7,12 +7,13 @@ BaseMediaService.stop() must invoke the player-wide ``on_stop`` callback
     interface's stop() while only audio is playing must not suppress the
     next natural audio END_OF_MEDIA advance.
 
-``_mark_stop_requested`` must cancel the pending invalid-stream retry timer
-    (``_invalid_timer``), and so must ``OCPMediaPlayer.stop()`` (not only
-    reset()/shutdown()). A stop arriving during the 3s post-INVALID_MEDIA
-    retry window must not leave the timer armed to fire play_next() after
-    the stop has already settled the player into STOPPED, which would
-    spontaneously resume playback.
+``_mark_stop_requested`` must supersede the pending invalid-stream retry,
+    and so must ``OCPMediaPlayer.stop()`` (not only reset()/shutdown()). A
+    stop arriving during the 3s post-INVALID_MEDIA retry window must not
+    leave the retry able to run play_next() after the stop has already
+    settled the player into STOPPED, which would spontaneously resume
+    playback. Supersession is by epoch: the retry still comes up, sees a
+    bumped epoch and is dropped.
 
 Both tests drive the scenario through the real objects (FakeBus + a stub
 backend), mirroring test_end_of_track_handling.py.
@@ -44,14 +45,14 @@ def _load(player, entries):
     player.set_now_playing(player.playlist[0])
 
 
-def _wait_for_timer(player, deadline=3.0):
-    """Poll until the invalid-stream retry timer is armed (bounded).
+def _wait_for_retry(player, deadline=3.0):
+    """Poll until the delayed invalid-stream retry is armed (bounded).
 
     Handler dispatch runs on the bus executor pool; a fixed sleep races it
     under full-suite load, so wait on the observable state instead."""
     end = time.monotonic() + deadline
     while time.monotonic() < end:
-        if player._invalid_timer is not None:
+        if player.dispatcher.pending:
             return
         time.sleep(0.01)
 
@@ -214,9 +215,10 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
 
         player.play()
         # let INVALID_MEDIA propagate and on_invalid_stream() arm the timer
-        _wait_for_timer(player)
-        self.assertIsNotNone(player._invalid_timer,
-                             "invalid-stream retry timer was not armed")
+        _wait_for_retry(player)
+        self.assertTrue(player.dispatcher.pending,
+                        "invalid-stream retry was not armed")
+        armed_epoch = player.dispatcher.epoch
 
         # simulate the backend having something to actually stop, so
         # BaseMediaService._perform_stop signals on_stop()
@@ -224,22 +226,16 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
         player.audio_service.play_start_time = time.monotonic() - 5
         player.audio_service.stop()
 
-        self.assertIsNone(player._invalid_timer,
-                          "stop() did not cancel the pending invalid-stream "
-                          "retry timer")
+        self.assertNotEqual(player.dispatcher.epoch, armed_epoch,
+                            "stop() did not supersede the pending "
+                            "invalid-stream retry")
 
         # wait past the original retry window. Note: a direct
         # BaseMediaService.stop() call does not by itself set player.state
         # (only OCPMediaPlayer.stop() does that) — the observable defect
-        # here is the deferred play_next() firing and silently advancing
+        # here is the deferred play_next() running and silently advancing
         # the queue after the stop had already been acted on.
-        self.assertIsNone(player._invalid_timer,
-                          "invalid-stream retry timer reappeared before the "
-                          "wait")
         time.sleep(0.3)
-        self.assertIsNone(player._invalid_timer,
-                          "a new invalid-stream retry timer was armed after "
-                          "the stop, meaning the old one fired")
         self.assertNotEqual(player.now_playing.uri, b.uri,
                             "the deferred play_next() fired after stop and "
                             "loaded the next track anyway")
@@ -252,17 +248,18 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
         bus, player, backend, a, b = self._player_with_invalid_backend()
 
         player.play()
-        _wait_for_timer(player)
-        self.assertIsNotNone(player._invalid_timer,
-                             "invalid-stream retry timer was not armed")
+        _wait_for_retry(player)
+        self.assertTrue(player.dispatcher.pending,
+                        "invalid-stream retry was not armed")
+        armed_epoch = player.dispatcher.epoch
 
         backend._playing = True
         player.audio_service.play_start_time = time.monotonic() - 5
         player.stop()
 
-        self.assertIsNone(player._invalid_timer,
-                          "OCPMediaPlayer.stop() did not cancel the pending "
-                          "invalid-stream retry timer")
+        self.assertNotEqual(player.dispatcher.epoch, armed_epoch,
+                            "OCPMediaPlayer.stop() did not supersede the "
+                            "pending invalid-stream retry")
 
         time.sleep(0.3)
 
@@ -284,8 +281,8 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
 class TestPlayCancelsStaleInvalidRetry(unittest.TestCase):
 
     def _arm_stale_timer(self, bus, player):
-        """Play an always-invalid track to arm player._invalid_timer, then
-        return once it is confirmed armed."""
+        """Play an always-invalid track to arm the delayed retry, then
+        return the epoch it was armed under once it is confirmed armed."""
         backend = _InvalidBackend(bus)
         player.invalid_stream_delay = 0.15
         player.audio_service.services = [backend]
@@ -294,9 +291,10 @@ class TestPlayCancelsStaleInvalidRetry(unittest.TestCase):
         _load(player, [bad])
 
         player.play()
-        _wait_for_timer(player)
-        self.assertIsNotNone(player._invalid_timer,
-                             "invalid-stream retry timer was not armed")
+        _wait_for_retry(player)
+        self.assertTrue(player.dispatcher.pending,
+                        "invalid-stream retry was not armed")
+        return player.dispatcher.epoch
 
     def test_new_play_cancels_stale_timer_before_it_skips_the_new_track(self):
         """A new play() of a valid, multi-track queue arriving inside the
@@ -306,7 +304,7 @@ class TestPlayCancelsStaleInvalidRetry(unittest.TestCase):
         """
         bus = FakeBus()
         player = _make_player(bus)
-        self._arm_stale_timer(bus, player)
+        armed_epoch = self._arm_stale_timer(bus, player)
 
         # a genuinely new play request for an unrelated, valid, multi-track
         # queue arrives while the stale timer from the earlier bad track is
@@ -320,9 +318,10 @@ class TestPlayCancelsStaleInvalidRetry(unittest.TestCase):
         player.play()
         player.set_player_state(PlayerState.PLAYING)
 
-        self.assertIsNone(player._invalid_timer,
-                          "play() did not cancel the stale invalid-stream "
-                          "retry timer left over from the earlier track")
+        self.assertNotEqual(player.dispatcher.epoch, armed_epoch,
+                            "play() did not supersede the stale "
+                            "invalid-stream retry left over from the "
+                            "earlier track")
 
         # wait past the original retry window
         time.sleep(0.3)
@@ -349,7 +348,7 @@ class TestPlayCancelsStaleInvalidRetry(unittest.TestCase):
         """
         bus = FakeBus()
         player = _make_player(bus)
-        self._arm_stale_timer(bus, player)
+        armed_epoch = self._arm_stale_timer(bus, player)
 
         good_backend = _StubBackend(bus, name="good_stub_solo")
         player.audio_service.services = [good_backend]
@@ -359,9 +358,10 @@ class TestPlayCancelsStaleInvalidRetry(unittest.TestCase):
         player.play()
         player.set_player_state(PlayerState.PLAYING)
 
-        self.assertIsNone(player._invalid_timer,
-                          "play() did not cancel the stale invalid-stream "
-                          "retry timer left over from the earlier track")
+        self.assertNotEqual(player.dispatcher.epoch, armed_epoch,
+                            "play() did not supersede the stale "
+                            "invalid-stream retry left over from the "
+                            "earlier track")
 
         time.sleep(0.3)
 
