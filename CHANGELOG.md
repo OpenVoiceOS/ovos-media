@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.0a5](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a5) (2026-08-17)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a4...2.0.0a5)
+
+**Merged pull requests:**
+
+- refactor: player adapter roster over backend services [\#164](https://github.com/OpenVoiceOS/ovos-media/pull/164) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.0.0a4](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a4) (2026-08-17)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a3...2.0.0a4)
@@ -447,7 +455,6 @@
 **Closed issues:**
 
 - When music is playing, gui complains about missing file [\#22](https://github.com/OpenVoiceOS/ovos-media/issues/22)
-- No luck with ovos-media and OCP plugin [\#21](https://github.com/OpenVoiceOS/ovos-media/issues/21)
 
 **Merged pull requests:**
 
