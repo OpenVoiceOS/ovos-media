@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.0a4](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a4) (2026-08-17)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a3...2.0.0a4)
+
+**Merged pull requests:**
+
+- refactor: owned play queue and player package [\#162](https://github.com/OpenVoiceOS/ovos-media/pull/162) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.0.0a3](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a3) (2026-08-17)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a2...2.0.0a3)
@@ -461,10 +469,6 @@
 ## [V0.0.1a20](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a20) (2024-03-29)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a19...V0.0.1a20)
-
-**Fixed bugs:**
-
-- fix: switch case [\#20](https://github.com/OpenVoiceOS/ovos-media/pull/20) ([mikejgray](https://github.com/mikejgray))
 
 ## [V0.0.1a19](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a19) (2024-03-29)
 
