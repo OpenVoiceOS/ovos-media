@@ -47,7 +47,7 @@ The rest of this document focuses on the daemon itself.
    as a `Thread`, owns the `MessageBusClient` connection, instantiates
    `OCPMediaPlayer`, and answers a small set of top-level bus topics.
 
-2. **`OCPMediaPlayer`** (`ovos_media/player.py`), the virtual media player. It is
+2. **`OCPMediaPlayer`** (`ovos_media/player/`), the virtual media player. It is
    a plain bus-connected class (it is *not* a skill or an `OVOSAbstractApplication`)
    that manages the playback state machine (`PlayerState`, `MediaState`), owns the
    `NowPlaying` tracker and three backend service objects (`AudioService`,
@@ -61,6 +61,15 @@ The rest of this document focuses on the daemon itself.
    `BaseMediaService` subclasses (`AudioService`, `VideoService`, `WebService`).
    Each loads OPM plugins at startup and delegates actual playback to the selected
    plugin instance.
+
+The player package splits along the state it owns: `OCPMediaPlayer` and the
+catalog skill in `ovos_media/player/__init__.py`, the queue in
+`ovos_media/player/queue.py`, the now-playing tracker in
+`ovos_media/player/now_playing.py`, and stream extraction in
+`ovos_media/player/streams.py`. `PlayQueue` owns the user queue, the identity
+of the selected entry and the uris that failed to load, and answers which
+track comes next; what to do with that answer — repeat, autoplay, stop —
+stays with the player.
 
 Every subscription `MediaService`, `OCPMediaPlayer`, `NowPlaying` and
 `OCPMediaCatalog` make lives in the bus edge, `ovos_media/bus/api.py`.

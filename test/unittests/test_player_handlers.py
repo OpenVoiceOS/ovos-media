@@ -617,7 +617,7 @@ class TestNowPlayingAsDict(unittest.TestCase):
         """Create a real NowPlaying instance with a fake bus."""
         from ovos_media.player import NowPlaying
         bus = FakeBus()
-        with patch("ovos_media.player.load_stream_extractors"):
+        with patch("ovos_media.player.now_playing.load_stream_extractors"):
             np = NowPlaying(bus)
         return np
 

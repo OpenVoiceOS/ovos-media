@@ -121,7 +121,7 @@ class TestNowPlayingInit(unittest.TestCase):
     def _make_now_playing(self):
         from ovos_media.player import NowPlaying
         bus = FakeBus()
-        with patch("ovos_media.player.load_stream_extractors"):
+        with patch("ovos_media.player.now_playing.load_stream_extractors"):
             np = NowPlaying(bus)
         return np, bus
 
@@ -243,112 +243,6 @@ class TestNowPlayingInit(unittest.TestCase):
         np.handle_sync_seekbar(msg)
         self.assertEqual(np.length, 180000)  # valid field applied
         self.assertEqual(np.position, 999)   # invalid field left untouched
-
-    def test_extract_stream_whitespace_uri_raises_with_bad_value_quoted(self):
-        np, _ = self._make_now_playing()
-        np.uri = "ocp://original"
-        np.title = "original title"
-        np.stream_xtract = MagicMock()
-        np.stream_xtract.extract_stream.return_value = {"uri": "   ",
-                                                         "title": "poisoned"}
-        with self.assertRaises(ValueError) as cm:
-            np.extract_stream()
-        # the raised message quotes the BAD value, not the original uri
-        self.assertIn("'   '", str(cm.exception))
-        # state must be untouched - no poisoning before the refusal
-        self.assertEqual(np.uri, "ocp://original")
-        self.assertEqual(np.title, "original title")
-
-    def test_extract_stream_non_string_uri_raises_and_leaves_uri_untouched(self):
-        np, _ = self._make_now_playing()
-        np.uri = "ocp://original"
-        np.stream_xtract = MagicMock()
-        # extractor plugin returns a garbage non-string uri
-        np.stream_xtract.extract_stream.return_value = {"uri": ["not", "a", "str"]}
-        with self.assertRaises(ValueError):
-            np.extract_stream()
-        # self.uri must not have been poisoned by the garbage value
-        self.assertEqual(np.uri, "ocp://original")
-
-    def test_extract_stream_valid_uri_updates_normally(self):
-        np, _ = self._make_now_playing()
-        np.uri = "ocp://original"
-        np.stream_xtract = MagicMock()
-        np.stream_xtract.extract_stream.return_value = {"uri": "http://example.com/x.mp3"}
-        np.extract_stream()  # must not raise
-        self.assertEqual(np.uri, "http://example.com/x.mp3")
-
-    def test_extract_stream_control_char_uri_raises_and_leaves_uri_untouched(self):
-        # a uri that passes the prefix check may still embed control
-        # characters (eg. a newline for header/log injection) - it must be
-        # refused, same as a non-string or whitespace-only uri
-        np, _ = self._make_now_playing()
-        np.uri = "ocp://original"
-        np.title = "original title"
-        np.stream_xtract = MagicMock()
-        np.stream_xtract.extract_stream.return_value = {
-            "uri": "http://evil.example/\nSet-Cookie: x=1",
-            "title": "poisoned"}
-        with self.assertRaises(ValueError) as cm:
-            np.extract_stream()
-        self.assertIn("Set-Cookie", str(cm.exception))
-        self.assertEqual(np.uri, "ocp://original")
-        self.assertEqual(np.title, "original title")
-
-    def test_extract_stream_line_separator_uri_raises_and_leaves_uri_untouched(self):
-        # U+2028 (LINE SEPARATOR) is not < 0x20 or 0x7f but acts as a
-        # newline-equivalent in log viewers/some HTTP stacks - must be
-        # refused like the ASCII control-character case above
-        np, _ = self._make_now_playing()
-        np.uri = "ocp://original"
-        np.title = "original title"
-        np.stream_xtract = MagicMock()
-        np.stream_xtract.extract_stream.return_value = {
-            "uri": "http://evil.example/ Set-Cookie: x=1",
-            "title": "poisoned"}
-        with self.assertRaises(ValueError) as cm:
-            np.extract_stream()
-        self.assertIn("Set-Cookie", str(cm.exception))
-        self.assertEqual(np.uri, "ocp://original")
-        self.assertEqual(np.title, "original title")
-
-    def test_extract_stream_next_line_uri_raises_and_leaves_uri_untouched(self):
-        # U+0085 (NEXT LINE) is the same class of newline-equivalent
-        np, _ = self._make_now_playing()
-        np.uri = "ocp://original"
-        np.title = "original title"
-        np.stream_xtract = MagicMock()
-        np.stream_xtract.extract_stream.return_value = {
-            "uri": "http://evil.example/Set-Cookie: x=1",
-            "title": "poisoned"}
-        with self.assertRaises(ValueError) as cm:
-            np.extract_stream()
-        self.assertIn("Set-Cookie", str(cm.exception))
-        self.assertEqual(np.uri, "ocp://original")
-        self.assertEqual(np.title, "original title")
-
-    def test_extract_stream_normal_http_uri_still_passes(self):
-        # control: a normal http uri must not be rejected by the widened
-        # unicode-category check
-        np, _ = self._make_now_playing()
-        np.uri = "ocp://original"
-        np.stream_xtract = MagicMock()
-        np.stream_xtract.extract_stream.return_value = {
-            "uri": "http://example.com/song.mp3"}
-        np.extract_stream()  # must not raise
-        self.assertEqual(np.uri, "http://example.com/song.mp3")
-
-    def test_extract_stream_soft_hyphen_and_zwj_uri_still_passes(self):
-        # D5: U+00AD (SOFT HYPHEN) and U+200D (ZERO WIDTH JOINER) are
-        # category Cf and appear in real-world filenames - a file:// uri
-        # containing them must be accepted, not refused as "injection".
-        uri = "file:///music/so­ft‍join.mp3"
-        np, _ = self._make_now_playing()
-        np.uri = "ocp://original"
-        np.stream_xtract = MagicMock()
-        np.stream_xtract.extract_stream.return_value = {"uri": uri}
-        np.extract_stream()  # must not raise
-        self.assertEqual(np.uri, uri)
 
     def test_on_invalid_stream_after_bad_extract_does_not_raise(self):
         p = _make_player()

@@ -29,7 +29,7 @@ class TestNowPlayingSerializesAllFields(unittest.TestCase):
 
     def _make_now_playing(self):
         from ovos_media.player import NowPlaying
-        with patch("ovos_media.player.load_stream_extractors"):
+        with patch("ovos_media.player.now_playing.load_stream_extractors"):
             return NowPlaying(FakeBus())
 
     def test_as_dict_covers_every_dataclass_field(self):
