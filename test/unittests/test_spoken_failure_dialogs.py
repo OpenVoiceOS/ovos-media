@@ -149,10 +149,12 @@ class TestTrackFailedDialog(unittest.TestCase):
         # set_player_state, then unconditionally clearing the guards) without
         # also exercising unrelated status-report plumbing.
         p.set_player_state = MagicMock()
-        # drive the real bus event a backend emits after current.play()
-        # returns without raising (see base.py handle_media_state_change)
-        p.bus.emit(Message("ovos.common_play.track.state",
-                           {"state": TrackState.PLAYING_AUDIO}))
+        # drive the real handler the bus edge dispatches to after
+        # current.play() returns without raising (see base.py
+        # handle_media_state_change)
+        p.now_playing.handle_track_state_change(
+            Message("ovos.common_play.track.state",
+                    {"state": TrackState.PLAYING_AUDIO}))
         self.assertEqual(p._failed_uris, set())
         self.assertFalse(p._track_failed_spoken)
         p.handle_invalid_media()

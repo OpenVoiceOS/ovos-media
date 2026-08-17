@@ -36,9 +36,9 @@ def _make_service(bus):
 
 
 class TestL1ZombieServiceShutdown(unittest.TestCase):
-    """shutdown() must remove every listener register_bus_handlers() added,
-    across both OCPMediaPlayer and MediaService, and a shut-down service
-    must not answer ping."""
+    """shutdown() must remove every listener the bus edge added, across both
+    OCPMediaPlayer and MediaService, and a shut-down service must not answer
+    ping."""
 
     def test_construct_shutdown_cycle_twice_unregisters_every_ocp_handler(self):
         # NOTE: this deliberately does NOT assert on aggregate FakeBus
@@ -48,18 +48,18 @@ class TestL1ZombieServiceShutdown(unittest.TestCase):
         # ovos_utils.fakebus._translator); FakeBus tracks those mirrored
         # registrations in a handler-keyed dedup table that can shadow the
         # unrelated plain-topic removal for the same handler — a FakeBus
-        # test-double quirk, not something register_bus_handlers()/
-        # unregister_bus_handlers() control. What they DO own is
-        # OCPMediaPlayer._bus_events, which is asserted directly instead.
+        # test-double quirk, not something the bus edge controls. What it
+        # DOES own is its registration list, which is asserted directly
+        # instead.
         bus = FakeBus()
 
         for _ in range(2):
             svc = _make_service(bus)
-            registered = list(svc.ocp._bus_events)
+            registered = list(svc.ocp.bus_api._registrations)
             self.assertTrue(registered, "construction should have registered handlers")
             svc.shutdown()
-            self.assertEqual(svc.ocp._bus_events, [],
-                            "shutdown must clear the OCPMediaPlayer registration list")
+            self.assertEqual(svc.ocp.bus_api._registrations, [],
+                            "shutdown must clear the bus edge registration list")
 
     def test_shutdown_calls_bus_remove_for_every_registered_ocp_handler(self):
         """Same assertion via a MagicMock bus, which has no dedup-table

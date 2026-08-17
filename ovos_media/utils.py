@@ -11,59 +11,39 @@
 # limitations under the License.
 #
 
-from functools import wraps
-
 from ovos_bus_client.session import SessionManager
 from ovos_utils.log import LOG
 
 
-def require_default_session():
-    """Decorator gating a bus handler to the local/"default" session only.
+def is_default_session(message=None, validate_source: bool = True) -> bool:
+    """True when a message may drive this device's playback.
 
-    ovos-media is conceptually a *single* player bound to its own device — the
-    ``"default"`` session.  In a HiveMind split the OCP pipeline runs on the
-    server and forwards playback commands stamped with the *originating*
+    ovos-media is conceptually a *single* player bound to its own device —
+    the ``"default"`` session.  In a HiveMind split the OCP pipeline runs on
+    the server and forwards playback commands stamped with the *originating*
     session.  A server-side ovos-media must NOT act on a satellite's command
     (``session_id != "default"``): the satellite has its own embedded
-    ovos-media that handles it.  hivemind-core NATs the satellite's session to
-    ``"default"`` for that embedded instance (or the satellite sets
-    ``validate_source: false``), so the satellite's instance sees ``"default"``
-    and executes.
+    ovos-media that handles it.  hivemind-core NATs the satellite's session
+    to ``"default"`` for that embedded instance (or the satellite sets
+    ``validate_source: false``), so the satellite's instance sees
+    ``"default"`` and executes.
 
     Mirrors :func:`ovos_audio.utils.require_default_session`.
 
-    A decorated handler runs only if any of:
-        - ``message`` is ``None`` (internal/synthetic call), OR
-        - the owning object's ``validate_source`` is falsy (act on everything), OR
-        - the message's session id is ``"default"`` (local request).
+    A message passes if any of:
+        - it is ``None`` (internal/synthetic call), OR
+        - ``validate_source`` is falsy (act on everything), OR
+        - its session id is ``"default"`` (local request).
 
-    Otherwise it logs at debug level and returns ``None`` without acting.
-
-    The decorated method's ``self`` must expose a ``validate_source``
-    attribute; if missing it defaults to ``True`` (filter enabled).
+    A malformed session context (empty/non-str session id, a session that is
+    not a dict) is refused rather than raised: a hostile or buggy peer must
+    never be able to crash a gated handler.
     """
-
-    def _decorator(func):
-        @wraps(func)
-        def func_wrapper(self, message=None):
-            validate = getattr(self, "validate_source", True)
-            if message is None or not validate:
-                return func(self, message)
-            try:
-                is_default = SessionManager.get(message).session_id == "default"
-            except Exception as e:
-                # malformed session context (eg. empty/non-str session_id) —
-                # a hostile or buggy peer must never be able to crash a
-                # gated handler; treat it as NOT the default/local session
-                LOG.warning(f"ignoring '{message.msg_type}' message, "
-                           f"malformed session context: {e}")
-                return None
-            if is_default:
-                return func(self, message)
-            LOG.debug(f"ignoring '{message.msg_type}' message, "
-                      f"not from the default/local session")
-            return None
-
-        return func_wrapper
-
-    return _decorator
+    if message is None or not validate_source:
+        return True
+    try:
+        return SessionManager.get(message).session_id == "default"
+    except Exception as e:
+        LOG.warning(f"ignoring '{message.msg_type}' message, "
+                    f"malformed session context: {e}")
+        return False

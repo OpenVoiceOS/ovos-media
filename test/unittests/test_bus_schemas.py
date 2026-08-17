@@ -21,8 +21,7 @@ import unittest
 from ovos_utils.ocp import MediaEntry, MediaType, PlaybackType, Playlist
 
 from ovos_media.bus.schemas import (decode_playback_time, flatten_media_types,
-                                    is_injection_char, is_number,
-                                    is_real_number, sanitize_nested_playlist,
+                                    is_injection_char, is_real_number, sanitize_nested_playlist,
                                     sanitize_raw_playlist_dicts,
                                     validated_entries)
 
@@ -32,25 +31,6 @@ INF = float("inf")
 
 def _entry(uri, title="t"):
     return MediaEntry(uri=uri, title=title, playback=PlaybackType.AUDIO)
-
-
-class TestIsNumber(unittest.TestCase):
-    """A plain int/float, bool excluded. Non-finite floats DO pass —
-    is_real_number is the check for anything later fed to int() or sum()."""
-
-    CASES = [
-        (0, True), (1, True), (-1, True), (1.5, True), (-0.0, True),
-        (10 ** 30, True),
-        (NAN, True), (INF, True), (-INF, True),
-        (True, False), (False, False),
-        (None, False), ("5", False), (b"5", False), ([5], False),
-        ({"n": 5}, False), (object(), False),
-    ]
-
-    def test_cases(self):
-        for value, expected in self.CASES:
-            with self.subTest(value=value):
-                self.assertEqual(is_number(value), expected)
 
 
 class TestIsRealNumber(unittest.TestCase):

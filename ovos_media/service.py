@@ -5,6 +5,7 @@ from ovos_utils.log import LOG
 from ovos_utils.process_utils import ProcessStatus, StatusCallbackMap
 
 from ovos_config.config import Configuration
+from ovos_media.bus.api import OCPBusApi
 from ovos_media.player import OCPMediaPlayer
 
 def on_ready():
@@ -65,7 +66,6 @@ class MediaService(Thread):
         self.status.set_alive()
         self.init_messagebus()
         self.ocp = OCPMediaPlayer(self.bus, validate_source=self.validate_source)
-        self.bus.on("ovos.common_play.ping", self.handle_ping)
         # 'ovos.common_play.home' and 'ovos.common_play.search.start'/
         # '.search.end' are pipeline-side signals (the OCP pipeline plugin
         # uses them to drive a GUI's own navigation/loading state); this
@@ -73,11 +73,11 @@ class MediaService(Thread):
         # response to them, so it does not subscribe to any of the three.
         # A bus message with no subscriber here is legal — nothing else in
         # this daemon depends on them being handled.
-        # opm.audio.query's handler reads self.ocp.audio_service — it
-        # must not be reachable until self.ocp exists. Registered here
-        # (after OCPMediaPlayer's plugin-loading construction above), not in
-        # init_messagebus() which runs before self.ocp is assigned.
-        self.bus.on("opm.audio.query", self.handle_opm_audio_query)
+        # opm.audio.query's handler reads self.ocp.audio_service — the edge
+        # is built here (after OCPMediaPlayer's plugin-loading construction
+        # above), not in init_messagebus() which runs before self.ocp is
+        # assigned, so the topic is never answerable before self.ocp exists.
+        self.bus_api = OCPBusApi(self.bus, service=self)
 
     def handle_ping(self, message):
         """
@@ -111,10 +111,9 @@ class MediaService(Thread):
         self.ocp.reset()
         self.status.set_stopping()
         self.ocp.shutdown()
-        # Remove the handlers registered directly on MediaService (not on
-        # self.ocp) so a shut-down service stops answering ping/opm.audio.query.
-        self.bus.remove("ovos.common_play.ping", self.handle_ping)
-        self.bus.remove("opm.audio.query", self.handle_opm_audio_query)
+        # the service's own topics go last: a shut-down service must stop
+        # answering ping/opm.audio.query too.
+        self.bus_api.shutdown()
 
     def init_messagebus(self):
         """

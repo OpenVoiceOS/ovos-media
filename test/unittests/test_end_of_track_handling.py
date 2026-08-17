@@ -222,10 +222,9 @@ class TestSingleWriterEndOfMedia(unittest.TestCase):
         """NowPlaying must not be a second subscriber to the topic."""
         bus = FakeBus()
         player = _make_player(bus)
-        listeners = bus.ee.listeners("ovos.common_play.media.state")
-        owners = [getattr(fn, "__self__", None) for fn in listeners]
-        self.assertNotIn(player.now_playing, owners)
-        self.assertIn(player, owners)
+        targets = [e.target for e in player.bus_api.table
+                   if e.topic == "ovos.common_play.media.state"]
+        self.assertEqual(targets, [player.handle_player_media_update])
         player.shutdown()
 
 

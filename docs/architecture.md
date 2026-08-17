@@ -45,7 +45,7 @@ The rest of this document focuses on the daemon itself.
 
 1. **`MediaService`** (`ovos_media/service.py`), the process entry point. It runs
    as a `Thread`, owns the `MessageBusClient` connection, instantiates
-   `OCPMediaPlayer`, and registers a small set of top-level bus handlers.
+   `OCPMediaPlayer`, and answers a small set of top-level bus topics.
 
 2. **`OCPMediaPlayer`** (`ovos_media/player.py`), the virtual media player. It is
    a plain bus-connected class (it is *not* a skill or an `OVOSAbstractApplication`)
@@ -62,11 +62,26 @@ The rest of this document focuses on the daemon itself.
    Each loads OPM plugins at startup and delegates actual playback to the selected
    plugin instance.
 
-Payload validation for all three layers lives in `ovos_media/bus/schemas.py`.
+Every subscription `MediaService`, `OCPMediaPlayer`, `NowPlaying` and
+`OCPMediaCatalog` make lives in the bus edge, `ovos_media/bus/api.py`.
+`OCPBusApi` holds one registration table naming, per topic, the payload decoder
+to run, whether the topic is gated to the local session, and the method to
+call. The same table drives teardown, so a shut-down daemon cannot keep
+answering a topic it registered.
+
+The backend services are the exception: each of `AudioService`,
+`VideoService` and `WebService` binds its own
+`ovos.common_play.media.state` listener in `BaseMediaService.__init__`, and the
+skill base class the catalog inherits from registers its intents and keyword
+plumbing itself. Reading the table therefore tells you what the player layer
+answers, not everything this process has bound.
+
+Payload validation for all layers lives in `ovos_media/bus/schemas.py`.
 Every rule an incoming bus payload must satisfy — numeric fields that must be
 finite, uri characters that would inject newlines into a log viewer or an HTTP
-stack downstream, track lists that must be coerced entry by entry — is a plain
-function over a raw value there, so no handler restates the numeric, uri, or track-list rules inline.
+stack downstream, track lists that must be coerced entry by entry, enum states
+that arrive as bare ints — is a plain function over a raw value there, so no
+handler restates the numeric, uri, state, or track-list rules inline.
 
 These layers communicate via the OVOS MessageBus (WebSocket pub/sub). The
 `MediaService` layer handles service-lifecycle and discovery events;
@@ -76,10 +91,12 @@ services handle low-level playback over namespaced bus events.
 ### NowPlaying
 
 `OCPMediaPlayer.now_playing` is a `NowPlaying` instance, a `MediaEntry` subclass
-that subscribes to bus events to keep the currently-playing track's metadata,
-status (`TrackState`), and seek position live. It updates on
-`ovos.common_play.track.state`, `ovos.common_play.media.state`,
-`ovos.common_play.play`, and `ovos.common_play.playback_time`. When a backend
+holding the currently-playing track's metadata, status (`TrackState`), and seek
+position. It subscribes to nothing itself: the bus edge routes
+`ovos.common_play.track.state`, `ovos.common_play.play` and
+`ovos.common_play.playback_time` to it, and the player forwards end-of-media
+from `ovos.common_play.media.state` as a plain method call so the reset cannot
+race the autoplay decision that reads it. When a backend
 confirms playback (`TrackState.PLAYING_*`), `NowPlaying` calls back into the
 player to set `PlayerState.PLAYING`; on `MediaState.END_OF_MEDIA` it resets.
 
@@ -115,7 +132,9 @@ message with no subscriber here is legal.
 
 ### OCPMediaPlayer handlers
 
-Registered in `OCPMediaPlayer.register_bus_handlers` (`ovos_media/player.py`).
+Registered by the bus edge (`ovos_media/bus/api.py`), which subscribes every
+topic in its table, decodes the payload, applies the session gate, and then
+calls the handler below.
 
 | Message type | Handler | Notes |
 | :--- | :--- | :--- |
@@ -296,7 +315,7 @@ session.
 
 `ovos-media` itself stays a **single** player bound to its own device, the
 `"default"` session. Its playback-executing handlers are gated by
-`require_default_session()` (`ovos_media/utils.py`), so a server-side daemon
+`is_default_session()` (`ovos_media/utils.py`), so a server-side daemon
 **ignores** a satellite's forwarded command (`session_id != "default"`) while
 the satellite's own embedded daemon executes it. Read-only query handlers stay
 ungated so a remote pipeline can still read state. See

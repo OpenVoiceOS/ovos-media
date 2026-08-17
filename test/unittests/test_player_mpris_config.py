@@ -20,7 +20,8 @@ class TestMprisConfigForwarded(unittest.TestCase):
                  patch("ovos_media.player.NowPlaying"), \
              patch("ovos_media.player.Playlist"), \
              patch("ovos_media.player.OCPMediaCatalog"), \
-             patch.object(OCPMediaPlayer, "register_bus_handlers"):
+             patch("ovos_media.player.OCPBusApi"), \
+             patch.object(OCPMediaPlayer, "_report_to_core"):
             p = OCPMediaPlayer(bus=FakeBus(), config=media_config)
         return p, mock_exporter
 
