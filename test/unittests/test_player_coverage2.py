@@ -21,7 +21,6 @@ def _make_player(playback_type=PlaybackType.AUDIO):
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
          patch("ovos_media.player.OcpMprisExporter"), \
-         patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
@@ -61,7 +60,6 @@ def _make_player(playback_type=PlaybackType.AUDIO):
         p.current = None
         p.mpris = None
         p.bus = FakeBus()
-        p.gui = MagicMock()
     return p
 
 
@@ -110,8 +108,7 @@ class TestPlayerPlaySkillPath(unittest.TestCase):
         p.bus.on("ovos.common_play.test.skill.play", lambda m: emitted.append(m))
 
         with patch.object(p, "validate_stream", return_value=True), \
-             patch.object(p, "set_player_state"), \
-             patch.object(p, "_update_gui"):
+             patch.object(p, "set_player_state"):
             p.play()
 
         self.assertEqual(len(emitted), 1)
@@ -127,11 +124,107 @@ class TestPlayerPlayVideoPath(unittest.TestCase):
         p = _make_player(PlaybackType.VIDEO)
 
         with patch.object(p, "validate_stream", return_value=True), \
-             patch.object(p, "set_player_state"), \
-             patch.object(p, "_update_gui"):
+             patch.object(p, "set_player_state"):
             p.play()
 
         p.video_service.play.assert_called_once()
+
+    def test_video_backend_present_still_plays_as_video(self):
+        """Control case: a video backend claims the uri -> plays as VIDEO,
+        does not fall back to audio."""
+        p = _make_player(PlaybackType.VIDEO)
+        p.video_service.can_play.return_value = True
+
+        with patch.object(p, "validate_stream", return_value=True), \
+             patch.object(p, "set_player_state"):
+            p.play()
+
+        p.video_service.play.assert_called_once()
+        p.audio_service.play.assert_not_called()
+        self.assertEqual(p.now_playing.playback, PlaybackType.VIDEO)
+
+    def test_no_video_backend_claims_uri_falls_back_to_audio(self):
+        """No installed video backend claims the uri (eg. a headless
+        install with only audio backends configured), but an audio backend
+        does -> play() must degrade to audio instead of dead-ending in
+        INVALID_MEDIA."""
+        p = _make_player(PlaybackType.VIDEO)
+        p.video_service.can_play.return_value = False
+        p.audio_service.can_play.return_value = True
+
+        emitted = []
+        p.bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+
+        with patch.object(p, "validate_stream", return_value=True), \
+             patch.object(p, "set_player_state"):
+            p.play()
+
+        p.video_service.play.assert_not_called()
+        p.audio_service.play.assert_called_once()
+        self.assertEqual(p.now_playing.playback, PlaybackType.AUDIO)
+        self.assertEqual(emitted, [],
+                         "no INVALID_MEDIA should be emitted when the audio "
+                         "fallback succeeds")
+
+    def test_no_backend_claims_uri_at_all_emits_invalid_media(self):
+        """Neither a video nor an audio backend claims the uri -> the
+        fallback must not swallow a genuine INVALID_MEDIA."""
+        p = _make_player(PlaybackType.VIDEO)
+        p.video_service.can_play.return_value = False
+        p.audio_service.can_play.return_value = False
+
+        emitted = []
+        p.bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+
+        with patch.object(p, "validate_stream", return_value=True), \
+             patch.object(p, "set_player_state"):
+            p.play()
+
+        p.video_service.play.assert_not_called()
+        p.audio_service.play.assert_not_called()
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].data["state"], MediaState.INVALID_MEDIA)
+
+    def test_audio_fallback_stops_abandoned_video_backend(self):
+        """A video backend is genuinely playing track A (svc.current is set)
+        when a NEW play() request for a differently-shaped uri that no
+        video backend claims arrives, falling back to audio. The abandoned
+        video backend must be stopped and cleared — otherwise track A keeps
+        playing on the video backend while the audio fallback starts a
+        second stream (double playback)."""
+        p = _make_player(PlaybackType.VIDEO)
+        old_backend = MagicMock()
+        p.video_service.current = old_backend
+        p.video_service.can_play.return_value = False
+        p.audio_service.can_play.return_value = True
+
+        with patch.object(p, "validate_stream", return_value=True), \
+             patch.object(p, "set_player_state"):
+            p.play()
+
+        old_backend.stop.assert_called_once()
+        self.assertIsNone(p.video_service.current,
+                          "abandoned video backend's `current` must be "
+                          "cleared, or a later stray LOADED_MEDIA event "
+                          "could revive it")
+        p.audio_service.play.assert_called_once()
+
+    def test_normal_video_to_video_switch_does_not_stop_new_backend(self):
+        """Control: a normal switch where the video backend DOES claim the
+        new uri must not have its `current` stopped/cleared by the
+        fallback path (which must not trigger at all here)."""
+        p = _make_player(PlaybackType.VIDEO)
+        old_backend = MagicMock()
+        p.video_service.current = old_backend
+        p.video_service.can_play.return_value = True
+
+        with patch.object(p, "validate_stream", return_value=True), \
+             patch.object(p, "set_player_state"):
+            p.play()
+
+        old_backend.stop.assert_not_called()
+        p.video_service.play.assert_called_once()
+        p.audio_service.play.assert_not_called()
 
 
 class TestPlayerPlayWebviewPath(unittest.TestCase):
@@ -142,11 +235,24 @@ class TestPlayerPlayWebviewPath(unittest.TestCase):
         p = _make_player(PlaybackType.WEBVIEW)
 
         with patch.object(p, "validate_stream", return_value=True), \
-             patch.object(p, "set_player_state"), \
-             patch.object(p, "_update_gui"):
+             patch.object(p, "set_player_state"):
             p.play()
 
         p.web_service.play.assert_called_once()
+
+    def test_no_web_backend_claims_uri_falls_back_to_audio(self):
+        """Same fallback as VIDEO, for WEBVIEW."""
+        p = _make_player(PlaybackType.WEBVIEW)
+        p.web_service.can_play.return_value = False
+        p.audio_service.can_play.return_value = True
+
+        with patch.object(p, "validate_stream", return_value=True), \
+             patch.object(p, "set_player_state"):
+            p.play()
+
+        p.web_service.play.assert_not_called()
+        p.audio_service.play.assert_called_once()
+        self.assertEqual(p.now_playing.playback, PlaybackType.AUDIO)
 
 
 class TestPlayerPlayWithMpris(unittest.TestCase):
@@ -158,8 +264,7 @@ class TestPlayerPlayWithMpris(unittest.TestCase):
         p.mpris = MagicMock()
 
         with patch.object(p, "validate_stream", return_value=True), \
-             patch.object(p, "set_player_state"), \
-             patch.object(p, "_update_gui"):
+             patch.object(p, "set_player_state"):
             p.play()
 
         # Check that update_props was called with CanGoNext
@@ -173,8 +278,7 @@ class TestPlayerPlayWithMpris(unittest.TestCase):
         p.mpris.stop_event.is_set.return_value = False
 
         with patch.object(p, "validate_stream", return_value=True), \
-             patch.object(p, "set_player_state"), \
-             patch.object(p, "_update_gui"):
+             patch.object(p, "set_player_state"):
             p.play()
 
         p.mpris.stop.assert_called_once()
@@ -197,8 +301,7 @@ class TestPlayerPlayWithLikedSongs(unittest.TestCase):
         p.media.liked_songs = liked_songs_mock
 
         with patch.object(p, "validate_stream", return_value=True), \
-             patch.object(p, "set_player_state"), \
-             patch.object(p, "_update_gui"):
+             patch.object(p, "set_player_state"):
             p.play()
 
         # Check that play_count was incremented
@@ -233,8 +336,7 @@ class TestPlayerPlayWithLikedSongs(unittest.TestCase):
         p.media.liked_songs = liked_songs
 
         with patch.object(p, "validate_stream", return_value=True), \
-             patch.object(p, "set_player_state"), \
-             patch.object(p, "_update_gui"):
+             patch.object(p, "set_player_state"):
             p.play()  # must not raise KeyError
 
         # no entry to mutate - store() must not be called
@@ -280,8 +382,7 @@ class TestLikedSongsLockSerialization(unittest.TestCase):
         p._liked_songs_lock = probe
 
         with patch.object(p, "validate_stream", return_value=True), \
-             patch.object(p, "set_player_state"), \
-             patch.object(p, "_update_gui"):
+             patch.object(p, "set_player_state"):
             p.play()
 
         self.assertGreaterEqual(probe.acquire_count, 1)
@@ -322,17 +423,18 @@ class TestPlayerValidateStreamException(unittest.TestCase):
 class TestPlayerOnInvalidStream(unittest.TestCase):
     """Test on_invalid_stream."""
 
-    def test_on_invalid_stream_shows_error_gui(self):
-        """on_invalid_stream should call gui.show_media_player with state='error'."""
+    def test_on_invalid_stream_marks_uri_failed_and_schedules_retry(self):
+        """on_invalid_stream should record the failed uri and schedule a retry."""
         p = _make_player()
         p.playlist = MagicMock()
         p.playlist.entries = []
+        p.now_playing.uri = "http://example.com/bad.mp3"
+        p._schedule_play_next = MagicMock()
 
         p.on_invalid_stream()
 
-        p.gui.show_media_player.assert_called_once()
-        call_kwargs = p.gui.show_media_player.call_args[1]
-        self.assertEqual(call_kwargs["state"], "error")
+        self.assertIn("http://example.com/bad.mp3", p._failed_uris)
+        p._schedule_play_next.assert_called_once()
 
 
 class TestPlayerPlayShuffle(unittest.TestCase):
@@ -439,7 +541,7 @@ class TestPlayerPauseMpris(unittest.TestCase):
         p.mpris = MagicMock()
         p.mpris.manage_players = True
 
-        with patch.object(p, "set_player_state"), patch.object(p, "_update_gui"):
+        with patch.object(p, "set_player_state"):
             p.pause()
 
         p.mpris.pause.assert_called_once()
@@ -454,7 +556,7 @@ class TestPlayerResumeMpris(unittest.TestCase):
         p.mpris = MagicMock()
         p.mpris.manage_players = True
 
-        with patch.object(p, "set_player_state"), patch.object(p, "_update_gui"):
+        with patch.object(p, "set_player_state"):
             p.resume()
 
         p.mpris.resume.assert_called_once()
@@ -468,7 +570,7 @@ class TestPlayerStopMpris(unittest.TestCase):
         p = _make_player(PlaybackType.MPRIS)
         p.mpris = MagicMock()
 
-        with patch.object(p, "set_player_state"), patch.object(p, "_update_gui"):
+        with patch.object(p, "set_player_state"):
             p.stop()
 
         p.mpris.pause.assert_called_once()
@@ -483,7 +585,7 @@ class TestPlayerHandleRepeatToggleMpris(unittest.TestCase):
         p.mpris = MagicMock()
         p.loop_state = LoopState.NONE
 
-        with patch.object(p, "_update_gui"):
+        with patch.object(p, "handle_status"):
             p.handle_repeat_toggle_request(Message("x"))
 
         p.mpris.toggle_repeat.assert_called_once()
@@ -497,7 +599,7 @@ class TestPlayerHandleShuffleMpris(unittest.TestCase):
         p = _make_player(PlaybackType.MPRIS)
         p.mpris = MagicMock()
 
-        with patch.object(p, "_update_gui"):
+        with patch.object(p, "handle_status"):
             p.handle_shuffle_toggle_request(Message("x"))
 
         p.mpris.toggle_shuffle.assert_called_once()
@@ -606,8 +708,7 @@ class TestPlayerHandleMediaUpdateInvalidAutoplayOff(unittest.TestCase):
         p.media_state = MediaState.NO_MEDIA
 
         with patch.object(p, "handle_invalid_media"), \
-             patch.object(p, "play_next") as mock_next, \
-             patch.object(p, "_update_gui"):
+             patch.object(p, "play_next") as mock_next:
             p.handle_player_media_update(Message("ovos.common_play.media.state",
                                                  {"state": MediaState.INVALID_MEDIA}))
 

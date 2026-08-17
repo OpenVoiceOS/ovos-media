@@ -63,7 +63,6 @@ def _make_base_service(current=None):
     svc.bus = FakeBus()
     svc.services = []
     svc.current = current
-    svc.validate_source = False
     svc.volume_is_low = False
     svc.service_lock = threading.Lock()
     svc.play_start_time = 0.0
@@ -182,7 +181,6 @@ class TestA4ConfigRobustness(unittest.TestCase):
         svc.current = None
         svc.play_start_time = 0.0
         svc.volume_is_low = False
-        svc.validate_source = False
         svc._loaded = threading.Event()
         return svc
 

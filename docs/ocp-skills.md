@@ -30,7 +30,7 @@ OCP (OpenVoiceOS Common Play) is the media pipeline that routes voice utterances
 User says "play jazz"
   -> recognizer_loop:utterance
   -> ovos-ocp-pipeline-plugin classifies as MediaType.MUSIC
-  -> ovos.common_play.search.start emitted (GUI loading indicator)
+  -> ovos.common_play.search.start emitted
   -> ovos.common_play.query broadcast to all OCP skills
   -> Skills reply with ovos.common_play.query.response
      (list of MediaEntry, each with match_confidence 0-100)

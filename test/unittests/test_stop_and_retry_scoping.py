@@ -165,8 +165,10 @@ class TestStopScopedToActiveService(unittest.TestCase):
         self.assertIsNone(player.video_service.current)
 
         # a skill (or OCPVideoServiceInterface.stop()) stops the idle video
-        # service while audio is genuinely playing
-        bus.emit(Message("ovos.video.service.stop"))
+        # service while audio is genuinely playing. The per-namespace
+        # 'ovos.video.service.stop' bus surface is gone — the video service
+        # is only ever stopped via a direct call now.
+        player.video_service.stop()
 
         # the player's stop-requested flag must NOT have been set by the
         # idle video service's stop
@@ -203,9 +205,10 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
         return bus, player, backend, a, b
 
     def test_external_service_stop_during_retry_window_stays_stopped(self):
-        """INVALID_MEDIA arms a delayed play_next(); an external
-        'ovos.audio.service.stop' arriving inside that window must cancel it,
-        not let it fire afterwards and resurrect playback.
+        """INVALID_MEDIA arms a delayed play_next(); a direct
+        audio_service.stop() (eg. from a skill or OCPAudioServiceInterface)
+        arriving inside that window must cancel it, not let it fire
+        afterwards and resurrect playback.
         """
         bus, player, backend, a, b = self._player_with_invalid_backend()
 
@@ -219,17 +222,17 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
         # BaseMediaService._perform_stop signals on_stop()
         backend._playing = True
         player.audio_service.play_start_time = time.monotonic() - 5
-        bus.emit(Message("ovos.audio.service.stop"))
+        player.audio_service.stop()
 
         self.assertIsNone(player._invalid_timer,
                           "stop() did not cancel the pending invalid-stream "
                           "retry timer")
 
-        # wait past the original retry window. Note: an external
-        # 'ovos.{ns}.service.stop' does not by itself set player.state (only
-        # OCPMediaPlayer.stop() does that) — the observable defect here is
-        # the deferred play_next() firing and silently advancing the queue
-        # after the stop had already been acted on.
+        # wait past the original retry window. Note: a direct
+        # BaseMediaService.stop() call does not by itself set player.state
+        # (only OCPMediaPlayer.stop() does that) — the observable defect
+        # here is the deferred play_next() firing and silently advancing
+        # the queue after the stop had already been acted on.
         self.assertIsNone(player._invalid_timer,
                           "invalid-stream retry timer reappeared before the "
                           "wait")

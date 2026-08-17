@@ -229,13 +229,13 @@ class TestHandlePlayerShuffle(unittest.IsolatedAsyncioTestCase):
         ctl, player = _make_exporter({"manage_external_players": True})
         await ctl.handle_player_shuffle(True)
         self.assertTrue(player.shuffle)
-        player._update_gui.assert_called_once()
 
     async def test_noop_shuffle_when_manage_players_false(self):
         ctl, player = _make_exporter({"manage_external_players": False})
+        original = player.shuffle
         await ctl.handle_player_shuffle(True)
         # shuffle should not have been set on the player
-        player._update_gui.assert_not_called()
+        self.assertEqual(player.shuffle, original)
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +265,7 @@ class TestHandlePlayerLoopState(unittest.IsolatedAsyncioTestCase):
         original = player.loop_state
         await ctl.handle_player_loop_state(1)
         # loop_state on the player mock was not touched
-        player._update_gui.assert_not_called()
+        self.assertEqual(player.loop_state, original)
 
 
 # ---------------------------------------------------------------------------

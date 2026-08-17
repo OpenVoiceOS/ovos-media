@@ -17,8 +17,7 @@ class TestMprisConfigForwarded(unittest.TestCase):
              patch("ovos_media.player.VideoService"), \
              patch("ovos_media.player.WebService"), \
              patch("ovos_media.player.OcpMprisExporter") as mock_exporter, \
-             patch("ovos_media.player.GUIInterface"), \
-             patch("ovos_media.player.NowPlaying"), \
+                 patch("ovos_media.player.NowPlaying"), \
              patch("ovos_media.player.Playlist"), \
              patch("ovos_media.player.OCPMediaCatalog"), \
              patch.object(OCPMediaPlayer, "register_bus_handlers"):

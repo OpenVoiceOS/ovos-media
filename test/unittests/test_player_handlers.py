@@ -57,7 +57,6 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
          patch("ovos_media.player.OcpMprisExporter"), \
-         patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
@@ -95,7 +94,6 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
         p.current = None
         p.mpris = None
         p.bus = FakeBus()
-        p.gui = MagicMock()
     return p
 
 
@@ -128,14 +126,6 @@ class TestHandlePauseRequest(unittest.TestCase):
         p.handle_pause_request(Message("ovos.common_play.pause"))
         self.assertFalse(p._paused_on_duck)
 
-    def test_pause_calls_update_gui(self):
-        p = _make_player(PlaybackType.AUDIO)
-        p.state = PlayerState.PLAYING
-        p.handle_status = MagicMock()
-        p._update_gui = MagicMock()
-        p.handle_pause_request(Message("ovos.common_play.pause"))
-        p._update_gui.assert_called()
-
 
 # ---------------------------------------------------------------------------
 # handle_resume_request
@@ -157,14 +147,6 @@ class TestHandleResumeRequest(unittest.TestCase):
         p.handle_status = MagicMock()
         p.handle_resume_request(Message("ovos.common_play.resume"))
         self.assertEqual(p.state, PlayerState.PLAYING)
-
-    def test_resume_calls_update_gui(self):
-        p = _make_player(PlaybackType.AUDIO)
-        p.state = PlayerState.PAUSED
-        p.handle_status = MagicMock()
-        p._update_gui = MagicMock()
-        p.handle_resume_request(Message("ovos.common_play.resume"))
-        p._update_gui.assert_called()
 
 
 # ---------------------------------------------------------------------------
@@ -327,36 +309,27 @@ class TestHandleShuffleRequests(unittest.TestCase):
     def test_shuffle_toggle_flips_false_to_true(self):
         p = _make_player()
         p.shuffle = False
-        p._update_gui = MagicMock()
         p.handle_shuffle_toggle_request(Message("ovos.common_play.shuffle.toggle"))
         self.assertTrue(p.shuffle)
 
     def test_shuffle_toggle_flips_true_to_false(self):
         p = _make_player()
         p.shuffle = True
-        p._update_gui = MagicMock()
         p.handle_shuffle_toggle_request(Message("ovos.common_play.shuffle.toggle"))
         self.assertFalse(p.shuffle)
 
     def test_set_shuffle_sets_true(self):
         p = _make_player()
         p.shuffle = False
-        p._update_gui = MagicMock()
         p.handle_set_shuffle(Message("ovos.common_play.shuffle.set"))
         self.assertTrue(p.shuffle)
 
     def test_unset_shuffle_sets_false(self):
         p = _make_player()
         p.shuffle = True
-        p._update_gui = MagicMock()
         p.handle_unset_shuffle(Message("ovos.common_play.shuffle.unset"))
         self.assertFalse(p.shuffle)
 
-    def test_shuffle_toggle_calls_update_gui(self):
-        p = _make_player()
-        p._update_gui = MagicMock()
-        p.handle_shuffle_toggle_request(Message("ovos.common_play.shuffle.toggle"))
-        p._update_gui.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -369,43 +342,33 @@ class TestHandleRepeatRequests(unittest.TestCase):
     def test_repeat_toggle_from_none_to_repeat(self):
         p = _make_player()
         p.loop_state = LoopState.NONE
-        p._update_gui = MagicMock()
         p.handle_repeat_toggle_request(Message("ovos.common_play.repeat.toggle"))
         self.assertEqual(p.loop_state, LoopState.REPEAT)
 
     def test_repeat_toggle_from_repeat_to_repeat_track(self):
         p = _make_player()
         p.loop_state = LoopState.REPEAT
-        p._update_gui = MagicMock()
         p.handle_repeat_toggle_request(Message("ovos.common_play.repeat.toggle"))
         self.assertEqual(p.loop_state, LoopState.REPEAT_TRACK)
 
     def test_repeat_toggle_from_repeat_track_to_none(self):
         p = _make_player()
         p.loop_state = LoopState.REPEAT_TRACK
-        p._update_gui = MagicMock()
         p.handle_repeat_toggle_request(Message("ovos.common_play.repeat.toggle"))
         self.assertEqual(p.loop_state, LoopState.NONE)
 
     def test_set_repeat_sets_loop_state(self):
         p = _make_player()
         p.loop_state = LoopState.NONE
-        p._update_gui = MagicMock()
         p.handle_set_repeat(Message("ovos.common_play.repeat.set"))
         self.assertEqual(p.loop_state, LoopState.REPEAT)
 
     def test_unset_repeat_clears_loop_state(self):
         p = _make_player()
         p.loop_state = LoopState.REPEAT
-        p._update_gui = MagicMock()
         p.handle_unset_repeat(Message("ovos.common_play.repeat.unset"))
         self.assertEqual(p.loop_state, LoopState.NONE)
 
-    def test_repeat_toggle_calls_update_gui(self):
-        p = _make_player()
-        p._update_gui = MagicMock()
-        p.handle_repeat_toggle_request(Message("ovos.common_play.repeat.toggle"))
-        p._update_gui.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +506,6 @@ class TestSetPlayerState(unittest.TestCase):
 
     def test_updates_state_to_playing(self):
         p = _make_player()
-        p._update_gui = MagicMock()
         p.handle_status = MagicMock()
         p.state = PlayerState.STOPPED
         p.set_player_state(PlayerState.PLAYING)
@@ -551,7 +513,6 @@ class TestSetPlayerState(unittest.TestCase):
 
     def test_updates_state_to_paused(self):
         p = _make_player()
-        p._update_gui = MagicMock()
         p.handle_status = MagicMock()
         p.state = PlayerState.PLAYING
         p.set_player_state(PlayerState.PAUSED)
@@ -564,19 +525,17 @@ class TestSetPlayerState(unittest.TestCase):
 
     def test_noop_when_same_state(self):
         p = _make_player()
-        p._update_gui = MagicMock()
         p.handle_status = MagicMock()
         p.state = PlayerState.STOPPED
         p.set_player_state(PlayerState.STOPPED)
-        p._update_gui.assert_not_called()
+        p.handle_status.assert_not_called()
 
-    def test_calls_update_gui_on_change(self):
+    def test_calls_handle_status_on_change(self):
         p = _make_player()
-        p._update_gui = MagicMock()
         p.handle_status = MagicMock()
         p.state = PlayerState.STOPPED
         p.set_player_state(PlayerState.PLAYING)
-        p._update_gui.assert_called_once()
+        p.handle_status.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -588,7 +547,6 @@ class TestHandlePlayerMediaUpdate(unittest.TestCase):
 
     def test_updates_media_state_from_int(self):
         p = _make_player()
-        p._update_gui = MagicMock()
         msg = Message("ovos.common_play.media.state",
                       {"state": int(MediaState.LOADED_MEDIA)})
         p.handle_player_media_update(msg)
@@ -608,12 +566,12 @@ class TestHandlePlayerMediaUpdate(unittest.TestCase):
 
     def test_noop_when_same_state(self):
         p = _make_player()
-        p._update_gui = MagicMock()
         p.media_state = MediaState.NO_MEDIA
+        p.handle_playback_ended = MagicMock()
         msg = Message("ovos.common_play.media.state",
                       {"state": MediaState.NO_MEDIA})
         p.handle_player_media_update(msg)
-        p._update_gui.assert_not_called()
+        p.handle_playback_ended.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -688,7 +646,6 @@ class TestHandleLikeUnlike(unittest.TestCase):
 
     def test_like_stores_track(self):
         p = _make_player()
-        p._update_gui = MagicMock()
         p.bus.emit = MagicMock()
         uri = "http://example.com/song.mp3"
         msg = Message("ovos.common_play.like", {"uri": uri, "title": "Song", "artist": "Artist", "image": ""})
@@ -827,7 +784,6 @@ class TestExternalMprisNowPlaying(unittest.TestCase):
     def _player(self):
         p = _make_player(PlaybackType.AUDIO)
         p.set_now_playing = MagicMock()
-        p._update_gui = MagicMock()
         p.handle_status = MagicMock()
         return p
 

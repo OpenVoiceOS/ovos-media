@@ -176,7 +176,6 @@ class TestTrackFailedDialog(unittest.TestCase):
         p.shuffle = True
         p.loop_state = MagicMock()
         p.set_player_state = MagicMock()
-        p._update_gui = MagicMock()
         p.reset()
         self.assertFalse(p._track_failed_spoken)
         self.assertEqual(p._failed_uris, set())

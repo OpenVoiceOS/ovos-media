@@ -13,7 +13,7 @@
 """End-to-end tests for the ovos-media daemon through the real OCPMediaPlayer.
 
 These tests drive the full media daemon — a real :class:`OCPMediaPlayer` on a
-``FakeBus`` with heavy deps + GUI mocked — via ``ovoscope.media.OCPPlayerHarness``.
+``FakeBus`` with heavy deps mocked — via ``ovoscope.media.OCPPlayerHarness``.
 They complement ``test_ocp_player.py`` (transport/duck/cork) by covering the
 daemon-level concerns the prompt calls out:
 
@@ -34,7 +34,6 @@ Run locally with::
 """
 import time
 import unittest
-from unittest.mock import patch
 
 from ovos_bus_client.message import Message
 from ovos_utils.ocp import (
@@ -50,23 +49,6 @@ from ovoscope.media import OCPPlayerHarness
 def _audio(uri: str, title: str = "Test Track") -> MediaEntry:
     """Return a minimal AUDIO ``MediaEntry``."""
     return MediaEntry(uri=uri, playback=PlaybackType.AUDIO, title=title)
-
-
-def _gui_present():
-    """Context-manager patch making the player believe a GUI is connected.
-
-    ``OCPMediaPlayer.validate_stream`` downgrades VIDEO/WEBVIEW playback to
-    AUDIO when no GUI is present (headless = audio-only).  To exercise the
-    real VIDEO / WEBVIEW routing branches in :meth:`OCPMediaPlayer.play` we
-    must convince the player a GUI is available.
-
-    Returns a tuple of two ``patch`` context managers; use with
-    ``contextlib.ExitStack`` or nest them.
-    """
-    return (
-        patch("ovos_media.player.is_gui_running", return_value=True),
-        patch("ovos_media.player.is_gui_connected", return_value=True),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -189,35 +171,29 @@ class TestBackendRouting(unittest.TestCase):
             self.assertFalse(h.player.web_service.play.called)
 
     def test_video_entry_routes_to_video_service(self) -> None:
-        """A VIDEO entry must reach video_service.play (GUI present)."""
+        """A VIDEO entry must reach video_service.play."""
         with OCPPlayerHarness() as h:
-            running, connected = _gui_present()
-            with running, connected:
-                h.play(MediaEntry(uri="http://example.com/clip.mp4",
-                                  playback=PlaybackType.VIDEO))
+            h.play(MediaEntry(uri="http://example.com/clip.mp4",
+                              playback=PlaybackType.VIDEO))
             self.assertTrue(h.player.video_service.play.called)
             self.assertFalse(h.player.audio_service.play.called)
             self.assertFalse(h.player.web_service.play.called)
 
     def test_webview_entry_routes_to_web_service(self) -> None:
-        """A WEBVIEW entry must reach web_service.play (GUI present)."""
+        """A WEBVIEW entry must reach web_service.play."""
         with OCPPlayerHarness() as h:
-            running, connected = _gui_present()
-            with running, connected:
-                h.play(MediaEntry(uri="http://example.com/page",
-                                  playback=PlaybackType.WEBVIEW))
+            h.play(MediaEntry(uri="http://example.com/page",
+                              playback=PlaybackType.WEBVIEW))
             self.assertTrue(h.player.web_service.play.called)
             self.assertFalse(h.player.audio_service.play.called)
             self.assertFalse(h.player.video_service.play.called)
 
-    def test_headless_video_downgrades_to_audio(self) -> None:
-        """Without a GUI a VIDEO entry must fall back to the audio service.
-
-        This is the documented headless behaviour: no display surface means
-        playback is forced through audio only.
-        """
+    def test_force_audio_playback_mode_downgrades_video_to_audio(self) -> None:
+        """``playback_mode: FORCE_AUDIO`` must force a VIDEO entry through
+        the audio service instead. Playback-type resolution is pure config
+        now — there is no GUI-presence heuristic."""
         with OCPPlayerHarness() as h:
-            # no GUI patch — is_gui_running()/is_gui_connected() are False
+            h.player.ocp_config["playback_mode"] = "FORCE_AUDIO"
             h.play(MediaEntry(uri="http://example.com/clip.mp4",
                               playback=PlaybackType.VIDEO))
             self.assertTrue(h.player.audio_service.play.called)

@@ -56,9 +56,9 @@ class TestNowPlayingSerializesAllFields(unittest.TestCase):
         self.assertEqual(orjson.loads(orjson.dumps(as_dict))["uri"],
                           "file://track.mp3")
 
-    def test_now_playing_used_in_gui_payload_is_orjson_serializable(self):
-        # exercises the same path OCPMediaPlayer._update_gui uses:
-        # now_playing=np.as_dict passed straight into the GUI/bus payload
+    def test_now_playing_used_in_bus_payload_is_orjson_serializable(self):
+        # exercises the same shape now_playing=np.as_dict takes when
+        # forwarded into a bus payload (eg. handle_status)
         np = self._make_now_playing()
         np.uri = "file://track.mp3"
         payload = {"now_playing": np.as_dict}

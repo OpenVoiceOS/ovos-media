@@ -107,8 +107,7 @@ plugin's own `config` dict. See [backends.md](backends.md) for the backend API.
 | :--- | :--- | :--- | :--- |
 | `autoplay` | bool | `true` | Automatically advance to the next track when the current one ends (and on invalid media). |
 | `merge_search` | bool | `true` | Merge incoming search results into the playback queue alongside the user playlist rather than ignoring them. |
-| `force_audioservice` | bool | `false` | Force audio-only playback even when a GUI is connected; bypasses video/web backend selection. |
-| `playback_mode` | enum | unset | Set to `PlaybackMode.FORCE_AUDIO` to always use audio backends regardless of GUI availability. |
+| `playback_mode` | enum or string | unset | Set to `PlaybackMode.FORCE_AUDIO` (or the string `"FORCE_AUDIO"`) to always use audio backends, bypassing video/web backend selection. |
 | `validate_source` | bool | `true` | Only act on playback commands from the local/`"default"` session. Leave `true` on a server-side daemon so it ignores HiveMind satellite sessions; set `false` on a satellite not getting default-NAT'd sessions. See [Sessions](sessions.md). |
 
 ---
@@ -137,14 +136,6 @@ control-signal checks.
 
 ---
 
-## Native Sources
-
-| Key | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `native_sources` | list of strings | `["debug_cli", "audio"]` | Message sources treated as trusted native callers. Requests from these sources bypass message-context validation in the backend services. May be set at the top level (`native_sources`) or nested under `media` (`media.native_sources`, as in the example below) — both are honoured by `BaseMediaService._is_message_for_service`, with the top-level key taking precedence when both are set. |
-
----
-
 ## Full Example Configuration
 
 ```json
@@ -155,7 +146,6 @@ control-signal checks.
     "preferred_web_services": [],
     "autoplay": true,
     "merge_search": true,
-    "force_audioservice": false,
     "enable_mpris": true,
     "manage_external_players": true,
     "mpris_poll_interval": 2,
@@ -164,8 +154,7 @@ control-signal checks.
       "org.mpris.MediaPlayer2.OCP",
       "org.mpris.MediaPlayer2.plasma-browser-integration",
       "org.mpris.MediaPlayer2.kdeconnect"
-    ],
-    "native_sources": ["debug_cli", "audio"]
+    ]
   }
 }
 ```

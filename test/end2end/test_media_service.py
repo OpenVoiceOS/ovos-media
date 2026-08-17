@@ -21,8 +21,7 @@ expected reply messages, emit the trigger, wait for the event, assert.
 
 These tests verify:
 - ping/pong protocol
-- search start animation (GUI show_media_player with state="loading")
-- home handler (GUI update)
+- home/search.start/search.end are unhandled pipeline-side signals (no-op)
 - OPM audio backend query
 - MediaService lifecycle (started → alive → ready → stopping)
 """
@@ -43,8 +42,8 @@ from ovos_utils.fakebus import FakeBus
 class MediaServiceHarness:
     """Integration test harness for :class:`ovos_media.service.MediaService`.
 
-    Patches heavy dependencies (MPRIS D-Bus, audio/video/web plugin loading,
-    GUIInterface) so tests run without audio hardware or a D-Bus session.
+    Patches heavy dependencies (MPRIS D-Bus, audio/video/web plugin loading)
+    so tests run without audio hardware or a D-Bus session.
 
     Uses ``ovos_utils.fakebus.FakeBus`` as the in-process message bus.
 
@@ -59,7 +58,6 @@ class MediaServiceHarness:
         self.bus: FakeBus = FakeBus()
         self._patches: List[Any] = []
         self.service: Any = None
-        self.gui_mock: MagicMock = MagicMock()
 
     def _start_patches(self) -> None:
         """Apply unittest.mock patches for all heavy external dependencies."""
@@ -82,7 +80,6 @@ class MediaServiceHarness:
         ocp_cls_mock = ocp_patch.start()
         self._patches.append(ocp_patch)
         self.ocp_mock = MagicMock()
-        self.ocp_mock.gui = self.gui_mock
         # Wire add_event so handlers actually land on our FakeBus
         self.ocp_mock.add_event.side_effect = (
             lambda evt, handler: self.bus.on(evt, handler)
@@ -162,14 +159,6 @@ class MediaServiceHarness:
         assert done.wait(timeout), \
             "Expected ovos.common_play.pong but never received it"
 
-    def assert_gui_show_media_player_called(self, **kwargs) -> None:
-        """Assert gui.show_media_player was called with the given keyword args.
-
-        Args:
-            **kwargs: Expected keyword arguments to ``show_media_player``.
-        """
-        self.gui_mock.show_media_player.assert_called_with(**kwargs)
-
     def assert_opm_response_emitted(self, timeout: float = 1.0) -> None:
         """Assert an opm.audio.query response was emitted.
 
@@ -213,35 +202,38 @@ class TestMediaServicePing(unittest.TestCase):
 
 
 class TestMediaServiceSearchHandlers(unittest.TestCase):
-    """Search lifecycle handlers.
-
-    'ovos.common_play.search.start' -> GUI "loading" state is handled
-    solely by OCPMediaPlayer.handle_search_start (player.py), session-gated.
-    MediaService does not register its own handler for it. This harness
-    replaces OCPMediaPlayer
-    with a MagicMock entirely, so it cannot exercise that real handler —
-    see test_autoplay_and_search_gating.py::TestSearchStartSessionGating for
-    the real-player coverage (gating behavior + exactly-one-push assertion).
-    """
+    """'ovos.common_play.search.start'/'.search.end' are pipeline-side
+    signals; MediaService does not subscribe to either, so emitting them
+    must be a pure no-op (no handler, nothing raised)."""
 
     def test_search_end_does_not_raise(self) -> None:
-        """search.end handler must not raise even when not yet implemented."""
         with MediaServiceHarness() as h:
             try:
                 h.search_end()
             except Exception as exc:
-                self.fail(f"handle_search_end raised unexpectedly: {exc}")
+                self.fail(f"emitting search.end raised unexpectedly: {exc}")
+
+    def test_search_end_does_not_reach_ocp(self) -> None:
+        with MediaServiceHarness() as h:
+            h.search_end()
+            h.service.ocp.reset.assert_not_called()
 
 
 class TestMediaServiceHome(unittest.TestCase):
-    """Home handler."""
+    """'ovos.common_play.home' is a pipeline-side signal; MediaService does
+    not subscribe to it, so it must never touch the player. A prior version
+    bound this to ocp.reset(), which stopped/cleared playback in progress
+    even though the pipeline emits this on routine "open media player"
+    intents — this must not happen."""
 
-    def test_home_calls_update_gui(self) -> None:
-        """ovos.common_play.home must call ocp._update_gui()."""
+    def test_home_does_not_reset_player(self) -> None:
         with MediaServiceHarness() as h:
-            h.service.ocp._update_gui = MagicMock()
             h.home()
-            h.service.ocp._update_gui.assert_called_once()
+            h.service.ocp.reset.assert_not_called()
+
+    def test_home_has_no_handler(self) -> None:
+        with MediaServiceHarness() as h:
+            self.assertFalse(hasattr(h.service, "handle_home"))
 
 
 class TestMediaServiceOpmQuery(unittest.TestCase):

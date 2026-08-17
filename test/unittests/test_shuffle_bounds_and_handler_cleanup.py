@@ -43,7 +43,6 @@ def _make_player(playback_type=PlaybackType.AUDIO):
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
          patch("ovos_media.player.OcpMprisExporter"), \
-         patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
@@ -77,7 +76,6 @@ def _make_player(playback_type=PlaybackType.AUDIO):
         p.current = None
         p.mpris = None
         p.bus = FakeBus()
-        p.gui = MagicMock()
     return p
 
 
@@ -162,8 +160,7 @@ class TestDeadPlayerStopsHandlingDuckTopics(unittest.TestCase):
              patch("ovos_media.player.VideoService"), \
              patch("ovos_media.player.WebService"), \
              patch("ovos_media.player.OcpMprisExporter"), \
-             patch("ovos_media.player.GUIInterface"), \
-             patch("ovos_media.player.Configuration", return_value={"media": {}}), \
+                 patch("ovos_media.player.Configuration", return_value={"media": {}}), \
              patch("ovos_media.player.OCPMediaCatalog"):
             p = OCPMediaPlayer(bus, config={})
         return p

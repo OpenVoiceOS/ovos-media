@@ -65,7 +65,6 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
             svc.current = None
             svc.play_start_time = 0
             svc.volume_is_low = False
-            svc.validate_source = True
             svc.service_lock = __import__("threading").Lock()
             svc._pending_playlist = []
             svc._pending_repeat = False
@@ -392,7 +391,6 @@ def _make_base_svc(namespace="audio", config=None, services=None, validate_sourc
     svc.current = None
     svc.play_start_time = 0
     svc.volume_is_low = False
-    svc.validate_source = validate_source
     svc.service_lock = threading.Lock()
     svc._pending_playlist = []
     svc._pending_repeat = False
@@ -412,14 +410,12 @@ class TestBaseMediaServiceInit(unittest.TestCase):
             svc = BaseMediaService(bus, namespace="audio",
                                    plugin_loader=lambda: {},
                                    config={"key": "val"},
-                                   autoload=False,
-                                   validate_source=False)
+                                   autoload=False)
         self.assertIs(svc.bus, bus)
         self.assertEqual(svc.namespace, "audio")
         self.assertEqual(svc.services, [])
         self.assertIsNone(svc.current)
         self.assertFalse(svc.volume_is_low)
-        self.assertFalse(svc.validate_source)
 
     def test_init_with_autoload_calls_load_services(self):
         from ovos_media.media_backends.base import BaseMediaService
@@ -428,8 +424,7 @@ class TestBaseMediaServiceInit(unittest.TestCase):
             with patch.object(BaseMediaService, "load_services", return_value=None) as mock_load:
                 svc = BaseMediaService(bus, namespace="audio",
                                        plugin_loader=lambda: {},
-                                       autoload=True,
-                                       validate_source=False)
+                                       autoload=True)
                 mock_load.assert_called_once()
 
     def test_init_uses_config_argument(self):
@@ -807,210 +802,6 @@ class TestGetPreferredPlayers(unittest.TestCase):
         self.assertEqual(cfg_list, ["vlc"])  # original untouched
 
 
-class TestIsMessageForService(unittest.TestCase):
-
-    def test_none_message_returns_true(self):
-        svc, bus = _make_base_svc(validate_source=True)
-        self.assertTrue(svc._is_message_for_service(None))
-
-    def test_validate_source_false_always_returns_true(self):
-        from ovos_bus_client.message import Message
-        svc, bus = _make_base_svc(validate_source=False)
-        msg = Message("test", {}, {"destination": ["somewhere-else"]})
-        self.assertTrue(svc._is_message_for_service(msg))
-
-    def test_validate_source_true_uses_validate_message_context(self):
-        from ovos_bus_client.message import Message
-        svc, bus = _make_base_svc(validate_source=True)
-        msg = Message("test", {}, {})
-        # No destination in context → broadcast → validate_message_context returns True
-        self.assertTrue(svc._is_message_for_service(msg))
-
-
-class TestBusEventHandlers(unittest.TestCase):
-    """Tests for handle_track_info, handle_list_backends, position/seek handlers."""
-
-    def _make_msg(self, msg_type, data=None, context=None):
-        from ovos_bus_client.message import Message
-        return Message(msg_type, data or {}, context or {})
-
-    def test_handle_track_info_with_current(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        msg = self._make_msg("ovos.audio.service.track_info")
-        replies = []
-        bus.on(msg.msg_type + ".response", lambda m: replies.append(m))
-        # Emit response via mock bus
-        svc.handle_track_info(msg)
-        # The emit goes to bus.emit(message.response(...)); FakeBus should deliver it
-        # but we also verify it doesn't raise and that track_info was called
-        # We'll check via direct mock
-        mock_bus = MagicMock()
-        svc.bus = mock_bus
-        svc.handle_track_info(msg)
-        mock_bus.emit.assert_called_once()
-
-    def test_handle_track_info_no_current(self):
-        svc, bus = _make_base_svc()
-        svc.current = None
-        mock_bus = MagicMock()
-        svc.bus = mock_bus
-        msg = self._make_msg("ovos.audio.service.track_info")
-        svc.handle_track_info(msg)
-        mock_bus.emit.assert_called_once()
-        emitted_msg = mock_bus.emit.call_args[0][0]
-        self.assertEqual(emitted_msg.data, {})
-
-    def test_handle_list_backends(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.services = [b]
-        mock_bus = MagicMock()
-        svc.bus = mock_bus
-        msg = self._make_msg("ovos.audio.service.list_backends")
-        svc.handle_list_backends(msg)
-        mock_bus.emit.assert_called_once()
-
-    def test_handle_get_track_length_with_current(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        mock_bus = MagicMock()
-        svc.bus = mock_bus
-        msg = self._make_msg("ovos.audio.service.get_track_length")
-        svc.handle_get_track_length(msg)
-        mock_bus.emit.assert_called_once()
-        emitted_msg = mock_bus.emit.call_args[0][0]
-        self.assertEqual(emitted_msg.data["length"], 120000)
-
-    def test_handle_get_track_length_no_current(self):
-        svc, bus = _make_base_svc()
-        svc.current = None
-        mock_bus = MagicMock()
-        svc.bus = mock_bus
-        msg = self._make_msg("ovos.audio.service.get_track_length")
-        svc.handle_get_track_length(msg)
-        emitted_msg = mock_bus.emit.call_args[0][0]
-        self.assertIsNone(emitted_msg.data["length"])
-
-    def test_handle_get_track_position_with_current(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        mock_bus = MagicMock()
-        svc.bus = mock_bus
-        msg = self._make_msg("ovos.audio.service.get_track_position")
-        svc.handle_get_track_position(msg)
-        emitted_msg = mock_bus.emit.call_args[0][0]
-        self.assertEqual(emitted_msg.data["position"], 5000)
-
-    def test_handle_get_track_position_no_current(self):
-        svc, bus = _make_base_svc()
-        svc.current = None
-        mock_bus = MagicMock()
-        svc.bus = mock_bus
-        msg = self._make_msg("ovos.audio.service.get_track_position")
-        svc.handle_get_track_position(msg)
-        emitted_msg = mock_bus.emit.call_args[0][0]
-        self.assertIsNone(emitted_msg.data["position"])
-
-    def test_handle_set_track_position(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        msg = self._make_msg("ovos.audio.service.set_track_position", {"position": 30000})
-        svc.handle_set_track_position(msg)
-        self.assertEqual(b.track_position, 30000)
-
-    def test_handle_set_track_position_no_position_key(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        msg = self._make_msg("ovos.audio.service.set_track_position", {})
-        svc.handle_set_track_position(msg)
-        self.assertIsNone(b.track_position)
-
-    def test_handle_seek_forward(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        msg = self._make_msg("ovos.audio.service.seek_forward", {"seconds": 30})
-        svc.handle_seek_forward(msg)
-        self.assertEqual(b.seek_forward_seconds, 30)
-
-    def test_handle_seek_forward_default_seconds(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        msg = self._make_msg("ovos.audio.service.seek_forward", {})
-        svc.handle_seek_forward(msg)
-        self.assertEqual(b.seek_forward_seconds, 1)
-
-    def test_handle_seek_backward(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        msg = self._make_msg("ovos.audio.service.seek_backward", {"seconds": 15})
-        svc.handle_seek_backward(msg)
-        self.assertEqual(b.seek_backward_seconds, 15)
-
-    def test_handle_seek_backward_default_seconds(self):
-        svc, bus = _make_base_svc()
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        msg = self._make_msg("ovos.audio.service.seek_backward", {})
-        svc.handle_seek_backward(msg)
-        self.assertEqual(b.seek_backward_seconds, 1)
-
-
-class TestHandlePlay(unittest.TestCase):
-    """Tests for the handle_play bus event handler."""
-
-    def _make_msg(self, tracks, utterance=""):
-        from ovos_bus_client.message import Message
-        return Message("ovos.audio.service.play",
-                       {"tracks": tracks, "utterance": utterance})
-
-    def _sync_timer(self):
-        """Return a threading.Timer replacement that fires synchronously."""
-        class _SyncTimer:
-            def __init__(self, delay, fn, args=()):
-                self._fn = fn
-                self._args = args
-            def start(self):
-                self._fn(*self._args)
-        return _SyncTimer
-
-    def test_handle_play_selects_alias_matched_service(self):
-        b1 = _FullFakeBackend(uris=["http"], name="vlc")
-        b1.aliases = ["vlc", "video lan"]
-        b2 = _FullFakeBackend(uris=["http"], name="mass")
-        b2.aliases = ["mass"]
-        svc, bus = _make_base_svc(services=[b1, b2])
-
-        msg = self._make_msg("http://example.com/song.mp3", utterance="play using vlc")
-        with patch("ovos_media.media_backends.base.time") as mock_time, \
-             patch("ovos_media.media_backends.base.threading.Timer", self._sync_timer()):
-            mock_time.monotonic.return_value = 100.0
-            svc.handle_play(msg)
-        self.assertEqual(svc.current, b1)
-
-    def test_handle_play_no_alias_match_uses_any_supporting_service(self):
-        b1 = _FullFakeBackend(uris=["library"], name="mass")
-        b1.aliases = ["mass"]
-        b2 = _FullFakeBackend(uris=["http"], name="vlc")
-        b2.aliases = ["vlc"]
-        svc, bus = _make_base_svc(services=[b1, b2])
-
-        msg = self._make_msg("http://example.com/song.mp3", utterance="")
-        with patch("ovos_media.media_backends.base.time") as mock_time, \
-             patch("ovos_media.media_backends.base.threading.Timer", self._sync_timer()):
-            mock_time.monotonic.return_value = 100.0
-            svc.handle_play(msg)
-        self.assertEqual(svc.current, b2)
-
-
 class TestShutdownAndListeners(unittest.TestCase):
 
     def test_shutdown_calls_shutdown_on_all_services(self):
@@ -1020,17 +811,6 @@ class TestShutdownAndListeners(unittest.TestCase):
         b_mock.name = "vlc"
         svc.services = [b_mock]
         svc.load_services = MagicMock()  # prevent re-registration
-        # Register listeners first (needed by remove_listeners)
-        bus.on(f"ovos.audio.service.play", svc.handle_play)
-        bus.on(f"ovos.audio.service.pause", svc.pause)
-        bus.on(f"ovos.audio.service.resume", svc.resume)
-        bus.on(f"ovos.audio.service.stop", svc.stop)
-        bus.on(f"ovos.audio.service.track_info", svc.handle_track_info)
-        bus.on(f"ovos.audio.service.get_track_position", svc.handle_get_track_position)
-        bus.on(f"ovos.audio.service.set_track_position", svc.handle_set_track_position)
-        bus.on(f"ovos.audio.service.get_track_length", svc.handle_get_track_length)
-        bus.on(f"ovos.audio.service.seek_forward", svc.handle_seek_forward)
-        bus.on(f"ovos.audio.service.seek_backward", svc.handle_seek_backward)
 
         svc.shutdown()
         b_mock.shutdown.assert_called_once()
@@ -1045,7 +825,10 @@ class TestShutdownAndListeners(unittest.TestCase):
         # must not raise
         svc.shutdown()
 
-    def test_load_services_registers_bus_events(self):
+    def test_load_services_does_not_register_per_namespace_bus_events(self):
+        """The per-namespace 'ovos.{ns}.service.*' bus surface was removed —
+        play/pause/resume/stop etc. are only reachable via direct method
+        calls from OCPMediaPlayer now, never via that bus topic family."""
         plugins = {"fake-audio": _FullFakeBackend}
         config = {
             "audio_players": {
@@ -1059,13 +842,10 @@ class TestShutdownAndListeners(unittest.TestCase):
         svc.bus = mock_bus
         svc.load_services()
 
-        # Check that bus.on was called for each registered event
         registered_events = [c[0][0] for c in mock_bus.on.call_args_list]
-        self.assertIn("ovos.audio.service.play", registered_events)
-        self.assertIn("ovos.audio.service.pause", registered_events)
-        self.assertIn("ovos.audio.service.stop", registered_events)
-        self.assertIn("ovos.audio.service.duck", registered_events)
-        self.assertIn("ovos.audio.service.unduck", registered_events)
+        self.assertEqual(
+            [e for e in registered_events if e.startswith("ovos.audio.service.")],
+            [], "load_services() must not register any ovos.audio.service.* handler")
 
 
 class TestPluginLoadingExceptionHandling(unittest.TestCase):
@@ -1214,6 +994,60 @@ class TestSupportedUrisExceptionIsolation(unittest.TestCase):
 
         self.assertIs(svc.current, good)
         good.load_track.assert_called_once_with("http://example.com/track.mp3")
+
+
+class TestCanPlayMatchesPlayParity(unittest.TestCase):
+    """Tripwire: can_play(uri, preferred) must agree with whether _play(uri,
+    preferred) actually loads a backend, against a REAL BaseMediaService (no
+    mocked select/dispatch), including a raising backend in the mix. If
+    can_play() and _play()'s own resolution ever diverge, play() (which
+    checks can_play() before dispatching) would either wrongly refuse a uri
+    a backend can serve, or wrongly promise one nothing can serve.
+    """
+
+    def _assert_parity(self, svc, uri, preferred_service=None):
+        can = svc.can_play(uri, preferred_service=preferred_service)
+        svc._play(uri, preferred_service=preferred_service)
+        did = svc.current is not None
+        self.assertEqual(can, did,
+                         f"can_play()={can} but _play() "
+                         f"{'selected a backend' if did else 'selected none'} "
+                         f"for {uri!r}")
+        return did
+
+    def test_services_scan_match_after_raising_backend(self):
+        good = _FakeBackend({"name": "good", "uris": ["http"]}, None)
+        good.load_track = MagicMock()
+        bad = _RaisingUrisBackend({"name": "bad"}, None)
+        svc, _bus = _make_base_svc(services=[bad, good])
+        self.assertTrue(self._assert_parity(svc, "http://example.com/a.mp3"))
+        self.assertIs(svc.current, good)
+
+    def test_no_backend_matches(self):
+        bad = _RaisingUrisBackend({"name": "bad"}, None)
+        only_ftp = _FakeBackend({"name": "ftp-only", "uris": ["ftp"]}, None)
+        svc, _bus = _make_base_svc(services=[bad, only_ftp])
+        self.assertFalse(self._assert_parity(svc, "http://example.com/a.mp3"))
+        self.assertIsNone(svc.current)
+
+    def test_preferred_service_match_takes_precedence(self):
+        preferred = _FakeBackend({"name": "preferred", "uris": ["http"]}, None)
+        preferred.load_track = MagicMock()
+        other = _FakeBackend({"name": "other", "uris": ["http"]}, None)
+        other.load_track = MagicMock()
+        svc, _bus = _make_base_svc(services=[other])
+        self.assertTrue(self._assert_parity(
+            svc, "http://example.com/a.mp3", preferred_service=preferred))
+        self.assertIs(svc.current, preferred)
+        other.load_track.assert_not_called()
+
+    def test_current_backend_match_is_reused(self):
+        current = _FakeBackend({"name": "current", "uris": ["http"]}, None)
+        current.load_track = MagicMock()
+        svc, _bus = _make_base_svc(services=[current])
+        svc.current = current
+        self.assertTrue(self._assert_parity(svc, "http://example.com/a.mp3"))
+        self.assertIs(svc.current, current)
 
 
 if __name__ == "__main__":

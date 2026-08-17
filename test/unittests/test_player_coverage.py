@@ -61,7 +61,6 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
          patch("ovos_media.player.OcpMprisExporter"), \
-         patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
@@ -106,7 +105,6 @@ def _make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
         p.current = None
         p.mpris = None
         p.bus = FakeBus()
-        p.gui = MagicMock()
         # __init__ normally sets these; OCPMediaPlayer.__new__ skips __init__
         p._last_playback_type = playback_type
         p._last_playback_uri = p.now_playing.uri
@@ -679,7 +677,6 @@ class TestHandlePlaybackEnded(unittest.TestCase):
         p.ocp_config = {"autoplay": True}
         p.playlist.__len__ = MagicMock(return_value=0)
         p.play_next = MagicMock()
-        p._update_gui = MagicMock()
         p.handle_playback_ended(Message("ovos.common_play.media.state"))
         p.play_next.assert_not_called()
 
@@ -688,20 +685,22 @@ class TestHandlePlaybackEnded(unittest.TestCase):
         p.ocp_config = {"autoplay": False}
         p.playlist.__len__ = MagicMock(return_value=2)
         p.play_next = MagicMock()
-        p._update_gui = MagicMock()
         p.handle_playback_ended(Message("ovos.common_play.media.state"))
         p.play_next.assert_not_called()
 
 
 class TestHandleInvalidMedia(unittest.TestCase):
-    """handle_invalid_media shows an error state in the GUI."""
+    """handle_invalid_media speaks track.failed, rate-limited to once per queue."""
 
-    def test_shows_error_state(self):
+    def test_speaks_track_failed_once(self):
         p = _make_player()
+        p.media.speak_dialog = MagicMock()
         p.handle_invalid_media(Message("ovos.common_play.media.state"))
-        p.gui.show_media_player.assert_called_once()
-        kwargs = p.gui.show_media_player.call_args[1]
-        self.assertEqual(kwargs.get("state"), "error")
+        p.media.speak_dialog.assert_called_once_with("track.failed")
+        self.assertTrue(p._track_failed_spoken)
+        # rate-limited: a second call must not speak again
+        p.handle_invalid_media(Message("ovos.common_play.media.state"))
+        p.media.speak_dialog.assert_called_once_with("track.failed")
 
 
 # ---------------------------------------------------------------------------
@@ -930,7 +929,6 @@ class TestHandlePlayerMediaUpdateEndOfMedia(unittest.TestCase):
     def test_end_of_media_triggers_playback_ended(self):
         p = _make_player()
         p.handle_playback_ended = MagicMock()
-        p._update_gui = MagicMock()
         msg = Message("ovos.common_play.media.state",
                       {"state": int(MediaState.END_OF_MEDIA)})
         p.handle_player_media_update(msg)
@@ -940,7 +938,6 @@ class TestHandlePlayerMediaUpdateEndOfMedia(unittest.TestCase):
         p = _make_player()
         p.handle_invalid_media = MagicMock()
         p.play_next = MagicMock()
-        p._update_gui = MagicMock()
         p.ocp_config = {"autoplay": True}
         # The skip is scheduled through on_invalid_stream() rather than
         # called inline, so it lands on the next tick, not this one.

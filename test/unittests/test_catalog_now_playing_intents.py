@@ -232,7 +232,6 @@ def _make_real_player(bus, title="Bohemian Rhapsody", artist="Queen"):
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
          patch("ovos_media.player.OcpMprisExporter"), \
-         patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
@@ -260,7 +259,6 @@ def _make_real_player(bus, title="Bohemian Rhapsody", artist="Queen"):
         p.current = None
         p.mpris = None
         p.bus = bus
-        p.gui = MagicMock()
         bus.on("ovos.common_play.status", p.handle_status)
     return p
 

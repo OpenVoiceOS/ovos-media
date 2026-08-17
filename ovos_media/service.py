@@ -44,12 +44,6 @@ class MediaService(Thread):
         self.status.set_started()
 
         self.config = Configuration().get("media", {})
-        # This attribute was dead — it read media.native_sources but was
-        # never passed anywhere; the real consumer, validate_message_context()
-        # in utils.py, only ever read the top-level `native_sources` key.
-        # validate_message_context() now also honours the documented
-        # media-scoped key directly, so this unused shadow copy is removed
-        # rather than wired through a second time.
 
         # Only act on playback commands from the local/"default" session.
         # In a HiveMind split the OCP pipeline (on the server) forwards
@@ -71,21 +65,19 @@ class MediaService(Thread):
         self.status.set_alive()
         self.init_messagebus()
         self.ocp = OCPMediaPlayer(self.bus, validate_source=self.validate_source)
-        self.bus.on('ovos.common_play.home', self.handle_home)
         self.bus.on("ovos.common_play.ping", self.handle_ping)
-        # 'ovos.common_play.search.start' is handled by
-        # OCPMediaPlayer.handle_search_start (player.py) — that registration
-        # duplicated it here, unconditionally (no session gating), so every
-        # search.start double-pushed the "loading" GUI state.
-        self.bus.on("ovos.common_play.search.end", self.handle_search_end)
+        # 'ovos.common_play.home' and 'ovos.common_play.search.start'/
+        # '.search.end' are pipeline-side signals (the OCP pipeline plugin
+        # uses them to drive a GUI's own navigation/loading state); this
+        # daemon has no in-process GUI and no other state to change in
+        # response to them, so it does not subscribe to any of the three.
+        # A bus message with no subscriber here is legal — nothing else in
+        # this daemon depends on them being handled.
         # opm.audio.query's handler reads self.ocp.audio_service — it
         # must not be reachable until self.ocp exists. Registered here
         # (after OCPMediaPlayer's plugin-loading construction above), not in
         # init_messagebus() which runs before self.ocp is assigned.
         self.bus.on("opm.audio.query", self.handle_opm_audio_query)
-
-    def handle_home(self, message):
-        self.ocp._update_gui()
 
     def handle_ping(self, message):
         """
@@ -93,10 +85,6 @@ class MediaService(Thread):
         @param message: message associated with request
         """
         self.bus.emit(message.reply("ovos.common_play.pong"))
-
-    def handle_search_end(self, message: "Message") -> None:
-        """Dismiss the search spinner and refresh the player GUI."""
-        self.ocp._update_gui()
 
     def run(self):
         self.status.set_ready()
@@ -120,16 +108,12 @@ class MediaService(Thread):
 
         Stop any playing audio and make sure threads are joined correctly.
         """
-        # TODO - update gui for no-media in now_playing page
         self.ocp.reset()
         self.status.set_stopping()
         self.ocp.shutdown()
-        # Remove the four handlers registered directly on MediaService
-        # (not on self.ocp) so a shut-down service stops answering
-        # home/ping/search.end/opm.audio.query.
-        self.bus.remove('ovos.common_play.home', self.handle_home)
+        # Remove the handlers registered directly on MediaService (not on
+        # self.ocp) so a shut-down service stops answering ping/opm.audio.query.
         self.bus.remove("ovos.common_play.ping", self.handle_ping)
-        self.bus.remove("ovos.common_play.search.end", self.handle_search_end)
         self.bus.remove("opm.audio.query", self.handle_opm_audio_query)
 
     def init_messagebus(self):

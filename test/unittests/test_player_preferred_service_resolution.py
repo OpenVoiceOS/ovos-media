@@ -13,7 +13,6 @@ def _make_player():
          patch("ovos_media.player.VideoService"), \
          patch("ovos_media.player.WebService"), \
          patch("ovos_media.player.OcpMprisExporter"), \
-         patch("ovos_media.player.GUIInterface"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
@@ -36,7 +35,6 @@ def _make_player():
         p.mpris = None
         from ovos_utils.fakebus import FakeBus
         p.bus = FakeBus()
-        p.gui = MagicMock()
     return p
 
 

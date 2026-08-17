@@ -102,7 +102,7 @@ Example plugins: `ovos-media-plugin-vlc` (`ovos-media-video-plugin-vlc`),
 `ovos-media-plugin-mplayer` (`ovos-media-video-plugin-mplayer`),
 `ovos-media-plugin-chromecast` (`ovos-media-video-plugin-chromecast`).
 
-Video backends are selected when `now_playing.playback == PlaybackType.VIDEO`. They render video content; the GUI namespace used for display is managed by the backend plugin, not by the `"ovos.common_play"` GUIInterface.
+Video backends are selected when `now_playing.playback == PlaybackType.VIDEO`. They render video content directly (their own window, a Chromecast target, a browser tab, …); `ovos-media` only reports their state over the bus.
 
 ---
 
@@ -114,7 +114,7 @@ Video backends are selected when `now_playing.playback == PlaybackType.VIDEO`. T
 - **Config key**: `media.web_players`
 - **Preferred service config key**: `media.preferred_web_services`
 
-Web backends are selected when `now_playing.playback == PlaybackType.WEBVIEW`. They display arbitrary web URLs inside a GUI WebView component.
+Web backends are selected when `now_playing.playback == PlaybackType.WEBVIEW`. They render arbitrary web URLs directly (a browser tab, an embedded webview, …).
 
 ---
 
@@ -167,7 +167,7 @@ PlaybackType.SKILL   -> emit ovos.common_play.<skill_id>.play
 
 The `preferred_service` argument in each case is resolved by `_resolve_preferred_service`.
 
-Before routing, `OCPMediaPlayer.validate_stream` calls `NowPlaying.extract_stream()` to resolve any stream extractor identifiers (SEIs) into real URIs. If no GUI is connected, `force_audioservice` is set, or `playback_mode == PlaybackMode.FORCE_AUDIO`, the playback type is coerced to `PlaybackType.AUDIO` regardless of the original value. `PlaybackType.SKILL` and `PlaybackType.MPRIS` skip stream extraction entirely (the skill or external player owns the stream).
+Before routing, `OCPMediaPlayer.validate_stream` calls `NowPlaying.extract_stream()` to resolve any stream extractor identifiers (SEIs) into real URIs. If `playback_mode` is set to `PlaybackMode.FORCE_AUDIO` (the enum member or its name as a string), the playback type is coerced to `PlaybackType.AUDIO` regardless of the original value. `PlaybackType.SKILL` and `PlaybackType.MPRIS` skip stream extraction entirely (the skill or external player owns the stream).
 
 ---
 
