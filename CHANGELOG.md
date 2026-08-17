@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.0a3](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a3) (2026-08-17)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a2...2.0.0a3)
+
+**Merged pull requests:**
+
+- refactor: single bus-edge registration layer [\#160](https://github.com/OpenVoiceOS/ovos-media/pull/160) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.0.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a2) (2026-08-17)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a1...2.0.0a2)
@@ -461,10 +469,6 @@
 ## [V0.0.1a19](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a19) (2024-03-29)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a18...V0.0.1a19)
-
-**Merged pull requests:**
-
-- fix\(MPRIS\): toggle MPRIS integration via config [\#19](https://github.com/OpenVoiceOS/ovos-media/pull/19) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [V0.0.1a18](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a18) (2024-03-29)
 
