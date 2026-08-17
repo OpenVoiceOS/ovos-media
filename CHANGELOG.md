@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a2) (2026-08-17)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a1...2.0.0a2)
+
+**Merged pull requests:**
+
+- refactor: extract bus payload schemas module [\#155](https://github.com/OpenVoiceOS/ovos-media/pull/155) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.0.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a1) (2026-08-17)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/1.0.0a1...2.0.0a1)
@@ -419,10 +427,6 @@
 ## [0.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a1) (2026-06-22)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a22...0.0.2a1)
-
-**Fixed bugs:**
-
-- \[BUG\] Doesn't respect the disable\_mpris config [\#18](https://github.com/OpenVoiceOS/ovos-media/issues/18)
 
 **Closed issues:**
 
