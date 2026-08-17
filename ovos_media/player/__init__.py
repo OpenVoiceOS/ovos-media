@@ -1,8 +1,5 @@
-import dataclasses
-import random
 import threading
-import time
-from os.path import join, dirname
+from os.path import dirname
 from threading import RLock
 from typing import List, Optional, Union
 
@@ -15,11 +12,12 @@ from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
 from ovos_media.bus.api import OCPBusApi
 from ovos_media.utils import is_default_session
-from ovos_media.bus.schemas import (decode_media, decode_media_state,
-                                    decode_playback_time, decode_playlist_tracks,
+from ovos_media.bus.schemas import (decode_media_state, decode_playlist_tracks,
                                     decode_seek, decode_track_position,
-                                    decode_track_state, flatten_media_types,
-                                    is_injection_char, validated_entries)
+                                    flatten_media_types, validated_entries)
+from ovos_media.player.queue import (AllFailed, KeepCurrent, PlayQueue,
+                                     QueueEnd)
+from ovos_media.player.now_playing import NowPlaying
 from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.log import LOG
@@ -31,14 +29,20 @@ from ovos_workshop.decorators.ocp import ocp_search
 from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 
 
+# locale/ and qt5/ live in the ovos_media package, one level above this
+# subpackage; the catalog skill reads its dialogs, intents and icons from there
+RESOURCES_DIR = dirname(dirname(__file__))
+
+
 class OCPMediaCatalog(OVOSCommonPlaybackSkill):
     def __init__(self, *args, validate_source: bool = True, **kwargs):
+        kwargs.setdefault("resources_dir", RESOURCES_DIR)
         super().__init__(*args, **kwargs)
         # mirrors the bus edge's session gate: keeps playback-affecting
         # intent handlers (shuffle on/off) on the local/"default" session, unless the owning service was configured
         # with media.validate_source: false (satellite acting on everything)
         self.validate_source = validate_source
-        self.skill_icon = f"{dirname(__file__)}/qt5/images/liked.svg"
+        self.skill_icon = f"{RESOURCES_DIR}/qt5/images/liked.svg"
 
         self.liked_songs = JsonStorageXDG("OCP_liked_songs",
                                           subfolder=get_xdg_base())
@@ -361,211 +365,6 @@ class OCPMediaCatalog(OVOSCommonPlaybackSkill):
         self.search_playlist.replace(playlist)
 
 
-class NowPlaying(MediaEntry):
-    """ Live Tracking of currently playing media via bus events """
-
-    def __init__(self, bus, player: "Optional[OCPMediaPlayer]" = None, *args, **kwargs):
-        self.bus = bus
-        self._player: "Optional[OCPMediaPlayer]" = player
-        self.stream_xtract = load_stream_extractors()
-        self.position = 0
-        super().__init__(*args, **kwargs)
-        self.original_uri = self.uri
-
-    def as_entry(self) -> MediaEntry:
-        """
-        Return a MediaEntry representation of this object
-        """
-        return MediaEntry(**self.as_dict)
-
-    @property
-    def as_dict(self) -> dict:
-        """
-        Return a dict representation of this object's MediaEntry fields.
-
-        NowPlaying is not itself decorated with @dataclass and carries plain
-        instance attributes (bus, _player, stream_xtract, ...) alongside the
-        MediaEntry dataclass fields it inherits. orjson only recognizes a
-        type as a dataclass via that exact class's own __dict__, not an
-        inherited one, so serializing a NowPlaying instance directly (as the
-        inherited MediaEntry.as_dict does) raises
-        "TypeError: Type is not JSON serializable: NowPlaying".
-
-        Build a genuine MediaEntry from just the declared dataclass fields
-        and delegate serialization to it; fields added to MediaEntry keep
-        surviving the round-trip automatically since they are read from
-        `dataclasses.fields(MediaEntry)` rather than a hand-maintained list.
-        """
-        fields = {f.name: getattr(self, f.name) for f in dataclasses.fields(MediaEntry)}
-        return MediaEntry(**fields).as_dict
-
-    def reset(self):
-        """
-        Reset the NowPlaying MediaEntry to default parameters
-        """
-        self.title = ""
-        self.artist = ""
-        self.skill_id = ""
-        self.position = 0
-        self.length = 0
-        self.javascript = ""
-        self.playback = PlaybackType.UNDEFINED
-        self.status = TrackState.DISAMBIGUATION
-        self.media_type = MediaType.GENERIC
-        self.skill_icon = ""
-        self.image = ""
-        # Without clearing these, a stopped/home'd player still reports
-        # the previous track's uri via now_playing.as_dict / GUI payload
-        self.uri = ""
-        self.original_uri = ""
-
-    def update(self, entry: MediaEntry, skipkeys: list = None, newonly: bool = False):
-        """
-        Update this MediaEntry
-        @param entry: dict or MediaEntry object to update this object with
-        @param skipkeys: list of keys to not change
-        @param newonly: if True, only adds new keys; existing keys are unchanged
-        """
-        if isinstance(entry, MediaEntry):
-            entry = entry.as_dict
-        super().update(entry, skipkeys, newonly)
-        # uri updates should not be skipped
-        if newonly and entry.get("uri"):
-            super().update({"uri": entry["uri"]})
-
-    def extract_stream(self):
-        """
-        Get metadata from ocp_plugins and add it to this MediaEntry
-        """
-        uri = self.uri
-        if not uri:
-            raise ValueError("No URI to extract stream from")
-        if self.playback == PlaybackType.VIDEO:
-            video = True
-        else:
-            video = False
-        meta = self.stream_xtract.extract_stream(uri, video)
-        # validate the extractor-returned uri BEFORE mutating any state -
-        # a non-string uri (int/list/dict) or a whitespace-only string must
-        # never poison self.uri/title, it must refuse the same way a
-        # missing uri does. An empty string is left alone: it is falsy, so
-        # update(newonly=True) below does not overwrite the existing uri
-        # with it anyway.
-        if meta:
-            extracted_uri = meta.get("uri")
-            if extracted_uri is not None and not isinstance(extracted_uri, str):
-                raise ValueError(f"invalid stream: {extracted_uri!r}")
-            if isinstance(extracted_uri, str) and extracted_uri and not extracted_uri.strip():
-                raise ValueError(f"invalid stream: {extracted_uri!r}")
-            if isinstance(extracted_uri, str) and any(
-                    is_injection_char(c) for c in extracted_uri):
-                # a uri that otherwise looks fine (eg. a valid http prefix)
-                # may still smuggle control characters/newlines - refuse
-                # before mutating state, same as the non-string/whitespace
-                # checks above (log/header-injection surface downstream)
-                raise ValueError(f"invalid stream: {extracted_uri!r}")
-            LOG.info(f"OCP plugins metadata: {meta}")
-            self.update(meta, newonly=True)
-            self.original_uri = uri
-
-        # validate extracted uri
-        if not any((self.uri.startswith(s) for s in ["http", "file", "/"])):
-            raise ValueError(f"invalid stream: {self.uri!r}")
-        # a uri passing the prefix check above may still smuggle control
-        # characters (eg. embedded newlines for header/log injection) -
-        # refuse those too
-        if any(is_injection_char(c) for c in self.uri):
-            raise ValueError(f"invalid stream: {self.uri!r}")
-
-    # bus api
-    def handle_external_play(self, message):
-        """
-        Handle 'ovos.common_play.play' Messages. Update the metadata with new
-        data received unconditionally, otherwise previous song keys might
-        bleed into the new track
-        @param message: Message associated with request
-        """
-        media = decode_media(message.data)
-        if media is None:
-            return
-        self.update(media, newonly=False)
-
-    # events from media services
-    def handle_track_state_change(self, message):
-        """
-        Handle 'ovos.common_play.track.state' Messages. Update status
-        @param message: Message with updated `state` data
-        @return:
-        """
-        state = decode_track_state(message.data)
-        if state == self.status:
-            return
-        LOG.info(f"TrackState changed: {repr(self.status)} -> {repr(state)}")
-        self.status = state
-
-        if state in (TrackState.PLAYING_AUDIO, TrackState.PLAYING_VIDEO,
-                     TrackState.PLAYING_WEBVIEW, TrackState.PLAYING_SKILL,
-                     TrackState.PLAYING_AUDIOSERVICE, TrackState.PLAYING_MPRIS):
-            # backend confirmed playback started — mark player as PLAYING
-            if hasattr(self, '_player') and self._player is not None:
-                self._player.set_player_state(PlayerState.PLAYING)
-                # W4-followup: reset the per-queue failure guards on evidence
-                # of PLAYBACK, not on LOADED_MEDIA. base.py's
-                # handle_media_state_change emits LOADED_MEDIA and THEN, for
-                # a track that loads fine but raises out of current.play(),
-                # INVALID_MEDIA — with the guard reset on LOADED_MEDIA that
-                # sequence reset both _failed_uris and _track_failed_spoken
-                # on every single failing track (rate limit degraded to
-                # per-track chatter, and a REPEAT queue where every track
-                # loads-ok-but-fails-to-play never accumulated enough of
-                # _failed_uris to trip _all_tracks_failed(), looping without
-                # bound). This TrackState.PLAYING_* branch only fires after
-                # current.play() returns without raising, ie. real evidence
-                # of playback — see base.py's handle_media_state_change.
-                self._player._failed_uris.clear()
-                self._player._track_failed_spoken = False
-        elif state in (TrackState.QUEUED_SKILL, TrackState.QUEUED_VIDEO,
-                       TrackState.QUEUED_AUDIO, TrackState.QUEUED_AUDIOSERVICE,
-                       TrackState.QUEUED_WEBVIEW):
-            # audio service is handling playback and this is queued in playlist
-            pass
-        elif state == TrackState.DISAMBIGUATION:
-            # alternative results list — no playback state change
-            pass
-        # NOTE: pause is a PlayerState/MediaState concern, never a TrackState —
-        # there is no TrackState.PAUSED_* member, so no pause branch belongs here.
-
-    def on_end_of_media(self):
-        """
-        End-of-media reset, invoked as a plain method call by
-        OCPMediaPlayer.handle_player_media_update (the only consumer of
-        END_OF_MEDIA on 'ovos.common_play.media.state') AFTER it has captured
-        the pre-reset playback type and uri. Playback ended, so allow the next track to
-        change metadata again.
-        """
-        self.reset()
-
-    def handle_media_state_change(self, message):
-        """
-        Handle 'ovos.common_play.media.state' Messages. If ended, reset.
-
-        NOT registered on the bus (see __init__): kept as a callable entry
-        point for out-of-tree callers that drive NowPlaying directly.
-        @param message: Message with updated MediaState
-        """
-        state = decode_media_state(message.data)
-        if state == MediaState.END_OF_MEDIA:
-            self.on_end_of_media()
-
-    def handle_sync_seekbar(self, message):
-        """
-        Handle 'ovos.common_play.playback_time' Messages sent by audio backend
-        @param message: Message with 'length' and 'position' data
-        """
-        for field, value in decode_playback_time(message.data).items():
-            setattr(self, field, value)
-
-
 class OCPMediaPlayer:
     """OCP Virtual Media Player
 
@@ -587,12 +386,14 @@ class OCPMediaPlayer:
         self.state: PlayerState = PlayerState.STOPPED
         self.loop_state: LoopState = LoopState.NONE
         self.media_state: MediaState = MediaState.NO_MEDIA
-        self.playlist: Playlist = Playlist(title="Search Results")
         self.shuffle: bool = False
         self.track_history: dict = {}  # Dict of track URI to play count
         self.media: OCPMediaCatalog = OCPMediaCatalog(bus=bus, skill_id=OCP_ID + ".favorites",
                                                        validate_source=self.validate_source)
         self._init_runtime_state()
+        # the owned queue, also the container the rest of the world reads as
+        # "the playlist" (bus status, MPRIS track list)
+        self.playlist: PlayQueue = self._queue
 
         self.now_playing: NowPlaying = NowPlaying(bus, player=self)
         # BaseMediaService.stop() calls this on_stop callback to flag the
@@ -660,15 +461,10 @@ class OCPMediaPlayer:
         # ocp_stop(), so a stop is indistinguishable from a natural track end at
         # the media.state level without this flag.
         self._stop_requested: bool = False
-        # The exact MediaEntry object currently selected. Located by
-        # identity in _queue_index(), which makes duplicate uris in a playlist
-        # (eg. [a, b, a]) advance correctly instead of ping-ponging, and
-        # survives the END_OF_MEDIA reset that clears now_playing.uri.
-        self._current_entry: Optional[MediaEntry] = None
-        # Uris that failed to load since the last successful load. Used to
-        # stop LoopState.REPEAT from restarting a queue in which every track is
-        # broken (unbounded hot loop).
-        self._failed_uris: set = set()
+        # owns the user queue, the identity of the selected entry and the
+        # failed-uri bookkeeping, and answers every "which track is next"
+        # question; what to DO with the answer stays player policy
+        self._queue: PlayQueue = PlayQueue(title="Search Results")
         self._invalid_timer: Optional[threading.Timer] = None
         # retry delay after an invalid stream, seconds (overridable in tests)
         self.invalid_stream_delay: float = 3.0
@@ -680,6 +476,19 @@ class OCPMediaPlayer:
         # of this player — spoken only at the very first play attempt that
         # finds zero backends loaded, never again
         self._no_backend_dialog_spoken: bool = False
+
+    # views on the owned queue's bookkeeping
+    @property
+    def _current_entry(self) -> Optional[MediaEntry]:
+        return self._queue.current
+
+    @_current_entry.setter
+    def _current_entry(self, entry: Optional[MediaEntry]):
+        self._queue.current = entry
+
+    @property
+    def _failed_uris(self) -> set:
+        return self._queue.failed
 
     def handle_status(self, message):
         self.bus.emit(message.response({
@@ -777,21 +586,11 @@ class OCPMediaPlayer:
         return self.media.search_playlist.entries
 
     def _merged_queue(self) -> List[MediaEntry]:
-        """Return the merged, deduplicated playback queue.
-
-        User-playlist entries come first (strict priority).  Search results
-        are appended afterwards, skipping any URI already present in the user
-        playlist.  Deduplication is O(n) via a URI set — no O(n²) scanning.
-
-        If ``merge_search`` is disabled in config only the user playlist is
-        returned.
-        """
-        user_entries = list(self.playlist.entries)
-        if not self.ocp_config.get("merge_search", True):
-            return user_entries
-        seen: set = {e.uri for e in user_entries}
-        extra = [e for e in self.media.search_playlist.entries if e.uri not in seen]
-        return user_entries + extra
+        """Return the merged, deduplicated playback queue: the user queue plus
+        the search results, unless ``merge_search`` is disabled in config."""
+        return self._queue.merged(self.search_results,
+                                  self.ocp_config.get("merge_search", True),
+                                  user_entries=self.tracks)
 
     def _mark_stop_requested(self):
         """Flag that the current playback is ending because it was stopped.
@@ -811,38 +610,20 @@ class OCPMediaPlayer:
                 self._invalid_timer.cancel()
                 self._invalid_timer = None
 
+    def _locator_uri(self, uri: str = None) -> Optional[str]:
+        """The uri to locate the current track by, when entry identity does
+        not resolve it: an explicitly given one, else the now-playing uri."""
+        return uri or (self.now_playing.uri if self.now_playing else None)
+
+    def _locator_position(self) -> Optional[int]:
+        """The queue pointer, used as a locator hint when it agrees with the
+        uri being looked for."""
+        return getattr(self.playlist, "position", None)
+
     def _queue_index(self, queue: List[MediaEntry], uri: str = None) -> int:
-        """Return the index of the currently selected track in *queue*, or -1.
-
-        Resolution order:
-
-        1. **Entry identity** — the exact MediaEntry object last handed to
-           ``set_now_playing``. This is the only reliable locator when the same
-           uri appears more than once in a queue (``[a, b, a]``), and it
-           survives the END_OF_MEDIA reset that clears ``now_playing.uri``.
-        2. **Playlist position** — ``self.playlist.position``, accepted only if
-           it points at an entry whose uri matches the one we are looking for.
-        3. **URI lookup** — first entry with a matching uri.
-        """
-        cur = self._current_entry
-        if cur is not None:
-            for i, entry in enumerate(queue):
-                if entry is cur:
-                    return i
-
-        uri = uri or (self.now_playing.uri if self.now_playing else None) or \
-              (cur.uri if cur is not None else None)
-        if not uri:
-            return -1
-
-        pos = getattr(self.playlist, "position", None)
-        if isinstance(pos, int) and 0 <= pos < len(queue) and queue[pos].uri == uri:
-            return pos
-
-        for i, entry in enumerate(queue):
-            if entry.uri == uri:
-                return i
-        return -1
+        """Return the index of the currently selected track in *queue*, or -1."""
+        return self._queue.index(queue, uri=self._locator_uri(uri),
+                                 position=self._locator_position())
 
     @property
     def can_prev(self) -> bool:
@@ -851,9 +632,9 @@ class OCPMediaPlayer:
         """
         if self.playback_type == PlaybackType.MPRIS:
             return True
-        queue = self._merged_queue()
-        idx = self._queue_index(queue)
-        return idx > 0
+        return self._queue.has_prev(self._merged_queue(),
+                                    uri=self._locator_uri(),
+                                    position=self._locator_position())
 
     @property
     def can_next(self) -> bool:
@@ -864,9 +645,9 @@ class OCPMediaPlayer:
                 self.shuffle or \
                 self.playback_type == PlaybackType.MPRIS:
             return True
-        queue = self._merged_queue()
-        idx = self._queue_index(queue)
-        return idx >= 0 and idx + 1 < len(queue)
+        return self._queue.has_next(self._merged_queue(),
+                                    uri=self._locator_uri(),
+                                    position=self._locator_position())
 
     # state
     def set_media_state(self, state: MediaState):
@@ -1113,9 +894,7 @@ class OCPMediaPlayer:
         # remember this uri as broken so LoopState.REPEAT cannot restart a
         # queue whose every track has failed (that was an unbounded hot loop:
         # 1-track repeat playlist + a backend that always reports INVALID_MEDIA).
-        uri = self.now_playing.uri if self.now_playing else None
-        if uri:
-            self._failed_uris.add(uri)
+        self._queue.mark_failed(self.now_playing.uri if self.now_playing else None)
         # Use a timer so the bus event loop is not blocked during the pause
         self._schedule_play_next()
 
@@ -1341,30 +1120,14 @@ class OCPMediaPlayer:
             sequential path's "no more tracks" end-of-queue case instead of
             replaying forever.
         """
-        queue = self._merged_queue()
-        if not queue:
-            current_uri = self.now_playing.uri if self.now_playing else None
-            if current_uri is not None and current_uri in self._failed_uris:
-                LOG.debug("Shuffle: queue is empty and current track failed")
-                return False
-            LOG.debug("Shuffle: queue is empty, replaying current track")
-            return True
-        current_uri = self.now_playing.uri if self.now_playing else None
-        candidates = [e for e in queue
-                      if e.uri != current_uri and e.uri not in self._failed_uris]
-        if not candidates:
-            if self.loop_state == LoopState.REPEAT and current_uri and \
-                    current_uri not in self._failed_uris:
-                # nothing else to shuffle to, but repeat is on and the
-                # current track itself hasn't failed - keep it playing
-                # instead of stopping (mirrors play_next's sequential
-                # end-of-queue-with-repeat restart)
-                LOG.debug("Shuffle: no other viable tracks, repeat is on "
-                          "— keeping current track")
-                return True
+        pick = self._queue.select_shuffle(
+            self._merged_queue(),
+            current_uri=self.now_playing.uri if self.now_playing else None,
+            repeat=self.loop_state == LoopState.REPEAT)
+        if isinstance(pick, QueueEnd):
             return False
-        pick = random.choice(candidates)
-        LOG.debug(f"Shuffle pick: {pick.title!r}")
+        if isinstance(pick, KeepCurrent):
+            return True
         self.set_now_playing(pick)
         return True
 
@@ -1372,7 +1135,7 @@ class OCPMediaPlayer:
         """True if every track in *queue* has failed to load since the last
         successful load. Used to break the repeat cycle instead of retrying a
         wholly broken queue forever."""
-        return bool(queue) and all(e.uri in self._failed_uris for e in queue)
+        return self._queue.all_failed(queue)
 
     def play_next(self, finished_uri: str = None):
         """
@@ -1440,23 +1203,21 @@ class OCPMediaPlayer:
             return
 
         queue = self._merged_queue()
-        idx = self._queue_index(queue, uri=finished_uri)
+        selection = self._queue.select_next(
+            queue, uri=self._locator_uri(finished_uri),
+            position=self._locator_position(),
+            repeat=self.loop_state == LoopState.REPEAT)
 
-        if idx >= 0 and idx + 1 < len(queue):
-            next_track = queue[idx + 1]
-            LOG.info(f"Next track: {next_track.title!r} (queue index {idx + 1}/{len(queue) - 1})")
-            self.set_now_playing(next_track)
-        elif self.loop_state == LoopState.REPEAT and queue:
+        if isinstance(selection, AllFailed):
             # never restart a queue in which every track has already failed
             # to load since the last successful one — that is an unbounded hot
             # loop, not a repeat.
-            if self._all_tracks_failed(queue):
-                LOG.warning("End of queue with repeat == True, but every track "
-                            "failed to load — stopping instead of looping")
-                self.set_player_state(PlayerState.STOPPED)
-                return
-            LOG.info("End of queue, repeat == True — restarting from beginning")
-            self.set_now_playing(queue[0])
+            LOG.warning("End of queue with repeat == True, but every track "
+                        "failed to load — stopping instead of looping")
+            self.set_player_state(PlayerState.STOPPED)
+            return
+        elif not isinstance(selection, QueueEnd):
+            self.set_now_playing(selection)
         else:
             LOG.info("Requested next, but there are no more tracks in the queue")
             # end of queue with repeat off previously left the player
@@ -1507,16 +1268,15 @@ class OCPMediaPlayer:
             self.play()
             return
 
-        queue = self._merged_queue()
-        idx = self._queue_index(queue)
+        selection = self._queue.select_prev(
+            self._merged_queue(), uri=self._locator_uri(),
+            position=self._locator_position())
 
-        if idx > 0:
-            prev_track = queue[idx - 1]
-            LOG.debug(f"Previous track: {prev_track.title!r} (queue index {idx - 1}/{len(queue) - 1})")
-            self.set_now_playing(prev_track)
-            self.play()
-        else:
+        if isinstance(selection, QueueEnd):
             LOG.debug("Requested previous, but already at the first track")
+        else:
+            self.set_now_playing(selection)
+            self.play()
 
     def pause(self):
         """

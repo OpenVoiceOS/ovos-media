@@ -22,7 +22,7 @@ OCP (OpenVoiceOS Common Play) is the media pipeline that routes voice utterances
 
 1. **OCP pipeline plugin** (`ovos-ocp-pipeline-plugin`), an intent pipeline stage that classifies utterances as media queries, determines the `MediaType`, and broadcasts search requests to registered OCP skills.
 2. **OCP skills**, domain-specific skills (YouTube, Spotify, local music, radio, etc.) that respond to search requests by returning lists of `MediaEntry` objects ranked by confidence.
-3. **`ovos-media`**, receives the winning `MediaEntry`, resolves the appropriate audio/video/web backend, and drives playback. The central class is `OCPMediaPlayer` (`ovos_media/player.py`).
+3. **`ovos-media`**, receives the winning `MediaEntry`, resolves the appropriate audio/video/web backend, and drives playback. The central class is `OCPMediaPlayer` (`ovos_media/player/`).
 
 ## The OCP query flow
 

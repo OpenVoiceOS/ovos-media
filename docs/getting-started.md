@@ -176,7 +176,7 @@ bus.emit(Message("ovos.common_play.play", {
 }))
 ```
 
-`media` is required (`handle_play_request` in `ovos_media/player.py` logs a
+`media` is required (`handle_play_request` in `ovos_media/player/` logs a
 warning and ignores the message if it is missing). `media_type` and
 `playback` are the integer values of the `ovos_utils.ocp.MediaType` and
 `ovos_utils.ocp.PlaybackType` enums; common ones are `MediaType.AUDIO` (1),
@@ -214,7 +214,7 @@ Every reply on the bus uses the `.response` suffix convention: the reply to
 `<msg_type>` is emitted as `<msg_type>.response` (see `Message.response` in
 `ovos-bus-client`). To query full player status, send
 `ovos.common_play.status` and wait for `ovos.common_play.status.response`
-(handled by `OCPMediaPlayer.handle_status` in `ovos_media/player.py`):
+(handled by `OCPMediaPlayer.handle_status` in `ovos_media/player/`):
 
 ```python
 from ovos_bus_client import MessageBusClient, Message
