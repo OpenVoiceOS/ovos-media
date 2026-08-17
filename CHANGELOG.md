@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a1) (2026-08-17)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/1.0.0a1...2.0.0a1)
+
+**Breaking changes:**
+
+- refactor!: drop in-process GUI and per-namespace service bus surface [\#153](https://github.com/OpenVoiceOS/ovos-media/pull/153) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [1.0.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/1.0.0a1) (2026-08-16)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.27a1...1.0.0a1)
@@ -265,19 +273,19 @@
 
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a4)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a4)
 
 **Merged pull requests:**
 
 - chore: remove duplicate publish-alpha workflow [\#84](https://github.com/OpenVoiceOS/ovos-media/pull/84) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a3)
-
 ## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a2)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a2)
+
+## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a3)
 
 **Merged pull requests:**
 
@@ -465,10 +473,6 @@
 ## [V0.0.1a16](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a16) (2024-03-10)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a15...V0.0.1a16)
-
-**Merged pull requests:**
-
-- chore\(docs\): add a long description to PyPi [\#17](https://github.com/OpenVoiceOS/ovos-media/pull/17) ([mikejgray](https://github.com/mikejgray))
 
 ## [V0.0.1a15](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a15) (2024-02-07)
 
