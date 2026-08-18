@@ -258,6 +258,46 @@ class TestRegistrationTableCompleteness(unittest.TestCase):
                          ["handle_external_play", "handle_play_request"])
         player.shutdown()
 
+    def test_ping_is_answered_with_a_pong(self):
+        """A live daemon answers every 'ovos.common_play.ping' with a
+        'ovos.common_play.pong' reply."""
+        from ovos_media.bus.api import OCPBusApi
+        bus = FakeBus()
+        api = OCPBusApi(bus, service=MagicMock())
+        pongs = []
+        bus.on("ovos.common_play.pong", lambda m: pongs.append(m))
+
+        bus.emit(Message("ovos.common_play.ping",
+                         context={"source": "remote-client",
+                                  "destination": ["OCP"]}))
+
+        self.assertEqual(len(pongs), 1)
+        # the pong must be a reply(): its destination is the pinger's
+        # source, which is what routes it back to a remote client
+        self.assertEqual(pongs[0].context.get("destination"), "remote-client")
+        api.shutdown()
+
+    def test_opm_query_reports_the_installed_audio_backends(self):
+        """'opm.audio.query' answers with the player's audio backends in
+        the shape OPM discovery expects."""
+        from ovos_media.bus.api import OCPBusApi
+        bus = FakeBus()
+        service = MagicMock()
+        service.ocp.audio_service.available_backends.return_value = {
+            "fake": {"supported_uris": ["file"], "remote": False}}
+        api = OCPBusApi(bus, service=service)
+        answers = []
+        bus.on("opm.audio.query.response", lambda m: answers.append(m))
+
+        bus.emit(Message("opm.audio.query"))
+
+        self.assertEqual(len(answers), 1)
+        self.assertEqual(answers[0].data["plugins"], ["fake"])
+        self.assertEqual(answers[0].data["configs"],
+                         {"fake": {"supported_uris": ["file"], "remote": False}})
+        self.assertEqual(answers[0].data["options"], {})
+        api.shutdown()
+
     def test_service_table_covers_its_own_topics(self):
         from ovos_media.bus.api import OCPBusApi
         service = MagicMock()

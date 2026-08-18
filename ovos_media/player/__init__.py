@@ -16,7 +16,6 @@ from ovos_media.player.adapters import OPMBackendAdapter, SkillPlayerAdapter
 from ovos_media.player.roster import PlayerRoster
 from ovos_media.player.dispatcher import Dispatcher, PlayerSnapshot
 from ovos_plugin_manager.ocp import load_stream_extractors
-from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.log import LOG
 from ovos_bus_client.message import Message
 from ovos_utils.ocp import Playlist
@@ -74,7 +73,6 @@ class OCPMediaPlayer:
         self.audio_service = AudioService(bus, on_stop=self._on_backend_stop)
         self.video_service = VideoService(bus, on_stop=self._on_backend_stop)
         self.web_service = WebService(bus, on_stop=self._on_backend_stop)
-        self.current: Optional[MediaBackend] = None
         self.mpris: Optional[OcpMprisExporter] = None
 
         # MPRIS settings
@@ -760,7 +758,7 @@ class OCPMediaPlayer:
                 LOG.warning("MPRIS external player control is disabled; install ovos-media-plugin-mpris to enable it")
             return
         elif self.playback_type in [PlaybackType.SKILL]:
-            LOG.debug(f"Defer playing next track to skill")
+            LOG.debug("Defer playing next track to skill")
             self.roster.get("skill").next()
             return
 
@@ -1020,19 +1018,20 @@ class OCPMediaPlayer:
         invalid = state == MediaState.INVALID_MEDIA
         playback_type = playback_uri = None
         stop_requested = False
+        # _failed_uris/_track_failed_spoken are reset on evidence of
+        # PLAYBACK (NowPlaying.handle_track_state_change's
+        # TrackState.PLAYING_* branch), never here on LOADED_MEDIA/
+        # BUFFERED_MEDIA — a track that loads fine but fails to play emits
+        # LOADED_MEDIA then INVALID_MEDIA (see
+        # ovos_media.media_backends.base.handle_media_state_change), so
+        # resetting on LOADED_MEDIA clears both guards on every failing
+        # track.
         if ended:
             # capture BEFORE the reset that clears both values
             playback_type = self.now_playing.playback
             playback_uri = self.now_playing.uri
             stop_requested = self._stop_requested
             self.now_playing.on_end_of_media()
-        # NOTE: _failed_uris/_track_failed_spoken are reset on evidence
-            # of PLAYBACK (NowPlaying.handle_track_state_change's
-            # TrackState.PLAYING_* branch), not here on LOADED_MEDIA/
-            # BUFFERED_MEDIA — a track that loads fine but fails to play
-            # emits LOADED_MEDIA then INVALID_MEDIA (see base.py's
-            # handle_media_state_change), and resetting on LOADED_MEDIA
-            # cleared both guards on every single failing track.
 
         if ended:
             self.handle_playback_ended(message, playback_type=playback_type,
@@ -1083,7 +1082,7 @@ class OCPMediaPlayer:
                 playback_type not in [PlaybackType.MPRIS, PlaybackType.UNDEFINED]:
             # PlaybackType.UNDEFINED -> no media loaded, eg stop called explicitly
             # PlaybackType.MPRIS -> can't load media in MPRIS players
-            LOG.debug(f"Playing next track")
+            LOG.debug("Playing next track")
             self.play_next(finished_uri=playback_uri)
             return
 

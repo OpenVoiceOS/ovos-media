@@ -1,19 +1,19 @@
 """Regression tests for MediaEntry representation consistency.
 
-Covers defects surfaced by the ecosystem audit:
+Three invariants hold the representation together:
 
-* NowPlaying used to override ``as_dict`` with a hard-coded key list, so any
-  field added to MediaEntry was silently dropped from the GUI/bus payload.
+* ``NowPlaying.as_dict`` carries the full MediaEntry field set, so a field
+  added to MediaEntry reaches the GUI/bus payload without further work.
 * NowPlaying subclasses the ``@dataclass``-decorated MediaEntry but is not
   itself decorated and adds plain instance attributes (bus, _player, ...) in
   a custom ``__init__``. orjson only recognizes a type as a dataclass via
   that exact class's own ``__dict__``, not an inherited one, so serializing
-  a NowPlaying instance directly used to raise
-  ``TypeError: Type is not JSON serializable: NowPlaying`` whenever orjson
-  was installed (the GUI-update/bus payload path via ``as_dict``).
-* the liked-songs search used to return (and mutate) the raw
-  persisted store dicts, mixing plain dicts with the MediaEntry objects the
-  playback path expects and polluting the on-disk store.
+  a NowPlaying instance directly raises
+  ``TypeError: Type is not JSON serializable: NowPlaying`` when orjson is
+  installed, so the bus payload path goes through ``as_dict``.
+* the liked-songs search returns MediaEntry objects, never the raw
+  persisted store dicts: the playback path expects entries, and handing out
+  the stored dicts lets a caller mutate the on-disk store.
 """
 import unittest
 from unittest.mock import patch

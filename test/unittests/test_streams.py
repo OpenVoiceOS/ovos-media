@@ -12,6 +12,8 @@ from ovos_utils.ocp import MediaEntry, PlaybackType
 
 from ovos_media.player import streams
 
+from player_fixture import make_player
+
 
 class _Entry(MediaEntry):
     """A MediaEntry with the two NowPlaying traits extract_stream relies on:
@@ -211,5 +213,16 @@ class TestNowPlayingExtractStream(unittest.TestCase):
         np.extract_stream()  # must not raise
         self.assertEqual(np.uri, uri)
 
-if __name__ == "__main__":
-    unittest.main()
+
+class TestPlayerValidateStreamException(unittest.TestCase):
+    """Test validate_stream with extraction exception."""
+
+    def test_validate_stream_exception_returns_false(self):
+        """validate_stream should return False if extract_stream raises."""
+        p = make_player()
+        p.now_playing.playback = PlaybackType.AUDIO
+        p.now_playing.extract_stream = MagicMock(side_effect=Exception("fail"))
+
+        result = p.validate_stream()
+
+        self.assertFalse(result)

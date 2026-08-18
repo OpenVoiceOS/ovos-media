@@ -1,22 +1,20 @@
-"""Regression tests pinning defect fixes in ovos_media backend selection,
-skill-announce filtering, liked-songs locking, and playback navigation.
+"""Backend selection, skill-announce filtering, liked-songs locking and
+playback navigation, and the isolation each of them owes the others.
 
-handle_skill_announce wrapped a SET of media_types as a single-element
-list ([the_set]), so "MediaType.ADULT not in [set]" was always True and
-adult/hentai-tagged skills bypassed the parental filter in
-get_featured_skills().
-BaseMediaService._safe_supported_uris() returned whatever
-supported_uris() gave back; a plugin returning a bare str gave
-substring semantics downstream ("file" in "filesystem"), selecting the
-wrong backend.
-BaseMediaService.available_backends() left the per-service body
-(including the .name access) outside any guard, so one backend whose
-.name raised killed the whole listing.
-OCPMediaPlayer.play_prev matched playback_type in
-[PlaybackType.SKILL, PlaybackType.UNDEFINED], so an idle "previous"
-(the UNDEFINED default) emitted a bogus skill-control message and
-never reached the merged-queue logic - asymmetric with play_next,
-which only matches PlaybackType.SKILL.
+handle_skill_announce stores media_types as a set of members, so the
+parental filter in get_featured_skills() can actually see MediaType.ADULT
+in it.
+BaseMediaService._safe_supported_uris() normalises whatever
+supported_uris() returns into a list, so a plugin returning a bare str
+cannot give substring semantics downstream ("file" in "filesystem") and
+select the wrong backend.
+BaseMediaService.available_backends() guards the whole per-service body,
+the .name access included, so one misbehaving backend cannot kill the
+listing.
+OCPMediaPlayer.play_prev routes to the skill only on
+PlaybackType.SKILL — symmetric with play_next. An idle "previous", whose
+playback type is the UNDEFINED default, reaches the merged-queue logic
+instead of emitting a skill-control message.
 """
 import threading
 import unittest

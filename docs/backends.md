@@ -124,7 +124,7 @@ Web backends are selected when `now_playing.playback == PlaybackType.WEBVIEW`. T
 
 ### `available_backends()`
 
-Returns a dict of `{backend_name: {"supported_uris": [...], "remote": bool}}` for every loaded service instance. Used by `MediaService.handle_opm_audio_query` to respond to OPM discovery queries.
+Returns a dict of `{backend_name: {"supported_uris": [...], "remote": bool}}` for every loaded service instance. Used by the `opm.audio.query` handler in `OCPBusApi` to respond to OPM discovery queries.
 
 ### `play(uri, preferred_service=None)`
 

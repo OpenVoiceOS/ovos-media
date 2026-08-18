@@ -257,7 +257,7 @@ class TestStopThenPlay(_OrderingTest):
     player. Recording that callback as a new command put the stop flag
     back *after* the play had already cleared it, so the play's own
     END_OF_MEDIA was then read as a stop and wiped the new track. Nothing
-    is drained between the two commands here: that gap is the defect.
+    is drained between the two commands here: that gap is the point.
     """
 
     def test_play_arriving_during_a_stop_wins(self):

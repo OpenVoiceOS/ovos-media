@@ -232,9 +232,9 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
 
         # wait past the original retry window. Note: a direct
         # BaseMediaService.stop() call does not by itself set player.state
-        # (only OCPMediaPlayer.stop() does that) — the observable defect
-        # here is the deferred play_next() running and silently advancing
-        # the queue after the stop had already been acted on.
+        # (only OCPMediaPlayer.stop() does that) — what is observable here
+        # is whether the deferred play_next() runs and silently advances
+        # the queue after the stop has already been acted on.
         time.sleep(0.3)
         self.assertNotEqual(player.now_playing.uri, b.uri,
                             "the deferred play_next() fired after stop and "

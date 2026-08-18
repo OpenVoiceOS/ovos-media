@@ -206,7 +206,7 @@ bus.emit(Message("ovos.common_play.ping"))
 # expect an "ovos.common_play.pong" reply
 ```
 
-(handled by `MediaService.handle_ping`).
+(handled by the ping handler in `OCPBusApi`).
 
 ### Querying status
 

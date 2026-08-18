@@ -49,6 +49,8 @@ from ovos_utils.ocp import (
     Playlist,
 )
 
+from player_fixture import make_player
+
 
 def _track(uri, title, playback=PlaybackType.AUDIO):
     return MediaEntry(uri=uri, title=title, playback=playback)
@@ -354,5 +356,18 @@ class TestTrackStartQueueEnd(unittest.TestCase):
         self.assertEqual(len(received), 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestPlayerHandleMediaUpdateInvalidAutoplayOff(unittest.TestCase):
+    """Test handle_player_media_update with INVALID_MEDIA and autoplay=False."""
+
+    def test_invalid_media_autoplay_false_no_play_next(self):
+        """handle_player_media_update INVALID_MEDIA with autoplay=False shouldn't call play_next."""
+        p = make_player()
+        p.ocp_config = {"autoplay": False}
+        p.media_state = MediaState.NO_MEDIA
+
+        with patch.object(p, "handle_invalid_media"), \
+             patch.object(p, "play_next") as mock_next:
+            p.handle_player_media_update(Message("ovos.common_play.media.state",
+                                                 {"state": MediaState.INVALID_MEDIA}))
+
+        mock_next.assert_not_called()

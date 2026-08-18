@@ -184,7 +184,7 @@ class TestDelayedWorkUnderLoad(unittest.TestCase):
             for _ in range(300):
                 try:
                     d.call_later(0.001, lambda: ran.append(1), d.epoch)
-                except Exception as e:  # pragma: no cover - the defect
+                except Exception as e:  # pragma: no cover
                     errors.append(e)
 
         threads = [threading.Thread(target=hammer) for _ in range(4)]

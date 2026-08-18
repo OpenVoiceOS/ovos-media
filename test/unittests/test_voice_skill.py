@@ -244,10 +244,9 @@ class TestShuffleIntents(unittest.TestCase):
 def _make_real_player(bus, title="Bohemian Rhapsody", artist="Queen"):
     """Construct a real OCPMediaPlayer (not a canned lambda) wired to the
     given FakeBus, so its real handle_status wires up "ovos.common_play.status"
-    responses and the real payload shape (title/artist keys etc) is proven,
-    per the backcompat audit's F5 finding. Mirrors the construction pattern
-    used in test_player_handlers.py._make_player - external services are
-    mocked, but handle_status/the bus edge are real.
+    responses and the real payload shape (title/artist keys etc) is proven.
+    External services are mocked, but handle_status and the bus edge are
+    real.
     """
     with patch("ovos_media.player.AudioService"), \
          patch("ovos_media.player.VideoService"), \
@@ -286,8 +285,7 @@ def _make_real_player(bus, title="Bohemian Rhapsody", artist="Queen"):
 
 class TestRealPlayerStatusResponder(unittest.TestCase):
     """Proves the real OCPMediaPlayer.handle_status payload (not a canned
-    lambda) carries the title/artist keys the intent handlers read - see
-    backcompat audit F5."""
+    lambda) carries the title/artist keys the intent handlers read."""
 
     def test_what_song_reads_real_player_payload(self):
         bus = FakeBus()
@@ -304,8 +302,8 @@ class TestRealPlayerStatusResponder(unittest.TestCase):
 
 
 class TestFiveIntentsRegistered(unittest.TestCase):
-    """False-green guard (backcompat audit finding #2): if any of the five
-    .intent files were ever removed/renamed, this must fail instead of
+    """False-green guard: if any of the five .intent files is ever
+    removed or renamed, this must fail instead of
     passing silently. Asserts the actual padatious registration messages
     OVOSCommonPlaybackSkill.register_intent_file emits, with the expected
     intent file names, rather than relying on the handlers being reachable

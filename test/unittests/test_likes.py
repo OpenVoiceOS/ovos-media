@@ -10,11 +10,13 @@ size during iteration" under concurrent like+search traffic.
 import threading
 import time
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from ovos_utils.ocp import MediaEntry, MediaType, PlaybackType
 
 from ovos_media.catalog import LikedSongsStore
+
+from player_fixture import make_player
 
 
 class _FakeStore(dict):
@@ -278,5 +280,17 @@ class TestStoreSurface(unittest.TestCase):
         mock.assert_called_once()
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestPlayerPlayWithLikedSongs(unittest.TestCase):
+    """play() bumps the play count of the track it starts; the store owns
+    the write-through and the locking (see test_likes.py)."""
+
+    def test_play_increments_liked_songs_play_count(self):
+        p = make_player()
+        p.now_playing.uri = "http://liked.mp3"
+
+        with patch.object(p, "validate_stream", return_value=True), \
+             patch.object(p, "set_player_state"):
+            p.play()
+
+        p.media.likes.increment_play_count.assert_called_once_with(
+            "http://liked.mp3")
