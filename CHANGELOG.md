@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.0a8](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a8) (2026-08-18)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a7...2.0.0a8)
+
+**Merged pull requests:**
+
+- refactor: split mpris into loop, exporter and external-player manager [\#170](https://github.com/OpenVoiceOS/ovos-media/pull/170) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.0.0a7](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a7) (2026-08-18)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a6...2.0.0a7)
@@ -321,19 +329,19 @@
 
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a4)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a4)
 
 **Merged pull requests:**
 
 - chore: remove duplicate publish-alpha workflow [\#84](https://github.com/OpenVoiceOS/ovos-media/pull/84) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a3)
-
 ## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a2)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a2)
+
+## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a3)
 
 **Merged pull requests:**
 
@@ -474,7 +482,6 @@
 - chore\(deps\): update dependency ovos-plugin-manager to v2 [\#33](https://github.com/OpenVoiceOS/ovos-media/pull/33) ([renovate[bot]](https://github.com/apps/renovate))
 - chore\(deps\): update dependency ovos-config to v2 [\#32](https://github.com/OpenVoiceOS/ovos-media/pull/32) ([renovate[bot]](https://github.com/apps/renovate))
 - chore\(deps\): update dependency ovos-bus-client to v1 [\#31](https://github.com/OpenVoiceOS/ovos-media/pull/31) ([renovate[bot]](https://github.com/apps/renovate))
-- chore\(deps\): update dependency python to 3.14 [\#25](https://github.com/OpenVoiceOS/ovos-media/pull/25) ([renovate[bot]](https://github.com/apps/renovate))
 
 ## [V0.0.1a22](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a22) (2024-04-09)
 
