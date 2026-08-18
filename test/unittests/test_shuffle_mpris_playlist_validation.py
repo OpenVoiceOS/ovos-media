@@ -70,13 +70,13 @@ class TestMprisReflectionAlwaysConstructs(unittest.TestCase):
     now-playing entry instead of raising out of set_now_playing."""
 
     def test_meta_without_url_gets_synthetic_uri(self):
-        from ovos_media.mpris import OcpMprisExporter
+        from ovos_media.mpris.manager import ExternalPlayerManager
 
         class _V:  # dbus variant stand-in
             def __init__(self, value):
                 self.value = value
 
-        exporter = OcpMprisExporter.__new__(OcpMprisExporter)
+        exporter = ExternalPlayerManager.__new__(ExternalPlayerManager)
         meta = {"state": "Playing", "loop_state": None,
                 "xesam:title": _V("Song"), "xesam:artist": _V(["Band"]),
                 "mpris:length": _V(200000)}
@@ -84,13 +84,13 @@ class TestMprisReflectionAlwaysConstructs(unittest.TestCase):
         self.assertEqual(data["uri"], "mpris://org.mpris.MediaPlayer2.spotify")
 
     def test_meta_with_url_maps_to_uri(self):
-        from ovos_media.mpris import OcpMprisExporter
+        from ovos_media.mpris.manager import ExternalPlayerManager
 
         class _V:
             def __init__(self, value):
                 self.value = value
 
-        exporter = OcpMprisExporter.__new__(OcpMprisExporter)
+        exporter = ExternalPlayerManager.__new__(ExternalPlayerManager)
         meta = {"state": "Playing", "loop_state": None,
                 "xesam:title": _V("Song"),
                 "xesam:url": _V("https://x/song.mp3")}

@@ -359,6 +359,12 @@ class OCPMediaPlayer:
                      PlayerState.PAUSED: "Paused",
                      PlayerState.STOPPED: "Stopped"}
         if self.mpris:
+            # publish before signalling. MPRIS property getters answer from
+            # the snapshot, and the post-hook that republishes it only runs
+            # when the whole command finishes - without this a controller that
+            # reads PlaybackStatus on the PropertiesChanged signal is told the
+            # old state by the very Get the signal provoked.
+            self.publish_snapshot()
             self.mpris.update_props({"CanPause": state == PlayerState.PLAYING,
                                      "CanPlay": state == PlayerState.PAUSED,
                                      "PlaybackStatus": state2str[state]})
@@ -943,7 +949,10 @@ class OCPMediaPlayer:
 
     def handle_MPRIS_takeover(self):
         """ Called when a MPRIS external player becomes active"""
-        for adapter in self.roster.adapters:
+        # `owned`, not `adapters`: the external MPRIS players are in the roster
+        # too, and the one this takeover yields to is among them — sweeping it
+        # would stop the playback that triggered the takeover in the first place
+        for adapter in self.roster.owned:
             adapter.stop()
         self.now_playing.original_uri = ""
 
