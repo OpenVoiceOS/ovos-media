@@ -196,6 +196,49 @@ ovos-core's OCP pipeline always has a current snapshot for the session.
 
 ---
 
+## Execution model
+
+Commands and queries reach the player from several threads: the bus client's
+dispatch pool, the MPRIS exporter's own thread, and the timer behind the
+delayed retry after a bad stream. Everything that *changes* the player runs
+instead on one worker thread, the `Dispatcher`
+(`ovos_media/player/dispatcher.py`), which drains a FIFO queue of commands.
+
+- The **bus edge** (`ovos_media/bus/api.py`) submits a command per accepted
+  message. Its arrival order on the bus is the order it is acted on.
+- The **MPRIS thread** submits at the boundary: a `Next` or a `Stop` from a
+  desktop widget becomes a queued command like any other.
+- The **delayed retry** after `INVALID_MEDIA` is submitted with a delay and
+  tagged with the dispatcher's current epoch. `play()`, `stop()` and
+  `reset()` bump that epoch, and a retry whose epoch no longer matches is
+  dropped when it comes up — a new play request cannot be skipped by a retry
+  scheduled for the track before it.
+
+Because the state machine has a single writer, it needs no locks: two
+`END_OF_MEDIA` events are two queued commands, and the second sees the state
+the first wrote. The same ordering is what makes an explicit stop safe — the
+stop command finishes, including the backend call whose `ocp_stop()` emits
+`END_OF_MEDIA`, before that event is acted on.
+
+Reads are not serialized. `PlayerSnapshot` is an immutable view of the
+player republished after every command, and the query topics
+(`ovos.common_play.status`, `.track_info`, `.get_track_length`,
+`.get_track_position`, `.list_backends`, `.SEI.get`) answer from it at the
+edge, so a status request never waits behind a playback command. The live
+track position and length are read straight from the backend plugin, which
+is the one sanctioned read from another thread: only the plugin knows them,
+and a queued answer would be stale by the time it was emitted.
+
+`Dispatcher.settle()` waits for the player to go idle, including work a
+command queues by emitting on the bus. Tests use it where they used to
+read the player immediately after an emit.
+
+Nothing on the dispatcher may block. The one handler that waits on the bus,
+`handle_record_end` (up to 8 s for a `speak` before it uncorks), stays at
+the edge and submits only the resume it decides on.
+
+---
+
 ## State Machine
 
 Two orthogonal state enums are tracked by `OCPMediaPlayer`, both defined in

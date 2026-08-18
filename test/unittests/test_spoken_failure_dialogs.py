@@ -127,8 +127,7 @@ class TestTrackFailedDialog(unittest.TestCase):
         self.assertEqual(p.media.speak_dialog.call_count, 1)
         # a bare LOADED_MEDIA/BUFFERED_MEDIA transition (no PLAYING_* track
         # state) must be a no-op for the guard
-        with p._state_lock:
-            p.media_state = MediaState.LOADED_MEDIA
+        p.media_state = MediaState.LOADED_MEDIA
         p.handle_invalid_media()
         self.assertEqual(p.media.speak_dialog.call_count, 1,
                         "LOADED_MEDIA alone must not reset the track.failed "
@@ -171,7 +170,6 @@ class TestTrackFailedDialog(unittest.TestCase):
         # stub out the collaborators reset() also touches that this fixture
         # doesn't construct, so only the bookkeeping under test is real.
         p.now_playing.reset = MagicMock()
-        p._invalid_timer = None
         p.playlist.clear = MagicMock()
         p.set_media_state = MagicMock()
         p.playback_type = PlaybackType.UNDEFINED

@@ -47,13 +47,12 @@ class BaseMediaService:
         """
             Args:
                 bus: OVOS messagebus
-                on_stop: optional callback invoked at the start of stop(), in
-                    the calling thread, before the backend is asked to stop.
-                    OCPMediaPlayer uses it to flag that the END_OF_MEDIA the
-                    backend's ocp_stop() is about to emit was caused by a stop
-                    request and must not advance the queue. A callback rather
-                    than a second bus subscription because only a direct call
-                    is ordered before the event it needs to annotate.
+                on_stop: optional callback invoked at the start of stop(),
+                    in the calling thread. OCPMediaPlayer uses it to learn
+                    that a stop it did not itself request happened here (a
+                    skill stopping this service directly), so the
+                    END_OF_MEDIA the backend's ocp_stop() is about to emit
+                    does not advance the queue.
         """
         self.bus = bus
         self.namespace = namespace

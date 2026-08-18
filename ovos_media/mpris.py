@@ -56,6 +56,23 @@ from ovos_utils.ocp import TrackState, PlaybackType, PlayerState, LoopState, Med
 from ovos_media.bus.schemas import is_real_number
 
 
+def _submit(player, fn):
+    """Run *fn* on the player's dispatcher.
+
+    The MPRIS watcher and the D-Bus interfaces live on their own threads.
+    Everything they change about the player goes through this boundary, so
+    the player still has a single writer. Reads (Metadata, PlaybackStatus,
+    Position, CanGoNext …) stay direct. A player without a dispatcher — a
+    stub, or one assembled piecemeal — is called inline.
+    """
+    from ovos_media.player.dispatcher import Dispatcher  # avoids an import cycle
+    dispatcher = getattr(player, "dispatcher", None)
+    if isinstance(dispatcher, Dispatcher):
+        dispatcher.submit(fn)
+    else:
+        fn()
+
+
 class OcpMprisExporter(Thread):
     """Exposes OCP as an MPRIS MediaPlayer2 on the D-Bus session bus.
 
@@ -127,7 +144,13 @@ class OcpMprisExporter(Thread):
             return
 
         if self._ocp_player and self.player_meta.get(self.main_player):
-            data = self.player_meta[self.main_player]
+            _submit(self._ocp_player, self._apply_external_player_state)
+
+    def _apply_external_player_state(self):
+        """Mirror the polled external player onto OCP. Runs as one
+        dispatcher command so no other command interleaves with it."""
+        data = self.player_meta.get(self.main_player)
+        if data:
 
             # reset ocp, it will display metadata of current track
             render = False
@@ -190,29 +213,32 @@ class OcpMprisExporter(Thread):
     async def handle_player_shuffle(self, shuffle):
         LOG.info(f"MPRIS Player Shuffle: {shuffle}")
         if self.manage_players:
-            self._ocp_player.shuffle = shuffle
+            _submit(self._ocp_player,
+                    lambda: setattr(self._ocp_player, "shuffle", shuffle))
 
     async def handle_player_loop_state(self, state):
         LOG.info(f"MPRIS Player Repeat: {state}")
         if self.manage_players:
-            if state == 1:
-                self._ocp_player.loop_state = LoopState.REPEAT
-            elif state == 2:
-                self._ocp_player.loop_state = LoopState.REPEAT_TRACK
-            else:
-                self._ocp_player.loop_state = LoopState.NONE
+            loop = {1: LoopState.REPEAT, 2: LoopState.REPEAT_TRACK}.get(
+                state, LoopState.NONE)
+            _submit(self._ocp_player,
+                    lambda: setattr(self._ocp_player, "loop_state", loop))
 
     async def handle_player_state(self, state):
         LOG.info(f"MPRIS Player State: {state}")
         if self.manage_players and self._ocp_player:
-            if state == "Paused":
-                self._ocp_player.set_player_state(PlayerState.PAUSED)
-            elif state == "Playing":
-                self._ocp_player.handle_MPRIS_takeover()
-                self._ocp_player.playback_type = PlaybackType.MPRIS
-                self._ocp_player.set_player_state(PlayerState.PLAYING)
-            else:
-                self._ocp_player.set_player_state(PlayerState.STOPPED)
+            _submit(self._ocp_player,
+                    lambda: self._apply_external_player_transport(state))
+
+    def _apply_external_player_transport(self, state):
+        if state == "Paused":
+            self._ocp_player.set_player_state(PlayerState.PAUSED)
+        elif state == "Playing":
+            self._ocp_player.handle_MPRIS_takeover()
+            self._ocp_player.playback_type = PlaybackType.MPRIS
+            self._ocp_player.set_player_state(PlayerState.PLAYING)
+        else:
+            self._ocp_player.set_player_state(PlayerState.STOPPED)
 
     async def handle_lost_player(self, name):
         LOG.info(f"Lost MPRIS Player: {name}")
@@ -827,11 +853,11 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
     @LoopStatus.setter
     def LoopStatus_setter(self, val: 's'):
         if val == "Track":
-            self._ocp_player.loop_state = LoopState.REPEAT_TRACK
+            _submit(self._ocp_player, lambda: setattr(self._ocp_player, "loop_state", LoopState.REPEAT_TRACK))
         elif val == "Playlist":
-            self._ocp_player.loop_state = LoopState.REPEAT
+            _submit(self._ocp_player, lambda: setattr(self._ocp_player, "loop_state", LoopState.REPEAT))
         else:
-            self._ocp_player.loop_state = LoopState.NONE
+            _submit(self._ocp_player, lambda: setattr(self._ocp_player, "loop_state", LoopState.NONE))
 
     @dbus_property()
     def Shuffle(self) -> 'b':
@@ -839,7 +865,7 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @Shuffle.setter
     def Shuffle_setter(self, val: 'b'):
-        self._ocp_player.shuffle = val
+        _submit(self._ocp_player, lambda: setattr(self._ocp_player, "shuffle", val))
 
     @dbus_property()
     def Volume(self) -> 'd':
@@ -917,26 +943,29 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
 
     @method()
     def Previous(self):
-        self._ocp_player.play_prev()
+        _submit(self._ocp_player, self._ocp_player.play_prev)
 
     @method()
     def Next(self):
-        self._ocp_player.play_next()
+        _submit(self._ocp_player, self._ocp_player.play_next)
 
     @method()
     def Stop(self):
-        self._ocp_player.stop()
+        _submit(self._ocp_player, self._ocp_player.stop)
 
     @method()
     def Play(self):
-        self._ocp_player.resume()
+        _submit(self._ocp_player, self._ocp_player.resume)
 
     @method()
     def Pause(self):
-        self._ocp_player.pause()
+        _submit(self._ocp_player, self._ocp_player.pause)
 
     @method()
     def PlayPause(self):
+        _submit(self._ocp_player, self._play_pause)
+
+    def _play_pause(self):
         if self._ocp_player.state == PlayerState.PAUSED:
             self._ocp_player.resume()
         else:

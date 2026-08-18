@@ -112,6 +112,12 @@ class _StubBackend:
 # ---------------------------------------------------------------------------
 
 class TestSingleWriterEndOfMedia(unittest.TestCase):
+    """The duplicate-END_OF_MEDIA case moved to test_transport_ordering.py:
+    it asserted that a lock made two threads entering the handler at once
+    advance the queue once. Two threads can no longer enter it — the bus
+    edge submits both events to the one worker — so the invariant is now
+    asserted as ordering, not as mutual exclusion."""
+
 
     def test_raced_end_of_media_handlers_still_advance(self):
         """END_OF_MEDIA delivered while other media.state subscribers run
@@ -183,40 +189,6 @@ class TestSingleWriterEndOfMedia(unittest.TestCase):
                          "a late media.state subscriber wiped the track the "
                          "player had just advanced to")
         player.shutdown()
-
-    def test_two_concurrent_end_of_media_advance_exactly_once(self):
-        """Two END_OF_MEDIA events racing must advance the queue ONCE.
-
-        Pre-fix this double-advanced in 263/300 runs: both threads passed the
-        unsynchronised `state == self.media_state` compare-and-set.
-        """
-        for attempt in range(40):
-            bus = FakeBus()
-            player = _make_player(bus)
-            tracks = [_track(f"http://example.com/{n}.mp3", n)
-                      for n in ("a", "b", "c")]
-            _load(player, tracks)
-            player.set_player_state(PlayerState.PLAYING)
-            player.media_state = MediaState.BUFFERED_MEDIA
-
-            with patch.object(player, "play"):
-                start = threading.Barrier(2)
-
-                def fire():
-                    start.wait(timeout=5)
-                    bus.emit(Message("ovos.common_play.media.state",
-                                     {"state": MediaState.END_OF_MEDIA}))
-
-                threads = [threading.Thread(target=fire) for _ in range(2)]
-                for t in threads:
-                    t.start()
-                for t in threads:
-                    t.join(timeout=5)
-
-            self.assertEqual(player.now_playing.uri, tracks[1].uri,
-                             f"attempt {attempt}: two concurrent END_OF_MEDIA "
-                             f"events advanced past track b")
-            player.shutdown()
 
     def test_now_playing_no_longer_subscribes_to_media_state(self):
         """NowPlaying must not be a second subscriber to the topic."""
@@ -422,12 +394,10 @@ class TestLoadOkPlayFailQueue(unittest.TestCase):
             # initial STOPPED and a test polling for "reached STOPPED"
             # would trivially pass without the retry chain ever running.
             player.set_player_state(PlayerState.PLAYING)
-            with player._state_lock:
-                player.media_state = MediaState.LOADING_MEDIA
+            player.media_state = MediaState.LOADING_MEDIA
             player.bus.emit(Message("ovos.common_play.media.state",
                                     {"state": MediaState.LOADED_MEDIA}))
-            with player._state_lock:
-                player.media_state = MediaState.BUFFERED_MEDIA
+            player.media_state = MediaState.BUFFERED_MEDIA
             player.bus.emit(Message("ovos.common_play.media.state",
                                     {"state": MediaState.INVALID_MEDIA}))
 
