@@ -642,7 +642,7 @@ class TestNowPlayingAsDict(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestHandleLikeUnlike(unittest.TestCase):
-    """handle_like and handle_unlike update media.liked_songs."""
+    """handle_like and handle_unlike write through the liked-songs store."""
 
     def test_like_stores_track(self):
         p = _make_player()
@@ -650,26 +650,23 @@ class TestHandleLikeUnlike(unittest.TestCase):
         uri = "http://example.com/song.mp3"
         msg = Message("ovos.common_play.like", {"uri": uri, "title": "Song", "artist": "Artist", "image": ""})
         p.handle_like(msg)
-        p.media.liked_songs.__setitem__.assert_called()
-        p.media.liked_songs.store.assert_called_once()
+        p.media.likes.like.assert_called_once_with(uri, title="Song",
+                                                   artist="Artist", image="")
 
-    def test_unlike_removes_track_when_present(self):
+    def test_unlike_removes_track(self):
         p = _make_player()
         uri = "http://example.com/song.mp3"
         p.now_playing.original_uri = uri
-        p.media.liked_songs.__contains__ = MagicMock(return_value=True)
         msg = Message("ovos.common_play.unlike", {"uri": uri})
         p.handle_unlike(msg)
-        p.media.liked_songs.pop.assert_called_once_with(uri)
-        p.media.liked_songs.store.assert_called_once()
+        p.media.likes.unlike.assert_called_once_with(uri)
 
-    def test_unlike_noop_when_not_present(self):
+    def test_unlike_falls_back_to_the_now_playing_uri(self):
         p = _make_player()
-        uri = "http://example.com/song.mp3"
-        p.media.liked_songs.__contains__ = MagicMock(return_value=False)
-        msg = Message("ovos.common_play.unlike", {"uri": uri})
-        p.handle_unlike(msg)
-        p.media.liked_songs.pop.assert_not_called()
+        p.now_playing.original_uri = "http://example.com/current.mp3"
+        p.handle_unlike(Message("ovos.common_play.unlike", {}))
+        p.media.likes.unlike.assert_called_once_with(
+            "http://example.com/current.mp3")
 
 
 # ---------------------------------------------------------------------------

@@ -42,10 +42,6 @@ class TestA1DaemonStartup(unittest.TestCase):
         player = OCPMediaPlayer(bus, config={})
         self.assertEqual(player.playlist.title, "Search Results")
         self.assertEqual(len(player.playlist), 0)
-        # validate_source must be plumbed through to the catalog (#90);
-        # this was dead code prior to the A1 fix since construction never
-        # completed far enough to exercise it
-        self.assertIs(player.media.validate_source, player.validate_source)
 
     def test_media_service_constructs_on_fakebus(self):
         from ovos_media.service import MediaService
@@ -53,6 +49,11 @@ class TestA1DaemonStartup(unittest.TestCase):
         service = MediaService(bus=bus)
         self.assertIsNotNone(service.ocp)
         self.assertEqual(service.ocp.playlist.title, "Search Results")
+        # validate_source must be plumbed through to the voice front-end
+        # (#90), which mirrors the player's session gate on its shuffle
+        # intents
+        self.assertIs(service.voice_skill.validate_source,
+                      service.validate_source)
         service.shutdown()
 
 

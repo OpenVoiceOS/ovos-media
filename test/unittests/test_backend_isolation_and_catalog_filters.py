@@ -12,10 +12,6 @@ wrong backend.
 BaseMediaService.available_backends() left the per-service body
 (including the .name access) outside any guard, so one backend whose
 .name raised killed the whole listing.
-OCPMediaCatalog.liked_songs_playlist iterated self.liked_songs.items()
-with no lock while writers mutate the dict under _liked_songs_lock,
-producing "dictionary changed size during iteration" under concurrent
-like+search traffic.
 OCPMediaPlayer.play_prev matched playback_type in
 [PlaybackType.SKILL, PlaybackType.UNDEFINED], so an idle "previous"
 (the UNDEFINED default) emitted a bogus skill-control message and
@@ -23,7 +19,6 @@ never reached the merged-queue logic - asymmetric with play_next,
 which only matches PlaybackType.SKILL.
 """
 import threading
-import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -37,10 +32,16 @@ from ovos_utils.ocp import MediaType, PlaybackType
 # ---------------------------------------------------------------------------
 
 def _make_catalog():
+    from ovos_media.catalog import LikedSongsStore
     from ovos_media.player import OCPMediaCatalog
+
+    class _FakeStore(dict):
+        def store(self):
+            pass
+
     bus = FakeBus()
     with patch("ovos_media.player.load_stream_extractors"):
-        cat = OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
+        cat = OCPMediaCatalog(bus=bus, likes=LikedSongsStore(_FakeStore()))
     return cat, bus
 
 
@@ -224,104 +225,6 @@ class TestGetPreferredPlayersToleratesRaisingService(unittest.TestCase):
         svc, bus = _make_base_svc(services=[a, b])
         result = svc.get_preferred_players()
         self.assertEqual(set(result), {"a", "b"})
-
-
-# ---------------------------------------------------------------------------
-# liked_songs_playlist locking
-# ---------------------------------------------------------------------------
-
-class _LockProbe:
-    """Records acquire()/release() calls, standing in for an RLock so a
-    test can assert a critical section actually took the lock (same
-    pattern as TestLikedSongsLockSerialization in test_player_coverage2.py)."""
-
-    def __init__(self):
-        self.acquire_count = 0
-        self.release_count = 0
-
-    def __enter__(self):
-        self.acquire_count += 1
-        return self
-
-    def __exit__(self, *exc):
-        self.release_count += 1
-        return False
-
-
-class TestLikedSongsLockUsage(unittest.TestCase):
-
-    def test_liked_songs_playlist_acquires_the_shared_lock(self):
-        from ovos_media.player import OCPMediaPlayer
-
-        with patch("ovos_media.player.AudioService"), \
-             patch("ovos_media.player.VideoService"), \
-             patch("ovos_media.player.WebService"), \
-             patch("ovos_media.player.OcpMprisExporter"), \
-                 patch("ovos_media.player.Configuration", return_value={"media": {}}):
-            p = OCPMediaPlayer(FakeBus(), config={})
-
-        # the player's writer lock and the catalog's lock must be the same
-        # object, so a reader snapshotting under one is actually serialized
-        # against writers taking the other
-        self.assertIs(p._liked_songs_lock, p.media.liked_songs_lock)
-
-        p.media.liked_songs = {"file://a.mp3": {"title": "A", "play_count": 1}}
-        probe = _LockProbe()
-        p.media.liked_songs_lock = probe
-        _ = p.media.liked_songs_playlist
-        self.assertGreaterEqual(probe.acquire_count, 1)
-        self.assertEqual(probe.acquire_count, probe.release_count)
-
-    def test_concurrent_read_and_locked_write_no_runtime_error(self):
-        """Adversarial: a reader iterating liked_songs_playlist concurrently
-        with a locked writer mutating the dict must never raise
-        RuntimeError (dictionary changed size during iteration). This test
-        FAILS on the pre-fix code (unlocked property read) within ~2s."""
-        from ovos_media.player import OCPMediaPlayer
-
-        with patch("ovos_media.player.AudioService"), \
-             patch("ovos_media.player.VideoService"), \
-             patch("ovos_media.player.WebService"), \
-             patch("ovos_media.player.OcpMprisExporter"), \
-                 patch("ovos_media.player.Configuration", return_value={"media": {}}):
-            p = OCPMediaPlayer(FakeBus(), config={})
-
-        p.media.liked_songs = {
-            f"file://{i}.mp3": {"title": f"T{i}", "play_count": i}
-            for i in range(20)
-        }
-        errors = []
-        stop = threading.Event()
-
-        def reader():
-            while not stop.is_set():
-                try:
-                    list(p.media.liked_songs_playlist)
-                except RuntimeError as e:
-                    errors.append(e)
-                    return
-
-        def writer():
-            i = 0
-            while not stop.is_set():
-                uri = f"file://{i}.mp3"
-                with p._liked_songs_lock:
-                    if uri in p.media.liked_songs:
-                        p.media.liked_songs.pop(uri)
-                    else:
-                        p.media.liked_songs[uri] = {"title": "T", "play_count": i}
-                i += 1
-
-        threads = [threading.Thread(target=reader) for _ in range(4)]
-        threads.append(threading.Thread(target=writer))
-        for t in threads:
-            t.start()
-        time.sleep(2)
-        stop.set()
-        for t in threads:
-            t.join(timeout=2)
-
-        self.assertEqual(errors, [], f"race triggered: {errors}")
 
 
 # ---------------------------------------------------------------------------

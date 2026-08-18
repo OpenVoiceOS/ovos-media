@@ -582,13 +582,13 @@ class TestHandleInvalidMedia(unittest.TestCase):
 
     def test_speaks_track_failed_once(self):
         p = _make_player()
-        p.media.speak_dialog = MagicMock()
+        p.media.notify_dialog = MagicMock()
         p.handle_invalid_media(Message("ovos.common_play.media.state"))
-        p.media.speak_dialog.assert_called_once_with("track.failed")
+        p.media.notify_dialog.assert_called_once_with("track.failed")
         self.assertTrue(p._track_failed_spoken)
         # rate-limited: a second call must not speak again
         p.handle_invalid_media(Message("ovos.common_play.media.state"))
-        p.media.speak_dialog.assert_called_once_with("track.failed")
+        p.media.notify_dialog.assert_called_once_with("track.failed")
 
 
 # ---------------------------------------------------------------------------

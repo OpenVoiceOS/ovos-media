@@ -5,8 +5,12 @@ from ovos_utils.log import LOG
 from ovos_utils.process_utils import ProcessStatus, StatusCallbackMap
 
 from ovos_config.config import Configuration
+from ovos_utils.ocp import OCP_ID
+
 from ovos_media.bus.api import OCPBusApi
+from ovos_media.catalog import LikedSongsStore
 from ovos_media.player import OCPMediaPlayer
+from ovos_media.skill import OCPVoiceSkill
 
 def on_ready():
     LOG.info('Media service is ready.')
@@ -65,7 +69,11 @@ class MediaService(Thread):
         self.status.bind(self.bus)
         self.status.set_alive()
         self.init_messagebus()
-        self.ocp = OCPMediaPlayer(self.bus, validate_source=self.validate_source)
+        # one liked-songs store, shared by the player (which writes likes
+        # and play counts) and the voice skill (which searches it)
+        self.likes = LikedSongsStore()
+        self.ocp = OCPMediaPlayer(self.bus, validate_source=self.validate_source,
+                                  likes=self.likes)
         # 'ovos.common_play.home' and 'ovos.common_play.search.start'/
         # '.search.end' are pipeline-side signals (the OCP pipeline plugin
         # uses them to drive a GUI's own navigation/loading state); this
@@ -77,6 +85,17 @@ class MediaService(Thread):
         # is built here (after OCPMediaPlayer's plugin-loading construction
         # above), not in init_messagebus() which runs before self.ocp is
         # assigned, so the topic is never answerable before self.ocp exists.
+        # the voice front-end: the only thing in this daemon that speaks.
+        # It shares the player's liked-songs store and listens on its
+        # catalog for the dialogs playback asks to have announced. The
+        # skill_id is what the OCP pipeline sees on its search results and
+        # keyword registrations, so it stays the one the catalog always
+        # used.
+        self.voice_skill = OCPVoiceSkill(bus=self.bus,
+                                         skill_id=OCP_ID + ".favorites",
+                                         likes=self.likes,
+                                         catalog=self.ocp.media,
+                                         validate_source=self.validate_source)
         self.bus_api = OCPBusApi(self.bus, service=self)
 
     def handle_ping(self, message):
@@ -111,6 +130,10 @@ class MediaService(Thread):
         self.ocp.reset()
         self.status.set_stopping()
         self.ocp.shutdown()
+        # default_shutdown() is the real OVOSSkill teardown (plain
+        # shutdown() is the no-op user hook): without it a shut-down
+        # service keeps answering the media intents.
+        self.voice_skill.default_shutdown()
         # the service's own topics go last: a shut-down service must stop
         # answering ping/opm.audio.query too.
         self.bus_api.shutdown()

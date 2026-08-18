@@ -146,7 +146,7 @@ class TestShuffleAllFailedBounded(unittest.TestCase):
 
         mock_play.assert_not_called()
         mock_state.assert_called_once_with(PlayerState.STOPPED)
-        p.media.speak_dialog.assert_called_once_with("queue.finished")
+        p.media.notify_dialog.assert_called_once_with("queue.finished")
 
 
 class TestDeadPlayerStopsHandlingDuckTopics(unittest.TestCase):
@@ -209,7 +209,7 @@ class TestShuffleEmptyQueueFailedTrackBounded(unittest.TestCase):
 
         mock_play.assert_not_called()
         mock_state.assert_called_once_with(PlayerState.STOPPED)
-        p.media.speak_dialog.assert_called_once_with("queue.finished")
+        p.media.notify_dialog.assert_called_once_with("queue.finished")
 
 
 if __name__ == "__main__":
