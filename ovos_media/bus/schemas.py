@@ -120,12 +120,35 @@ def decode_media_state(data: dict) -> MediaState:
     return state
 
 
+def _requires_uri(media: dict) -> bool:
+    """True when a media dict has no alternate shape standing in for a
+    direct 'uri' - mirrors ``ovos_utils.ocp.dict2entry``'s own precedence
+    (playlist > extractor_id > uri), so :func:`decode_media` and
+    :func:`validated_entries` agree on which dicts are exempt from the uri
+    check.
+    """
+    return not (media.get("playlist") or media.get("extractor_id"))
+
+
+def _has_valid_uri(media: dict) -> bool:
+    """True when a media dict carries a non-empty string 'uri'.
+
+    An int/float/list/etc 'uri' passes ``dict2entry``'s truthiness check
+    and reaches ``MediaEntry``/roster.select unvalidated, where it dies as
+    a logged traceback instead of the warn-and-drop every other malformed
+    bus field gets.
+    """
+    uri = media.get("uri")
+    return isinstance(uri, str) and uri != ""
+
+
 def decode_media(data: dict) -> Optional[dict]:
     """Decode the 'media' track of an ``ovos.common_play.play`` payload.
 
-    Returns None when there is nothing to act on: an absent/empty track, or
-    a track that is not a dict (a list/str would bleed into the now_playing
-    metadata field by field).
+    Returns None when there is nothing to act on: an absent/empty track, a
+    track that is not a dict (a list/str would bleed into the now_playing
+    metadata field by field), or a plain-media dict (no 'playlist'/
+    'extractor_id') whose 'uri' is not a non-empty string.
     """
     media = data.get("media")
     if not media:
@@ -133,6 +156,10 @@ def decode_media(data: dict) -> Optional[dict]:
     if not isinstance(media, dict):
         LOG.warning(f"ignoring play request, expected a dict track, "
                     f"got: {media!r}")
+        return None
+    if _requires_uri(media) and not _has_valid_uri(media):
+        LOG.warning(f"ignoring play request with invalid 'uri': "
+                    f"{media.get('uri')!r}")
         return None
     return media
 
@@ -320,6 +347,9 @@ def validated_entries(tracks) -> list:
     for track in tracks:
         try:
             if isinstance(track, dict):
+                if _requires_uri(track) and not _has_valid_uri(track):
+                    raise ValueError(f"invalid 'uri' in track: "
+                                      f"{track.get('uri')!r}")
                 track = MediaEntry.from_dict(track)
             if not isinstance(track, (MediaEntry, Playlist, PluginStream)):
                 raise ValueError(f"not a valid track: {track!r}")
