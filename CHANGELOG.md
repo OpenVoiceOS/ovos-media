@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.0a6](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a6) (2026-08-18)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a5...2.0.0a6)
+
+**Merged pull requests:**
+
+- refactor: single-threaded player dispatcher [\#166](https://github.com/OpenVoiceOS/ovos-media/pull/166) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.0.0a5](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a5) (2026-08-17)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a4...2.0.0a5)
@@ -451,10 +459,6 @@
 ## [0.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a1) (2026-06-22)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a22...0.0.2a1)
-
-**Closed issues:**
-
-- When music is playing, gui complains about missing file [\#22](https://github.com/OpenVoiceOS/ovos-media/issues/22)
 
 **Merged pull requests:**
 
