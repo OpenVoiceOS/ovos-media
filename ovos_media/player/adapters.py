@@ -25,6 +25,11 @@ from ovos_utils.ocp import TrackState
 class PlayerAdapter(metaclass=abc.ABCMeta):
     """One concrete player, behind the verbs the virtual player speaks."""
 
+    #: True for a player ovos-media only observes. External players join the
+    #: roster so the virtual player knows about them, but they are never told
+    #: to give way — an MPRIS takeover exists to yield to one of them.
+    external: bool = False
+
     def __init__(self, player_id: str):
         self._id = player_id
 
@@ -212,3 +217,52 @@ class SkillPlayerAdapter(PlayerAdapter):
 
     def length(self) -> Optional[int]:
         return self.now_playing.length
+
+
+class MprisPlayerAdapter(PlayerAdapter):
+    """One external MPRIS player, as a member of the roster.
+
+    Registered by :class:`~ovos_media.mpris.manager.ExternalPlayerManager` as
+    external players appear on the session bus, so the roster knows about the
+    players ovos-media observes as well as the ones it drives. It is a
+    presence, not a remote control: nothing routes a transport verb here.
+    External players are driven by the manager's own coroutines on the D-Bus
+    thread, and the verbs below stay inert until a routing table row sends
+    something their way.
+    """
+
+    external = True
+
+    def __init__(self, manager, bus_name: str):
+        super().__init__(f"mpris:{bus_name}")
+        self.manager = manager
+        self.bus_name = bus_name
+
+    def can_play(self, uri: str) -> bool:
+        # ovos-media never hands a track to an external player; it only
+        # reflects what that player chose to play on its own
+        return False
+
+    def _ignore(self, verb: str) -> None:
+        LOG.debug(f"{verb} is not routed to external MPRIS players, ignoring")
+
+    def play(self, uri: str = None) -> None:
+        self._ignore("play")
+
+    def pause(self) -> None:
+        self._ignore("pause")
+
+    def resume(self) -> None:
+        self._ignore("resume")
+
+    def stop(self) -> None:
+        self._ignore("stop")
+
+    def seek(self, milliseconds: int) -> None:
+        self._ignore("seek")
+
+    def position(self):
+        return self.manager.player_meta.get(self.bus_name, {}).get("position")
+
+    def length(self):
+        return self.manager.player_meta.get(self.bus_name, {}).get("length")

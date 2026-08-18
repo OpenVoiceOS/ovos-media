@@ -313,7 +313,9 @@ state over the bus.
 
 ## MPRIS Integration
 
-`OcpMprisExporter` (`ovos_media/mpris.py`) runs in a background thread. MPRIS
+`OcpMprisExporter` (`ovos_media/mpris/`) runs in a background thread, splitting
+the D-Bus loop, the exported OCP player and the external-player manager into
+`loop.py`, `exporter.py` and `manager.py`. MPRIS
 participation is enabled with the `enable_mpris` config key (off by default); when
 enabled, `OCPMediaPlayer.__init__` creates the exporter, passing `manage_players`
 from `ocp_config.get("manage_external_players", False)`.

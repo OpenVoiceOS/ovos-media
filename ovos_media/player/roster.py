@@ -83,6 +83,28 @@ class PlayerRoster:
     def get(self, player_id: str):
         return self._by_id.get(player_id)
 
+    def register(self, adapter) -> None:
+        """Add a player that appeared while the daemon was running.
+
+        External MPRIS players come and go; the ones ovos-media owns are all
+        there from the start.
+        """
+        if adapter.id in self._by_id:
+            return
+        self.adapters.append(adapter)
+        self._by_id[adapter.id] = adapter
+
+    def unregister(self, player_id: str) -> None:
+        """Forget a player that went away."""
+        adapter = self._by_id.pop(player_id, None)
+        if adapter is not None:
+            self.adapters.remove(adapter)
+
+    @property
+    def owned(self) -> List[object]:
+        """Every player ovos-media drives itself, external ones excluded."""
+        return [a for a in self.adapters if not getattr(a, "external", False)]
+
     def owner(self, playback_type: PlaybackType):
         """The player that starts tracks of *playback_type*, or None."""
         return self.get(_PLAYBACK_OWNER.get(playback_type, ""))
