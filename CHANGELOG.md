@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.0a9](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a9) (2026-08-18)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a8...2.0.0a9)
+
+**Merged pull requests:**
+
+- refactor: consolidate service wiring and reorganize tests by area [\#172](https://github.com/OpenVoiceOS/ovos-media/pull/172) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.0.0a8](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a8) (2026-08-18)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a7...2.0.0a8)
