@@ -33,6 +33,8 @@ from ovos_bus_client.message import Message
 from ovos_utils.fakebus import FakeBus
 from ovos_utils.ocp import MediaEntry, MediaState, PlaybackType, PlayerState
 
+from player_fixture import make_player
+
 
 def _make_player():
     from ovos_media.player import OCPMediaPlayer
@@ -295,5 +297,32 @@ class TestQueueFinishedDialog(unittest.TestCase):
         player.shutdown()
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestHandleInvalidMedia(unittest.TestCase):
+    """handle_invalid_media speaks track.failed, rate-limited to once per queue."""
+
+    def test_speaks_track_failed_once(self):
+        p = make_player()
+        p.media.notify_dialog = MagicMock()
+        p.handle_invalid_media(Message("ovos.common_play.media.state"))
+        p.media.notify_dialog.assert_called_once_with("track.failed")
+        self.assertTrue(p._track_failed_spoken)
+        # rate-limited: a second call must not speak again
+        p.handle_invalid_media(Message("ovos.common_play.media.state"))
+        p.media.notify_dialog.assert_called_once_with("track.failed")
+
+
+class TestPlayerOnInvalidStream(unittest.TestCase):
+    """Test on_invalid_stream."""
+
+    def test_on_invalid_stream_marks_uri_failed_and_schedules_retry(self):
+        """on_invalid_stream should record the failed uri and schedule a retry."""
+        p = make_player()
+        p.playlist = MagicMock()
+        p.playlist.entries = []
+        p.now_playing.uri = "http://example.com/bad.mp3"
+        p._schedule_play_next = MagicMock()
+
+        p.on_invalid_stream()
+
+        self.assertIn("http://example.com/bad.mp3", p._failed_uris)
+        p._schedule_play_next.assert_called_once()

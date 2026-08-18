@@ -38,6 +38,8 @@ from ovos_utils.ocp import (
     PlayerState,
 )
 
+from player_fixture import make_player
+
 
 def _track(uri, title, playback=PlaybackType.AUDIO):
     return MediaEntry(uri=uri, title=title, playback=playback)
@@ -504,5 +506,58 @@ class TestDeferredStop(unittest.TestCase):
                          "a superseded deferred stop killed the new playback")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestHandlePlaybackEnded(unittest.TestCase):
+    """handle_playback_ended calls play_next when playlist has items and autoplay is on."""
+
+    def test_plays_next_when_playlist_has_tracks(self):
+        p = make_player()
+        p.ocp_config = {"autoplay": True}
+        p.playlist.__len__ = MagicMock(return_value=2)
+        p.play_next = MagicMock()
+        p.handle_playback_ended(Message("ovos.common_play.media.state"))
+        p.play_next.assert_called_once()
+
+    def test_noop_when_empty_playlist(self):
+        p = make_player()
+        p.ocp_config = {"autoplay": True}
+        p.playlist.__len__ = MagicMock(return_value=0)
+        p.play_next = MagicMock()
+        p.handle_playback_ended(Message("ovos.common_play.media.state"))
+        p.play_next.assert_not_called()
+
+    def test_noop_when_autoplay_false(self):
+        p = make_player()
+        p.ocp_config = {"autoplay": False}
+        p.playlist.__len__ = MagicMock(return_value=2)
+        p.play_next = MagicMock()
+        p.handle_playback_ended(Message("ovos.common_play.media.state"))
+        p.play_next.assert_not_called()
+
+
+class TestHandlePlayerMediaUpdateEndOfMedia(unittest.TestCase):
+    """handle_player_media_update triggers handle_playback_ended on END_OF_MEDIA."""
+
+    def test_end_of_media_triggers_playback_ended(self):
+        p = make_player()
+        p.handle_playback_ended = MagicMock()
+        msg = Message("ovos.common_play.media.state",
+                      {"state": int(MediaState.END_OF_MEDIA)})
+        p.handle_player_media_update(msg)
+        p.handle_playback_ended.assert_called_once()
+
+    def test_invalid_media_triggers_play_next(self):
+        p = make_player()
+        p.handle_invalid_media = MagicMock()
+        p.play_next = MagicMock()
+        p.ocp_config = {"autoplay": True}
+        # The skip is scheduled through on_invalid_stream() rather than
+        # called inline, so it lands on the next tick, not this one.
+        p.invalid_stream_delay = 0.01
+        msg = Message("ovos.common_play.media.state",
+                      {"state": int(MediaState.INVALID_MEDIA)})
+        p.handle_player_media_update(msg)
+        p.handle_invalid_media.assert_called_once()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not p.play_next.called:
+            time.sleep(0.01)
+        p.play_next.assert_called_once()

@@ -1,16 +1,17 @@
+"""The daemon: what gets built, in what order, and what gets torn down."""
 from threading import Thread
 
-from ovos_bus_client import Message, MessageBusClient
-from ovos_utils.log import LOG
-from ovos_utils.process_utils import ProcessStatus, StatusCallbackMap
-
+from ovos_bus_client import MessageBusClient
 from ovos_config.config import Configuration
+from ovos_utils.log import LOG
 from ovos_utils.ocp import OCP_ID
+from ovos_utils.process_utils import ProcessStatus, StatusCallbackMap
 
 from ovos_media.bus.api import OCPBusApi
 from ovos_media.catalog import LikedSongsStore
 from ovos_media.player import OCPMediaPlayer
 from ovos_media.skill import OCPVoiceSkill
+
 
 def on_ready():
     LOG.info('Media service is ready.')
@@ -32,7 +33,6 @@ def on_stopping():
     LOG.info('Media service is shutting down...')
 
 
-# TODO
 class MediaService(Thread):
     def __init__(self, ready_hook=on_ready, error_hook=on_error,
                  stopping_hook=on_stopping, alive_hook=on_alive,
@@ -68,23 +68,12 @@ class MediaService(Thread):
         self.bus = bus
         self.status.bind(self.bus)
         self.status.set_alive()
-        self.init_messagebus()
+        Configuration.set_config_update_handlers(self.bus)
         # one liked-songs store, shared by the player (which writes likes
         # and play counts) and the voice skill (which searches it)
         self.likes = LikedSongsStore()
         self.ocp = OCPMediaPlayer(self.bus, validate_source=self.validate_source,
                                   likes=self.likes)
-        # 'ovos.common_play.home' and 'ovos.common_play.search.start'/
-        # '.search.end' are pipeline-side signals (the OCP pipeline plugin
-        # uses them to drive a GUI's own navigation/loading state); this
-        # daemon has no in-process GUI and no other state to change in
-        # response to them, so it does not subscribe to any of the three.
-        # A bus message with no subscriber here is legal — nothing else in
-        # this daemon depends on them being handled.
-        # opm.audio.query's handler reads self.ocp.audio_service — the edge
-        # is built here (after OCPMediaPlayer's plugin-loading construction
-        # above), not in init_messagebus() which runs before self.ocp is
-        # assigned, so the topic is never answerable before self.ocp exists.
         # the voice front-end: the only thing in this daemon that speaks.
         # It shares the player's liked-songs store and listens on its
         # catalog for the dialogs playback asks to have announced. The
@@ -96,31 +85,11 @@ class MediaService(Thread):
                                          likes=self.likes,
                                          catalog=self.ocp.media,
                                          validate_source=self.validate_source)
+        # last: the daemon's own topics read the player built above
         self.bus_api = OCPBusApi(self.bus, service=self)
-
-    def handle_ping(self, message):
-        """
-        Handle ovos.common_play.ping Messages and emit a response
-        @param message: message associated with request
-        """
-        self.bus.emit(message.reply("ovos.common_play.pong"))
 
     def run(self):
         self.status.set_ready()
-
-    def handle_opm_audio_query(self, message: Message) -> None:
-        """Handle ``opm.audio.query`` — report installed audio backends.
-
-        Returns the same structure as the old ``PlaybackService`` handler so
-        that OPM discovery continues to work after migration to ovos-media.
-        """
-        backends = self.ocp.audio_service.available_backends() if self.ocp else {}
-        data = {
-            "plugins": list(backends.keys()),
-            "configs": backends,
-            "options": {},
-        }
-        self.bus.emit(message.response(data))
 
     def shutdown(self):
         """Shutdown the audio service cleanly.
@@ -137,9 +106,3 @@ class MediaService(Thread):
         # the service's own topics go last: a shut-down service must stop
         # answering ping/opm.audio.query too.
         self.bus_api.shutdown()
-
-    def init_messagebus(self):
-        """
-        Start speech related handlers.
-        """
-        Configuration.set_config_update_handlers(self.bus)

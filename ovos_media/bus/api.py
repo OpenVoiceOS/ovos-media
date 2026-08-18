@@ -63,6 +63,28 @@ class BusHandler:
     dispatch: bool = True
 
 
+class _ServiceTopics:
+    """The two topics the daemon answers about itself.
+
+    'ovos.common_play.ping' proves the daemon is alive, and
+    'opm.audio.query' reports the installed audio backends in the shape
+    OPM discovery expects.
+    """
+
+    def __init__(self, bus, service) -> None:
+        self.bus = bus
+        self.service = service
+
+    def handle_ping(self, message) -> None:
+        self.bus.emit(message.reply("ovos.common_play.pong"))
+
+    def handle_opm_audio_query(self, message) -> None:
+        backends = self.service.ocp.audio_service.available_backends()
+        self.bus.emit(message.response({"plugins": list(backends.keys()),
+                                        "configs": backends,
+                                        "options": {}}))
+
+
 class OCPBusApi:
     """Owns every bus subscription of an ovos-media process.
 
@@ -260,11 +282,16 @@ class OCPBusApi:
                        player.handle_mpris_now_playing),
         ]
 
-    @staticmethod
-    def _service_table(service) -> List[BusHandler]:
+    def _service_table(self, service) -> List[BusHandler]:
+        # the daemon's own two topics, answered here rather than by the
+        # MediaService: both are pure bus edge, and the query one reads the
+        # player the service built, so it can only be bound once that
+        # player exists — which is when this edge is constructed.
+        topics = _ServiceTopics(self.bus, service)
+        self._service_topics = topics
         return [
-            BusHandler("ovos.common_play.ping", service.handle_ping),
-            BusHandler("opm.audio.query", service.handle_opm_audio_query),
+            BusHandler("ovos.common_play.ping", topics.handle_ping),
+            BusHandler("opm.audio.query", topics.handle_opm_audio_query),
         ]
 
     def _wrap(self, entry: BusHandler) -> Callable:

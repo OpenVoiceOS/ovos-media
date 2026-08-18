@@ -1,58 +1,25 @@
 """Tests for OCPMediaPlayer preferred service resolution and NowPlaying."""
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from ovos_utils.ocp import PlayerState, LoopState, MediaState, PlaybackType
-from ovos_utils.fakebus import FakeBus
+from ovos_utils.ocp import PlayerState, LoopState, PlaybackType
+
+from player_fixture import make_player
 
 
-def _make_player():
-    """Return a minimal OCPMediaPlayer with all bus/service deps mocked.
-
-    OCPMediaPlayer extends OVOSAbstractApplication which has strict type
-    checks on the `bus` property.  We use FakeBus to satisfy them, and
-    patch out the super().__init__ call so no real bus connection is made.
-    """
-    from ovos_media.player import OCPMediaPlayer
-    with patch("ovos_media.player.AudioService"), \
-         patch("ovos_media.player.VideoService"), \
-         patch("ovos_media.player.WebService"), \
-         patch("ovos_media.player.OcpMprisExporter"), \
-         patch("ovos_media.player.Configuration", return_value={"media": {}}), \
-         patch("ovos_media.player.OCPMediaCatalog"):
-        p = OCPMediaPlayer.__new__(OCPMediaPlayer)
-        p._init_runtime_state()
-        p.ocp_config = {}
-        p.state = PlayerState.STOPPED
-        p.loop_state = LoopState.NONE
-        p.media_state = MediaState.NO_MEDIA
-        p.shuffle = False
-        p.track_history = {}
-        p._paused_on_duck = False
-        p.now_playing = MagicMock()
-        p.playlist = MagicMock()
-        p.playlist.as_list.return_value = []
-        p.media = MagicMock()
-        p.audio_service = MagicMock()
-        p.video_service = MagicMock()
-        p.web_service = MagicMock()
-        p.current = None
-        p.mpris = None
-        p.bus = FakeBus()
-    return p
 
 
 class TestPlayerStateTransitions(unittest.TestCase):
     """set_player_state must reject wrong types and emit a bus message."""
 
     def test_set_player_state_rejects_invalid_type(self):
-        p = _make_player()
+        p = make_player()
         p.bus.emit = MagicMock()
         with self.assertRaises(TypeError):
             p.set_player_state("playing")
 
     def test_set_player_state_emits_bus_message_on_change(self):
-        p = _make_player()
+        p = make_player()
         emitted = []
         p.bus.emit = lambda m: emitted.append(m)
         # state starts at STOPPED; changing to PLAYING should emit
@@ -61,7 +28,7 @@ class TestPlayerStateTransitions(unittest.TestCase):
         self.assertIn("ovos.common_play.player.state", msg_types)
 
     def test_set_player_state_noop_when_same_state(self):
-        p = _make_player()
+        p = make_player()
         p.bus.emit = MagicMock()
         # state already STOPPED — should be a no-op
         p.set_player_state(PlayerState.STOPPED)
@@ -78,7 +45,7 @@ class TestResolvePreferredService(unittest.TestCase):
         return b
 
     def test_returns_matching_backend_by_name(self):
-        p = _make_player()
+        p = make_player()
         vlc = self._make_backend("vlc")
         mpv = self._make_backend("mpv")
         p.audio_service.services = [vlc, mpv]
@@ -87,7 +54,7 @@ class TestResolvePreferredService(unittest.TestCase):
         self.assertEqual(result, vlc)
 
     def test_returns_matching_backend_by_alias(self):
-        p = _make_player()
+        p = make_player()
         vlc = self._make_backend("vlc-plugin", aliases=["vlc"])
         p.audio_service.services = [vlc]
         p.audio_service.get_preferred_players.return_value = ["vlc"]
@@ -95,7 +62,7 @@ class TestResolvePreferredService(unittest.TestCase):
         self.assertEqual(result, vlc)
 
     def test_returns_none_when_no_preference(self):
-        p = _make_player()
+        p = make_player()
         p.audio_service.services = [self._make_backend("vlc")]
         p.audio_service.get_preferred_players.return_value = []
         p.ocp_config = {}
@@ -103,14 +70,14 @@ class TestResolvePreferredService(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_returns_none_when_preferred_not_loaded(self):
-        p = _make_player()
+        p = make_player()
         p.audio_service.services = [self._make_backend("mpv")]
         p.audio_service.get_preferred_players.return_value = ["vlc"]
         result = p._resolve_preferred_service(p.audio_service)
         self.assertIsNone(result)
 
     def test_falls_back_to_ocp_config_preferred(self):
-        p = _make_player()
+        p = make_player()
         vlc = self._make_backend("vlc")
         p.audio_service.services = [vlc]
         p.audio_service.get_preferred_players.return_value = None
@@ -119,5 +86,60 @@ class TestResolvePreferredService(unittest.TestCase):
         self.assertEqual(result, vlc)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestPlayerProperties(unittest.TestCase):
+    """active_skill, playback_type, tracks, can_prev, can_next."""
+
+    def test_active_skill_getter(self):
+        p = make_player()
+        p.now_playing.skill_id = "my.skill"
+        self.assertEqual(p.active_skill, "my.skill")
+
+    def test_active_skill_setter(self):
+        p = make_player()
+        p.active_skill = "new.skill"
+        self.assertEqual(p.now_playing.skill_id, "new.skill")
+
+    def test_playback_type_getter(self):
+        p = make_player(PlaybackType.VIDEO)
+        self.assertEqual(p.playback_type, PlaybackType.VIDEO)
+
+    def test_playback_type_setter(self):
+        p = make_player()
+        p.playback_type = PlaybackType.VIDEO
+        self.assertEqual(p.now_playing.playback, PlaybackType.VIDEO)
+
+    def test_tracks_returns_list(self):
+        p = make_player()
+        p.playlist.entries = []
+        result = p.tracks
+        self.assertIsInstance(result, list)
+
+    def test_can_prev_false_when_first_track(self):
+        p = make_player()
+        p.now_playing.playback = PlaybackType.AUDIO
+        p.playlist.is_first_track = True
+        self.assertFalse(p.can_prev)
+
+    def test_can_prev_true_for_mpris(self):
+        p = make_player(PlaybackType.MPRIS)
+        p.playlist.is_first_track = True
+        self.assertTrue(p.can_prev)
+
+    def test_can_next_true_with_shuffle(self):
+        p = make_player()
+        p.shuffle = True
+        self.assertTrue(p.can_next)
+
+    def test_can_next_true_with_loop(self):
+        p = make_player()
+        p.loop_state = LoopState.REPEAT
+        self.assertTrue(p.can_next)
+
+    def test_can_next_false_when_last_track_no_loop(self):
+        p = make_player()
+        p.loop_state = LoopState.NONE
+        p.shuffle = False
+        p.playlist.is_last_track = True
+        p.media.search_playlist.is_last_track = True
+        p.ocp_config = {"merge_search": False}
+        self.assertFalse(p.can_next)

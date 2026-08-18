@@ -132,10 +132,11 @@ player to set `PlayerState.PLAYING`; on `MediaState.END_OF_MEDIA` it resets.
 
 ## Message Bus Events
 
-### MediaService handlers
+### Daemon handlers
 
-Registered in `MediaService.__init__` and `MediaService.init_messagebus`
-(`ovos_media/service.py`).
+The two topics the daemon answers about itself are registered by `OCPBusApi`
+(`ovos_media/bus/api.py`), which the `MediaService` constructs last, once the
+player those handlers read exists.
 
 | Message type | Handler | Notes |
 | :--- | :--- | :--- |
@@ -202,7 +203,7 @@ calls the handler below.
 | `ovos.common_play.media.state` | `OCPMediaPlayer.set_media_state` | `{"state": MediaState}` |
 | `ovos.common_play.track.state` | `BaseMediaService.handle_media_state_change` (and the backend templates) | `{"state": TrackState}` |
 | `ovos.common_play.status.response` | `OCPMediaPlayer.handle_status` (reply to `ovos.common_play.status`) | full status snapshot |
-| `ovos.common_play.pong` | `MediaService.handle_ping` | empty data |
+| `ovos.common_play.pong` | `OCPBusApi` ping handler | empty data |
 | `mycroft.audio.play_sound` | `OCPMediaPlayer.on_invalid_stream` / `handle_like` | `{"uri": "snd/…"}` |
 | `mycroft.stop.handled` | `OCPMediaPlayer.handle_mycroft_stop` | `{"by": "ovos-media"}` |
 

@@ -1,4 +1,4 @@
-"""Regression tests covering two OCPMediaPlayer defect fixes.
+"""Two OCPMediaPlayer bounds: the shuffle branch and handler teardown.
 
 Shuffle bounds
     play_next's shuffle branch must respect the same termination bounds as
@@ -17,11 +17,6 @@ Dead-player duck/unduck/cork leak
     takes the dedup branch for EVERY topic bound to it — including a plain
     topic whose registration never lived in that table — and silently
     removes nothing for it instead of falling through to _remove_normal().
-
-The console-script resolution fix for test_help_flag.py (resolving
-Path(sys.executable).parent / "ovos-media" instead of shutil.which(), which
-could certify a stale shared-venv script) is covered by test_help_flag.py
-itself; no separate regression test is needed here.
 """
 import unittest
 from unittest.mock import MagicMock, patch
@@ -29,14 +24,18 @@ from unittest.mock import MagicMock, patch
 from ovos_bus_client.message import Message
 from ovos_utils.fakebus import FakeBus
 from ovos_utils.ocp import (
-    PlayerState, MediaState, TrackState, LoopState,
+    PlayerState, MediaState, LoopState,
     PlaybackType, MediaEntry, Playlist,
 )
 
+from player_fixture import make_player
 
-def _make_player(playback_type=PlaybackType.AUDIO):
-    """Return a minimal OCPMediaPlayer with all external deps mocked
-    (same helper shape as test_player_coverage2.py's _make_player)."""
+
+
+
+def _make_shuffling_player(playback_type=PlaybackType.AUDIO):
+    """A mocked player already in shuffle mode, with a real Playlist so the
+    merged queue these bounds tests build is the one the player reads."""
     from ovos_media.player import OCPMediaPlayer
 
     with patch("ovos_media.player.AudioService"), \
@@ -73,7 +72,6 @@ def _make_player(playback_type=PlaybackType.AUDIO):
         p.audio_service = MagicMock()
         p.video_service = MagicMock()
         p.web_service = MagicMock()
-        p.current = None
         p.mpris = None
         p.bus = FakeBus()
     return p
@@ -87,7 +85,7 @@ class TestShuffleAllFailedBounded(unittest.TestCase):
     """An all-failing shuffle+REPEAT queue must stop instead of hot-looping."""
 
     def test_all_failing_shuffle_repeat_stops_bounded(self):
-        p = _make_player()
+        p = _make_shuffling_player()
         p.loop_state = LoopState.REPEAT
         tracks = [_track(f"http://{i}.mp3", f"T{i}") for i in range(4)]
         for t in tracks:
@@ -111,7 +109,7 @@ class TestShuffleAllFailedBounded(unittest.TestCase):
         """Control: the failure bound must not fire when at least one
         unfailed track remains - shuffle should keep advancing/replaying
         the good track, never stopping."""
-        p = _make_player()
+        p = _make_shuffling_player()
         p.loop_state = LoopState.REPEAT
         good = _track("http://good.mp3", "Good")
         bad_tracks = [_track(f"http://bad{i}.mp3", f"Bad{i}") for i in range(3)]
@@ -134,7 +132,7 @@ class TestShuffleAllFailedBounded(unittest.TestCase):
         """A single-track shuffle queue with repeat off has no other track
         to shuffle to - must stop and speak queue.finished, exactly like
         the sequential end-of-queue path, not replay forever."""
-        p = _make_player()
+        p = _make_shuffling_player()
         p.loop_state = LoopState.NONE
         only = _track("http://only.mp3", "Only")
         p.playlist.add_entry(only)
@@ -196,7 +194,7 @@ class TestShuffleEmptyQueueFailedTrackBounded(unittest.TestCase):
     now_playing track already failed must not be replayed forever."""
 
     def test_empty_merged_queue_failed_current_track_stops_bounded(self):
-        p = _make_player()
+        p = _make_shuffling_player()
         p.loop_state = LoopState.NONE
         p.shuffle = True
         p.playlist = Playlist()
@@ -212,5 +210,67 @@ class TestShuffleEmptyQueueFailedTrackBounded(unittest.TestCase):
         p.media.notify_dialog.assert_called_once_with("queue.finished")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestPlayerPlayShuffle(unittest.TestCase):
+    """Test play_shuffle."""
+
+    def test_play_shuffle_picks_different_track(self):
+        """play_shuffle should set now_playing to a different track."""
+        p = make_player()
+        from ovos_utils.ocp import Playlist
+        p.playlist = Playlist()
+        e1 = MediaEntry(uri="http://a.mp3", playback=PlaybackType.AUDIO)
+        e2 = MediaEntry(uri="http://b.mp3", playback=PlaybackType.AUDIO)
+        p.playlist.add_entry(e1)
+        p.playlist.add_entry(e2)
+        p.now_playing = MagicMock()
+        p.now_playing.uri = "http://a.mp3"
+        p.media = MagicMock()
+        p.media.search_playlist.entries = []
+
+        with patch.object(p, "set_now_playing") as mock_set:
+            p.play_shuffle()
+
+        mock_set.assert_called_once()
+
+    def test_play_shuffle_with_small_queue_returns_early(self):
+        """play_shuffle should return without changing track if queue < 2."""
+        p = make_player()
+        p.playlist = Playlist()
+        p.media = MagicMock()
+        p.media.search_playlist.entries = []
+
+        with patch.object(p, "set_now_playing") as mock_set:
+            p.play_shuffle()
+
+        mock_set.assert_not_called()
+
+
+class TestPlayerPlayNextWithShuffle(unittest.TestCase):
+    """Test play_next with shuffle enabled."""
+
+    def test_play_next_with_shuffle_starts_playback(self):
+        """play_next with shuffle=True must select a track AND start it -
+        play_shuffle only picks, play() is what reaches the backend. The
+        old test mocked play_shuffle out, which hid exactly that gap."""
+        p = make_player()
+        p.shuffle = True
+
+        with patch.object(p, "play") as mock_play:
+            p.play_next()
+
+        mock_play.assert_called_once()
+
+
+class TestPlayerPlayPrevWithShuffle(unittest.TestCase):
+    """Test play_prev with shuffle."""
+
+    def test_play_prev_with_shuffle_starts_playback(self):
+        """Same contract as play_next: a shuffled 'previous' must actually
+        start playback, not just repoint now_playing."""
+        p = make_player()
+        p.shuffle = True
+
+        with patch.object(p, "play") as mock_play:
+            p.play_prev()
+
+        mock_play.assert_called_once()

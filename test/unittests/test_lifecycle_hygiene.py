@@ -1,9 +1,10 @@
-"""Regression tests for four lifecycle defects:
+"""What a MediaService owes its own lifecycle.
 
-L1 - shutdown() left bus listeners bound (zombie service kept answering
-     ping/status/etc. after "shutdown").
-L3 - liking with nothing playing persisted an empty-string store entry.
-L4 - opm.audio.query was bound before self.ocp existed.
+shutdown() unbinds every listener it bound, so a shut-down service stops
+answering ping/status. Liking with nothing playing persists nothing rather
+than an empty-string store entry. opm.audio.query is never answerable
+before self.ocp exists. Player and service both survive construction on a
+plain FakeBus.
 """
 import unittest
 from unittest.mock import MagicMock, patch
@@ -36,7 +37,7 @@ def _make_service(bus):
     return svc
 
 
-class TestL1ZombieServiceShutdown(unittest.TestCase):
+class TestZombieServiceShutdown(unittest.TestCase):
     """shutdown() must remove every listener the bus edge added, across both
     OCPMediaPlayer and MediaService, and a shut-down service must not answer
     ping."""
@@ -115,7 +116,7 @@ class TestL1ZombieServiceShutdown(unittest.TestCase):
         self.assertEqual(replies, [])
 
 
-class TestL3EmptyLikeGuarded(unittest.TestCase):
+class TestEmptyLikeGuarded(unittest.TestCase):
     """Liking with nothing playing must not persist an empty-string entry."""
 
     def _make_player(self):
@@ -154,30 +155,28 @@ class TestL3EmptyLikeGuarded(unittest.TestCase):
         self.assertIn("http://x.mp3", self.store)
 
 
-class TestL4LateQueryBinding(unittest.TestCase):
+class TestLateQueryBinding(unittest.TestCase):
     """opm.audio.query must never be reachable before self.ocp exists."""
 
     def test_no_attribute_error_during_slow_construction_window(self):
-        """Simulate a query arriving while OCPMediaPlayer is still being
-        constructed (the historical crash window): since the handler is now
-        registered only after self.ocp is assigned, the query cannot even
-        reach a handler that doesn't exist yet - so no error is raised and
-        no listener answers early."""
+        """A query arriving while OCPMediaPlayer is still being constructed
+        reaches no handler at all: the topic is bound only after self.ocp is
+        assigned, so nothing answers early and nothing raises."""
         bus = FakeBus()
         errors = []
         bus.on("error", lambda m: errors.append(m))
 
         from ovos_media.service import MediaService
-        original_init_messagebus = MediaService.init_messagebus
+        from ovos_media.player import OCPMediaPlayer
 
         queried_during_construction = {}
 
-        def patched_init_messagebus(self):
-            original_init_messagebus(self)
-            # at this point (post init_messagebus, pre self.ocp assignment)
-            # opm.audio.query must NOT be bound yet.
+        def slow_player(*args, **kwargs):
+            # mid-construction: self.ocp is not assigned yet, so
+            # opm.audio.query must NOT be bound.
             queried_during_construction["bound"] = "opm.audio.query" in bus.ee.event_names()
             bus.emit(Message("opm.audio.query"))
+            return OCPMediaPlayer(*args, **kwargs)
 
         with patch("ovos_media.player.AudioService"), \
              patch("ovos_media.player.VideoService"), \
@@ -188,7 +187,7 @@ class TestL4LateQueryBinding(unittest.TestCase):
              patch("ovos_media.service.OCPVoiceSkill"), \
              patch("ovos_media.service.ProcessStatus") as MockStatus, \
              patch("ovos_media.service.Configuration", return_value={"media": {}}), \
-             patch.object(MediaService, "init_messagebus", patched_init_messagebus):
+             patch("ovos_media.service.OCPMediaPlayer", slow_player):
             MockStatus.return_value = MagicMock()
             svc = MediaService(bus=bus)
             svc.ocp.audio_service.available_backends.return_value = {}
@@ -205,5 +204,51 @@ class TestL4LateQueryBinding(unittest.TestCase):
         self.assertEqual(errors, [])
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestDaemonStartup(unittest.TestCase):
+    """A real OCPMediaPlayer and a real MediaService both construct on a
+    FakeBus, with no Playlist patching and no __new__ bypass."""
+
+    def test_ocp_media_player_constructs_on_fakebus(self):
+        from ovos_media.player import OCPMediaPlayer
+        bus = FakeBus()
+        # plugin loading talks to entrypoints on the real system; keep that
+        # minimal external surface mocked out but construct everything else
+        # (Playlist, NowPlaying, OCPMediaCatalog, the three BaseMediaService
+        # subclasses...) for real.
+        player = OCPMediaPlayer(bus, config={})
+        self.assertEqual(player.playlist.title, "Search Results")
+        self.assertEqual(len(player.playlist), 0)
+
+    def test_media_service_constructs_on_fakebus(self):
+        from ovos_media.service import MediaService
+        bus = FakeBus()
+        service = MediaService(bus=bus)
+        self.assertIsNotNone(service.ocp)
+        self.assertEqual(service.ocp.playlist.title, "Search Results")
+        # validate_source must be plumbed through to the voice front-end
+        # (#90), which mirrors the player's session gate on its shuffle
+        # intents
+        self.assertIs(service.voice_skill.validate_source,
+                      service.validate_source)
+        service.shutdown()
+
+
+class TestPlayerShutdownReachesBackends(unittest.TestCase):
+    """OCPMediaPlayer.shutdown() shuts down the audio/video/web
+    BaseMediaService instances, not just the higher-level objects."""
+
+    def test_shutdown_calls_service_shutdown(self):
+        from ovos_media.player import OCPMediaPlayer
+        bus = FakeBus()
+        player = OCPMediaPlayer(bus, config={})
+        player.audio_service.shutdown = MagicMock()
+        player.video_service.shutdown = MagicMock()
+        player.web_service.shutdown = MagicMock()
+        player.now_playing.shutdown = MagicMock()
+        player.media.shutdown = MagicMock()
+
+        player.shutdown()
+
+        player.audio_service.shutdown.assert_called_once_with()
+        player.video_service.shutdown.assert_called_once_with()
+        player.web_service.shutdown.assert_called_once_with()

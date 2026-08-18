@@ -4,11 +4,13 @@ skill/bus-supplied entry raise mid-mutation."""
 import unittest
 from unittest.mock import MagicMock, patch
 
+from ovos_bus_client.message import Message
 from ovos_utils.fakebus import FakeBus
 from ovos_utils.ocp import (
     PlayerState, MediaState, LoopState, PlaybackType, MediaEntry, Playlist,
-    PluginStream,
-)
+    )
+
+from player_fixture import make_player
 
 
 def _make_player():
@@ -183,5 +185,90 @@ class TestPlayMediaAllInvalidDisambiguationKeepsPriorResults(unittest.TestCase):
                          [VALID_TRACK_2["uri"]])
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestPlayMedia(unittest.TestCase):
+    """play_media sets up now_playing and calls play."""
+
+    def _make_audio_entry(self):
+        return MediaEntry(
+            title="Test Song",
+            artist="Test Artist",
+            uri="http://example.com/song.mp3",
+            playback=PlaybackType.AUDIO,
+        )
+
+    def test_play_media_calls_set_now_playing(self):
+        p = make_player(PlaybackType.AUDIO)
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+        p.media.search_playlist.replace = MagicMock()
+        entry = self._make_audio_entry()
+        p.playlist.__contains__ = MagicMock(return_value=False)
+        p.play_media(entry)
+        p.set_now_playing.assert_called_once_with(entry)
+
+    def test_play_media_calls_play(self):
+        p = make_player(PlaybackType.AUDIO)
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+        entry = self._make_audio_entry()
+        p.playlist.__contains__ = MagicMock(return_value=False)
+        p.play_media(entry)
+        p.play.assert_called_once()
+
+    def test_play_media_accepts_dict(self):
+        p = make_player(PlaybackType.AUDIO)
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+        p.playlist.__contains__ = MagicMock(return_value=False)
+        track_dict = {
+            "title": "Dict Song",
+            "uri": "http://example.com/dict.mp3",
+            "playback": PlaybackType.AUDIO,
+        }
+        p.play_media(track_dict)
+        p.play.assert_called_once()
+
+    def test_play_media_invalid_type_warns_and_returns_without_raising(self):
+        # play_media is bus-facing; an unrepresentable track type must not
+        # raise out of the handler, just be logged and skipped.
+        p = make_player()
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+        p.play_media(12345)  # must not raise
+        p.set_now_playing.assert_not_called()
+        p.play.assert_not_called()
+
+    def test_play_media_stops_mpris(self):
+        p = make_player(PlaybackType.AUDIO)
+        p.mpris = MagicMock()
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+        p.playlist.__contains__ = MagicMock(return_value=False)
+        entry = self._make_audio_entry()
+        p.play_media(entry)
+        p.mpris.stop.assert_called_once()
+
+    def test_play_media_with_disambiguation_updates_search_playlist(self):
+        p = make_player(PlaybackType.AUDIO)
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+        p.playlist.__contains__ = MagicMock(return_value=False)
+        entry = self._make_audio_entry()
+        other = MediaEntry(title="Alt", uri="http://example.com/alt.mp3",
+                           playback=PlaybackType.AUDIO)
+        p.media.search_playlist.__contains__ = MagicMock(return_value=False)
+        p.play_media(entry, disambiguation=[entry, other])
+        p.media.search_playlist.replace.assert_called_once()
+
+
+class TestPlayerHandlePlayRequestNoMedia(unittest.TestCase):
+    """Test handle_play_request with no media."""
+
+    def test_play_request_no_media_returns_early(self):
+        """handle_play_request with no media should return without playing."""
+        p = make_player()
+
+        with patch.object(p, "play_media") as mock_play:
+            p.handle_play_request(Message("ovos.common_play.play", {}))
+
+        mock_play.assert_not_called()
