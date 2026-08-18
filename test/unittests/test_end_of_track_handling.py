@@ -370,7 +370,7 @@ class TestLoadOkPlayFailQueue(unittest.TestCase):
 
     def _four_track_queue(self, bus):
         player = _make_player(bus)
-        player.media.speak_dialog = MagicMock()
+        player.media.notify_dialog = MagicMock()
         player.invalid_stream_delay = 0.02
         tracks = [_track(f"http://example.com/{n}.mp3", n)
                   for n in ("a", "b", "c", "d")]
@@ -412,7 +412,7 @@ class TestLoadOkPlayFailQueue(unittest.TestCase):
         while len(calls) < len(tracks) and time.monotonic() < deadline:
             time.sleep(0.02)
 
-        speak_calls = [c for c in player.media.speak_dialog.call_args_list
+        speak_calls = [c for c in player.media.notify_dialog.call_args_list
                       if c.args and c.args[0] == "track.failed"]
         self.assertEqual(len(speak_calls), 1,
                         "track.failed must be spoken once per queue, not "

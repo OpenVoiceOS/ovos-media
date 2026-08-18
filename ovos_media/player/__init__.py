@@ -1,20 +1,14 @@
-import threading
-from os.path import dirname
-from threading import RLock
 from typing import List, Optional, Union
-
-from json_database import JsonStorageXDG
 
 from ovos_bus_client import MessageBusClient
 from ovos_config import Configuration
-from ovos_config.meta import get_xdg_base
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
 from ovos_media.bus.api import OCPBusApi
-from ovos_media.utils import is_default_session
+from ovos_media.catalog import LikedSongsStore, MediaCatalog
 from ovos_media.bus.schemas import (decode_media_state, decode_playlist_tracks,
                                     decode_seek, decode_track_position,
-                                    flatten_media_types, validated_entries)
+                                    validated_entries)
 from ovos_media.player.queue import (AllFailed, KeepCurrent, PlayQueue,
                                      QueueEnd)
 from ovos_media.player.now_playing import NowPlaying
@@ -25,347 +19,16 @@ from ovos_plugin_manager.ocp import load_stream_extractors
 from ovos_plugin_manager.templates.media import MediaBackend
 from ovos_utils.log import LOG
 from ovos_bus_client.message import Message
-from ovos_utils.ocp import MediaType, Playlist
-from ovos_utils.ocp import OCP_ID, PlayerState, LoopState, PlaybackType, PlaybackMode, TrackState, MediaState, \
+from ovos_utils.ocp import Playlist
+from ovos_utils.ocp import PlayerState, LoopState, PlaybackType, PlaybackMode, TrackState, MediaState, \
     MediaEntry, PluginStream
-from ovos_workshop.decorators.ocp import ocp_search
-from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 
-
-# locale/ and qt5/ live in the ovos_media package, one level above this
-# subpackage; the catalog skill reads its dialogs, intents and icons from there
-RESOURCES_DIR = dirname(dirname(__file__))
-
-
-class OCPMediaCatalog(OVOSCommonPlaybackSkill):
-    def __init__(self, *args, validate_source: bool = True, **kwargs):
-        kwargs.setdefault("resources_dir", RESOURCES_DIR)
-        super().__init__(*args, **kwargs)
-        # mirrors the bus edge's session gate: keeps playback-affecting
-        # intent handlers (shuffle on/off) on the local/"default" session, unless the owning service was configured
-        # with media.validate_source: false (satellite acting on everything)
-        self.validate_source = validate_source
-        self.skill_icon = f"{RESOURCES_DIR}/qt5/images/liked.svg"
-
-        self.liked_songs = JsonStorageXDG("OCP_liked_songs",
-                                          subfolder=get_xdg_base())
-        # Guards every liked_songs mutation + store() together, and every
-        # unlocked read that iterates the dict (eg. liked_songs_playlist);
-        # store() does a json.dump that iterates the dict, and
-        # handle_like/handle_unlike/play()'s play-count block all mutate it
-        # from separate bus-dispatch threads. OCPMediaPlayer aliases its
-        # own _liked_songs_lock to this one so writers and readers share it.
-        self.liked_songs_lock = RLock()
-        LOG.debug(f"Liked songs playlist loaded: {self.liked_songs.path}")
-        self.search_playlist = Playlist()
-        self.ocp_skills = {}
-        self.featured_skills = {}
-        # TODO - add search results clear/replace events
-
-        # register keywords
-        def norm_name(n):
-            return n.split("|")[0].split("(")[0].split("[")[0].split("{")[0].split("-")[0].strip()
-
-        # ahocorasick_ner ("ner" extra) is OPTIONAL, but its absence is not
-        # a pure speed optimization: OVOSCommonPlaybackSkill.ocp_voc_match
-        # (used by search_db, see below) hard-depends on it, so without it
-        # "play my liked songs" / "play my favorites" style searches never
-        # match anything. It is still true that the five WhatSong/WhatAlbum/
-        # WhatArtist/ShuffleOn/ShuffleOff intents registered below do not
-        # depend on it and keep working.
-        #
-        # register_ocp_keyword() itself does two things: it registers the
-        # samples with the local Aho-Corasick NER matcher (raises
-        # ImportError without the "ner" extra), and it emits
-        # 'ovos.common_play.register_keyword' on the bus so the OCP pipeline
-        # classifier learns the keywords too - that emit does not need local
-        # NER. In the installed ovos-workshop, the emit happens *after* the
-        # per-language NER registration loop inside the same method, so an
-        # ImportError there prevents the emit from ever running. We
-        # replicate the (NER-independent) emit here directly so the
-        # classifier still learns the keywords even without the "ner" extra.
-        # liked-songs is a persisted JSON store editable outside this
-        # process (GUI, manual edits, older/newer schema versions). A single
-        # malformed entry (a non-dict value, or a dict missing "title") used
-        # to raise here and kill daemon startup entirely. Skip and warn
-        # instead — mirrors the defensive .get() style liked_songs_playlist
-        # already uses.
-        liked_titles = []
-        for uri, song in self.liked_songs.items():
-            if not isinstance(song, dict):
-                LOG.warning(f"Skipping malformed liked song entry {uri!r}: "
-                           f"expected a dict, got {type(song).__name__}")
-                continue
-            title = song.get("title", "")
-            if not title:
-                LOG.warning(f"Skipping liked song entry {uri!r}: missing/empty title")
-                continue
-            liked_titles.append(norm_name(title))
-
-        try:
-            self.register_ocp_keyword(MediaType.MUSIC, "song_name", liked_titles)
-            self.register_ocp_keyword(MediaType.MUSIC, "playlist_name",
-                                      ["favorite", "liked", "favorites",
-                                       "favorite songs", "favorite tracks",
-                                       "favorite music", "my favorite songs",
-                                       "my favorite tracks", "my favorite music",
-                                       "liked songs", "liked tracks", "liked music",
-                                       "my liked songs", "my liked tracks", "my liked music"])
-        except ImportError:
-            LOG.warning("ahocorasick_ner not installed - OCP local keyword "
-                       "NER matching disabled, and 'search_db' (eg. 'play "
-                       "my liked songs') will find nothing until it is "
-                       "installed. Install the 'ner' extra to fix this. "
-                       "The classifier is still informed of the keywords "
-                       "via the bus so media-type disambiguation still "
-                       "works.")
-            self._emit_ocp_keyword_registration(
-                MediaType.MUSIC, "song_name", liked_titles)
-            self._emit_ocp_keyword_registration(
-                MediaType.MUSIC, "playlist_name",
-                ["favorite", "liked", "favorites",
-                 "favorite songs", "favorite tracks",
-                 "favorite music", "my favorite songs",
-                 "my favorite tracks", "my favorite music",
-                 "liked songs", "liked tracks", "liked music",
-                 "my liked songs", "my liked tracks", "my liked music"])
-
-        # intents about the currently playing media, see issue #23
-        self.register_intent_file("WhatSong.intent", self.handle_what_song)
-        self.register_intent_file("WhatAlbum.intent", self.handle_what_album)
-        self.register_intent_file("WhatArtist.intent", self.handle_what_artist)
-        self.register_intent_file("ShuffleOn.intent", self.handle_shuffle_on)
-        self.register_intent_file("ShuffleOff.intent", self.handle_shuffle_off)
-
-    def _emit_ocp_keyword_registration(self, media_type: MediaType, label: str,
-                                       samples: List[str]) -> None:
-        """
-        Emit the 'ovos.common_play.register_keyword' bus message that
-        informs the OCP pipeline classifier about a set of keyword samples,
-        WITHOUT going through OVOSCommonPlaybackSkill.register_ocp_keyword
-        (which also registers the samples with the local Aho-Corasick NER
-        matcher and requires the optional "ner" extra to be installed).
-
-        This mirrors the (NER-independent) tail half of
-        OVOSCommonPlaybackSkill.register_ocp_keyword: same message name and
-        same payload shape, so the classifier cannot tell the difference.
-        Used as a fallback when ahocorasick_ner is not installed.
-        """
-        samples = list(set(samples))
-        for lang in self.native_langs:
-            if len(samples) >= 20:
-                csv_path = f"{self.ocp_cache_dir}/{self.skill_id}_{label}_{lang}.csv"
-                with open(csv_path, "w") as f:
-                    f.write("label,sample")
-                    for s in samples:
-                        f.write(f"\n{label},{s}")
-                self.bus.emit(
-                    Message('ovos.common_play.register_keyword',
-                            {"skill_id": self.skill_id,
-                             "label": label,
-                             "csv": csv_path,
-                             "media_type": media_type}))
-            else:
-                self.bus.emit(
-                    Message('ovos.common_play.register_keyword',
-                            {"skill_id": self.skill_id,
-                             "label": label,
-                             "samples": samples,
-                             "media_type": media_type}))
-
-    def _get_status(self, message: Message) -> Optional[dict]:
-        """Query current player status via the existing status bus API.
-
-        Reuses the 'ovos.common_play.status' request/response messages that
-        OCPMediaPlayer.handle_status already answers; this avoids adding any
-        new bus message types or coupling this skill directly to the
-        OCPMediaPlayer instance.
-
-        The request is forwarded from the triggering intent message so the
-        session context (session_id, lang, etc) is preserved on the wire.
-
-        Returns None if no response was received within the timeout (player
-        not responding), as opposed to an empty dict, which means the player
-        answered but nothing is currently playing.
-        """
-        response = self.bus.wait_for_response(message.forward("ovos.common_play.status"),
-                                               timeout=3)
-        return response.data if response else None
-
-    # WhatSong/WhatAlbum/WhatArtist are deliberately UN-gated by session:
-    # they mirror OCPMediaPlayer.handle_status, which itself answers every
-    # session's "ovos.common_play.status" query with the single shared
-    # player's state (its bus topic is not gated).
-    # The consistency rule this repo follows is that each intent front-end
-    # mirrors its backing handler's own gating - handle_status is global
-    # read-only state, so these read handlers stay global too. Only the
-    # shuffle on/off handlers below are gated, because they mirror
-    # handle_set_shuffle/handle_unset_shuffle, which ARE gated.
-    def handle_what_song(self, message):
-        status = self._get_status(message)
-        if status is None:
-            self.speak_dialog("player.not.responding")
-            return
-        title = status.get("title")
-        artist = status.get("artist")
-        if not title:
-            self.speak_dialog("nothing.playing")
-        elif artist:
-            self.speak_dialog("now.playing.song", {"title": title, "artist": artist})
-        else:
-            self.speak_dialog("now.playing.song.no.artist", {"title": title})
-
-    def handle_what_album(self, message):
-        status = self._get_status(message)
-        if status is None:
-            self.speak_dialog("player.not.responding")
-            return
-        if not status.get("title"):
-            self.speak_dialog("nothing.playing")
-        else:
-            # NowPlaying/MediaEntry does not track album metadata, so this
-            # always falls back gracefully instead of guessing or crashing.
-            self.speak_dialog("no.album.info")
-
-    def handle_what_artist(self, message):
-        status = self._get_status(message)
-        if status is None:
-            self.speak_dialog("player.not.responding")
-            return
-        title = status.get("title")
-        artist = status.get("artist")
-        if not title:
-            self.speak_dialog("nothing.playing")
-        elif artist:
-            self.speak_dialog("now.playing.artist", {"artist": artist})
-        else:
-            self.speak_dialog("no.artist.info")
-
-    def _is_default_session(self, message: Message) -> bool:
-        """Whether the player will act on a request forwarded from this
-        message, using the same rule the bus edge applies to
-        'ovos.common_play.shuffle.set'/'.unset'. On a non-default (e.g.
-        HiveMind satellite) session with validate_source left True the
-        emitted message is silently dropped by the player - this must not be
-        reported back to the user as a success. When validate_source is
-        False the player WILL act on it, so this front-end must agree."""
-        return is_default_session(message, self.validate_source)
-
-    def handle_shuffle_on(self, message):
-        if not self._is_default_session(message):
-            self.speak_dialog("cannot.control.device")
-            return
-        self.bus.emit(message.forward("ovos.common_play.shuffle.set"))
-        self.speak_dialog("shuffle.on")
-
-    def handle_shuffle_off(self, message):
-        if not self._is_default_session(message):
-            self.speak_dialog("cannot.control.device")
-            return
-        self.bus.emit(message.forward("ovos.common_play.shuffle.unset"))
-        self.speak_dialog("shuffle.off")
-
-    @ocp_search()
-    def search_db(self, phrase, media_type):
-        base_score = 15 if media_type == MediaType.MUSIC else 0
-        entities = self.ocp_voc_match(phrase)
-        base_score += 30 * len(entities)
-
-        if entities.get("playlist_name"):
-            if phrase.lower() == entities["playlist_name"]:
-                base_score = 100
-            yield {
-                "match_confidence": min(base_score + 35, 100),
-                "media_type": MediaType.MUSIC,
-                "playback": PlaybackType.AUDIO,
-                "playlist": [e.as_dict for e in self.liked_songs_playlist],
-                "skill_icon": self.skill_icon,
-                "title": "Liked Songs",
-                "skill_id": self.skill_id
-            }
-
-        if entities.get("song_name"):
-            title = entities["song_name"].lower()
-            for entry in self.liked_songs_playlist:
-                if title not in entry.title.lower():
-                    continue
-                result = entry.as_dict
-                result["match_confidence"] = min(base_score + 40, 100)
-                result["skill_id"] = self.skill_id
-                result["skill_icon"] = self.skill_icon
-                yield result
-
-    @property
-    def liked_songs_playlist(self) -> List[MediaEntry]:
-        # canonicalize the persisted liked-songs store (raw dicts) into
-        # MediaEntry objects; match_confidence tracks play_count so the entries
-        # sort most-played-first once handed to a Playlist.
-        # tolerate catalogs constructed via __new__ (bypassing __init__)
-        # that never set liked_songs_lock
-        lock = getattr(self, "liked_songs_lock", None) or RLock()
-        with lock:
-            items = list(self.liked_songs.items())
-        entries = [MediaEntry(uri=uri,
-                              title=song.get("title", ""),
-                              artist=song.get("artist", ""),
-                              image=song.get("image", ""),
-                              media_type=MediaType.MUSIC,
-                              playback=PlaybackType.AUDIO,
-                              match_confidence=song.get("play_count", 0) + 50)
-                   for uri, song in items]
-        return sorted(entries, key=lambda e: e.match_confidence, reverse=True)
-
-    def handle_skill_announce(self, message):
-        skill_id = message.data.get("skill_id")
-        skill_name = message.data.get("skill_name") or skill_id
-        img = message.data.get("image") or message.data.get("thumbnail")
-        has_featured = bool(message.data.get("featured_tracks"))
-        media_types = message.data.get("media_types") or \
-                      message.data.get("media_type") or \
-                      [MediaType.GENERIC]
-        media_types = flatten_media_types(media_types)
-
-        if skill_id not in self.ocp_skills:
-            LOG.debug(f"Registered {skill_id}")
-            self.ocp_skills[skill_id] = []
-
-        if has_featured:
-            LOG.debug(f"Found skill with featured media: {skill_id}")
-            self.featured_skills[skill_id] = {
-                "skill_id": skill_id,
-                "skill_name": skill_name,
-                "image": img,
-                "media_types": media_types
-            }
-
-    def handle_ocp_skill_detach(self, message):
-        skill_id = message.data["skill_id"]
-        if skill_id in self.ocp_skills:
-            self.ocp_skills.pop(skill_id)
-        if skill_id in self.featured_skills:
-            self.featured_skills.pop(skill_id)
-
-    def get_featured_skills(self, adult: bool = False) -> list:
-        """Emit a skills-get broadcast and return the currently registered featured skills.
-
-        The 200 ms wait allows in-process skill announcements to arrive before
-        the list is read.  A threading.Event is used instead of time.sleep so
-        the call can be interrupted by a shutdown signal in future work.
-        """
-        self.bus.emit(Message("ovos.common_play.skills.get"))
-        threading.Event().wait(timeout=0.2)  # non-blocking sleep equivalent
-        skills = list(self.featured_skills.values())
-        if adult:
-            return skills
-        return [s for s in skills
-                if MediaType.ADULT not in s["media_types"] and
-                MediaType.HENTAI not in s["media_types"]]
-
-    def clear(self):
-        self.search_playlist.clear()
-
-    def replace(self, playlist):
-        self.search_playlist.replace(playlist)
+# The catalog is constructed through this module-level name and nothing
+# else: ovoscope's OCPPlayerHarness patches ``ovos_media.player.
+# OCPMediaCatalog`` with a MagicMock to build a real player without a real
+# catalog, so the name has to stay both importable and the one the player
+# calls.
+OCPMediaCatalog = MediaCatalog
 
 
 class OCPMediaPlayer:
@@ -377,7 +40,7 @@ class OCPMediaPlayer:
     """
 
     def __init__(self, bus: MessageBusClient, config: Optional[dict] = None,
-                 validate_source: bool = True) -> None:
+                 validate_source: bool = True, likes=None) -> None:
         self.bus = bus
         self.ocp_config = config or Configuration().get("media", {})
         # When True, playback-executing handlers act only on the local/"default"
@@ -391,8 +54,11 @@ class OCPMediaPlayer:
         self.media_state: MediaState = MediaState.NO_MEDIA
         self.shuffle: bool = False
         self.track_history: dict = {}  # Dict of track URI to play count
-        self.media: OCPMediaCatalog = OCPMediaCatalog(bus=bus, skill_id=OCP_ID + ".favorites",
-                                                       validate_source=self.validate_source)
+        # MediaService injects the store it also gives the voice skill; a
+        # player built on its own has no one to share with, so it opens the
+        # store itself.
+        self.media: MediaCatalog = OCPMediaCatalog(
+            bus=bus, likes=likes if likes is not None else LikedSongsStore())
         self._init_runtime_state()
         # the owned queue, also the container the rest of the world reads as
         # "the playlist" (bus status, MPRIS track list)
@@ -450,19 +116,6 @@ class OCPMediaPlayer:
         self.dispatcher.post_hook = self.publish_snapshot
         # what queries answer from; replaced wholesale after every command
         self._snapshot: PlayerSnapshot = PlayerSnapshot()
-        # Alias of self.media.liked_songs_lock: guards every liked_songs
-        # mutation + store() together, and every unlocked read that
-        # iterates the dict. store() does a json.dump that iterates the
-        # dict, and handle_like/handle_unlike/play()'s play-count block all
-        # mutate it from separate bus-dispatch threads; without this a
-        # store() racing a pop() raises "dictionary changed size during
-        # iteration". Kept as a shared lock (not a private one) so
-        # OCPMediaCatalog.liked_songs_playlist can snapshot under the same
-        # lock writers use. Falls back to a private RLock when applied
-        # standalone (eg. tests calling _init_runtime_state() before
-        # self.media exists) so it stays usable outside full __init__.
-        media = getattr(self, "media", None)
-        self._liked_songs_lock = media.liked_songs_lock if media is not None else RLock()
         # True between a stop request and the next play(). An explicit stop
         # must NOT advance the queue, but OPM backends emit END_OF_MEDIA from
         # ocp_stop(), so a stop is indistinguishable from a natural track end at
@@ -539,27 +192,19 @@ class OCPMediaPlayer:
             # liked-songs playlist, and broadcast an empty-string keyword
             # sample to the NER matcher on the next boot.
             LOG.warning("Cannot like: nothing is playing and no uri was given")
-            self.media.speak_dialog("nothing.playing")
+            self.media.notify_dialog("nothing.playing")
             return
         title = message.data.get("title") or self.now_playing.title
         image = message.data.get("image") or message.data.get("thumbnail") or self.now_playing.image
         artist = message.data.get("artist") or self.now_playing.artist
-        with self._liked_songs_lock:
-            self.media.liked_songs[uri] = {"title": title, "artist": artist,
-                                           "image": image, "uri": uri}
-            self.media.liked_songs.store()
-        LOG.info(f"liked song: {uri}")
+        self.media.likes.like(uri, title=title, artist=artist, image=image)
         self.bus.emit(message.forward("mycroft.audio.play_sound",
                                       {"uri": "snd/acknowledge.mp3"}))
 
     def handle_unlike(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
-        with self._liked_songs_lock:
-            if uri in self.media.liked_songs:
-                self.media.liked_songs.pop(uri)
-                self.media.liked_songs.store()
-                LOG.info(f"unliked song: {uri}")
+        self.media.likes.unlike(uri)
 
     @property
     def active_skill(self) -> str:
@@ -978,10 +623,7 @@ class OCPMediaPlayer:
                 self.audio_service.services or self.video_service.services or
                 self.web_service.services):
             self._no_backend_dialog_spoken = True
-            try:
-                self.media.speak_dialog("no.playback.backend")
-            except Exception as e:
-                LOG.exception(f"Failed to speak no.playback.backend dialog: {e}")
+            self.media.notify_dialog("no.playback.backend")
 
         if disambiguation:
             valid_disambiguation = validated_entries(disambiguation)
@@ -1029,15 +671,7 @@ class OCPMediaPlayer:
         # two backends end up playing at once.
         self.roster.deactivate_others(self.playback_type)
 
-        # track play count - store() does a json.dump that iterates the
-        # dict, and handle_like()/handle_unlike() can mutate it concurrently
-        # from another bus-dispatch thread, so every mutation+store goes
-        # through _liked_songs_lock to serialize access to the dict.
-        with self._liked_songs_lock:
-            entry = self.media.liked_songs.get(self.now_playing.uri)
-            if entry is not None:
-                entry["play_count"] = entry.get("play_count", 0) + 1
-                self.media.liked_songs.store()
+        self.media.likes.increment_play_count(self.now_playing.uri)
 
         # validate new stream
         if not self.validate_stream():
@@ -1162,10 +796,7 @@ class OCPMediaPlayer:
                 LOG.info("Requested next (shuffle), but there are no more "
                          "tracks in the queue")
                 self.set_player_state(PlayerState.STOPPED)
-                try:
-                    self.media.speak_dialog("queue.finished")
-                except Exception as e:
-                    LOG.exception(f"Failed to speak queue.finished dialog: {e}")
+                self.media.notify_dialog("queue.finished")
             return
 
         queue = self._merged_queue()
@@ -1195,20 +826,7 @@ class OCPMediaPlayer:
             # here, not in handle_playback_ended — that call site fires on
             # every autoplay-off track end and on MPRIS-external track
             # ends too, neither of which is really "the queue finished".
-            # This always speaks into the default session. play_next() is
-            # reached from an END_OF_MEDIA bus event (or the invalid-stream
-            # retry timer), neither of which carries the session of whatever
-            # 'ovos.common_play.play' request originally started this
-            # queue — so a satellite-triggered playback's queue.finished
-            # announces on the default/local session instead of the
-            # satellite's. Fixing this needs the player to stash the
-            # triggering message's session at play time (handle_play_request)
-            # and thread it through to speak_dialog here and at the
-            # track.failed site below; see the issue tracker.
-            try:
-                self.media.speak_dialog("queue.finished")
-            except Exception as e:
-                LOG.exception(f"Failed to speak queue.finished dialog: {e}")
+            self.media.notify_dialog("queue.finished")
             return
         self.play()
 
@@ -1361,14 +979,10 @@ class OCPMediaPlayer:
         self.stop()
         if self.mpris:
             self.mpris.shutdown()
-        # self.media.shutdown() is the no-op OVOSSkill.shutdown() hook — it
-        # does NOT remove what ovos-workshop registered for the catalog (the
-        # OCP intents, the keyword/announce plumbing of the skill base class).
-        # default_shutdown() is the real OVOSSkill teardown that removes
-        # them; without it a "shut down" service kept answering intents.
-        # The catalog's own announce/skills.detach topics belong to
-        # self.bus_api, torn down below.
-        self.media.default_shutdown()
+        # the catalog's own announce/skills.detach topics belong to
+        # self.bus_api, torn down below; this only drops the dialog
+        # listeners a voice front-end registered
+        self.media.shutdown()
         self.audio_service.shutdown()
         self.video_service.shutdown()
         self.web_service.shutdown()
@@ -1430,12 +1044,7 @@ class OCPMediaPlayer:
         # does not talk over itself
         if not self._track_failed_spoken:
             self._track_failed_spoken = True
-            # Same default-session gap as queue.finished above — see that
-            # comment. INVALID_MEDIA carries no session either.
-            try:
-                self.media.speak_dialog("track.failed")
-            except Exception as e:
-                LOG.exception(f"Failed to speak track.failed dialog: {e}")
+            self.media.notify_dialog("track.failed")
 
     def handle_playback_ended(self, message, playback_type: PlaybackType = None,
                               playback_uri: str = None,

@@ -62,17 +62,21 @@ The rest of this document focuses on the daemon itself.
    Each loads OPM plugins at startup and delegates actual playback to the selected
    plugin instance.
 
-The player package splits along the state it owns: `OCPMediaPlayer` and the
-catalog skill in `ovos_media/player/__init__.py`, the queue in
+The player package splits along the state it owns: `OCPMediaPlayer` in
+`ovos_media/player/__init__.py`, the queue in
 `ovos_media/player/queue.py`, the now-playing tracker in
 `ovos_media/player/now_playing.py`, and stream extraction in
-`ovos_media/player/streams.py`. `PlayQueue` owns the user queue, the identity
+`ovos_media/player/streams.py`. What can be played is a separate package,
+`ovos_media/catalog/`: `MediaCatalog` holds the roster of announced OCP skills
+and the search results, `LikedSongsStore` owns the persisted liked songs and
+the lock serializing them, and `KeywordRegistrar` teaches the OCP pipeline the
+liked-song keywords. `PlayQueue` owns the user queue, the identity
 of the selected entry and the uris that failed to load, and answers which
 track comes next; what to do with that answer — repeat, autoplay, stop —
 stays with the player.
 
 Every subscription `MediaService`, `OCPMediaPlayer`, `NowPlaying` and
-`OCPMediaCatalog` make lives in the bus edge, `ovos_media/bus/api.py`.
+`MediaCatalog` make lives in the bus edge, `ovos_media/bus/api.py`.
 `OCPBusApi` holds one registration table naming, per topic, the payload decoder
 to run, whether the topic is gated to the local session, and the method to
 call. The same table drives teardown, so a shut-down daemon cannot keep
@@ -80,10 +84,22 @@ answering a topic it registered.
 
 The backend services are the exception: each of `AudioService`,
 `VideoService` and `WebService` binds its own
-`ovos.common_play.media.state` listener in `BaseMediaService.__init__`, and the
-skill base class the catalog inherits from registers its intents and keyword
-plumbing itself. Reading the table therefore tells you what the player layer
+`ovos.common_play.media.state` listener in `BaseMediaService.__init__`, and
+`OCPVoiceSkill` registers its intents and keyword plumbing through the skill
+base class. Reading the table therefore tells you what the player layer
 answers, not everything this process has bound.
+
+### The voice front-end
+
+`MediaService` also builds one real skill, `OCPVoiceSkill`
+(`ovos_media/skill.py`), and it is the only part of the daemon that speaks.
+It owns the five media intents ("what song is this", shuffle on/off), the
+liked-songs search results the OCP pipeline asks for, and every dialog.
+Playback code never calls `speak_dialog`: when a track fails, a queue ends or
+no backend is installed, the player asks its catalog to announce a dialog and
+the skill, registered as a listener on that catalog, decides what to say. A
+player running without a voice front-end therefore stays silent instead of
+reaching into a skill it does not own.
 
 Payload validation for all layers lives in `ovos_media/bus/schemas.py`.
 Every rule an incoming bus payload must satisfy — numeric fields that must be

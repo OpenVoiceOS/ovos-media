@@ -282,6 +282,7 @@ class TestPipelineSideSignalsAreNotHandled(unittest.TestCase):
              patch("ovos_media.player.OcpMprisExporter"), \
              patch("ovos_media.player.Configuration", return_value={"media": {}}), \
              patch("ovos_media.player.OCPMediaCatalog"), \
+             patch("ovos_media.service.OCPVoiceSkill"), \
              patch("ovos_media.service.ProcessStatus") as MockStatus, \
              patch("ovos_media.service.Configuration", return_value={"media": {}}):
             MockStatus.return_value = MagicMock()

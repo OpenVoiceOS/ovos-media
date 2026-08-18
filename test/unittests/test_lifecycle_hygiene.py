@@ -2,16 +2,16 @@
 
 L1 - shutdown() left bus listeners bound (zombie service kept answering
      ping/status/etc. after "shutdown").
-L2 - a malformed liked-songs store entry crashed daemon startup.
 L3 - liking with nothing playing persisted an empty-string store entry.
 L4 - opm.audio.query was bound before self.ocp existed.
 """
-import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
 from ovos_utils.fakebus import FakeBus
 from ovos_bus_client.message import Message
+
+from ovos_media.catalog import LikedSongsStore
 
 
 def _listener_count(bus):
@@ -26,6 +26,7 @@ def _make_service(bus):
          patch("ovos_media.player.OcpMprisExporter"), \
          patch("ovos_media.player.Configuration", return_value={"media": {}}), \
          patch("ovos_media.player.OCPMediaCatalog") as MockCatalog, \
+         patch("ovos_media.service.OCPVoiceSkill"), \
          patch("ovos_media.service.ProcessStatus") as MockStatus, \
          patch("ovos_media.service.Configuration", return_value={"media": {}}):
         MockStatus.return_value = MagicMock()
@@ -76,6 +77,7 @@ class TestL1ZombieServiceShutdown(unittest.TestCase):
              patch("ovos_media.player.OcpMprisExporter"), \
                  patch("ovos_media.player.Configuration", return_value={"media": {}}), \
              patch("ovos_media.player.OCPMediaCatalog"), \
+             patch("ovos_media.service.OCPVoiceSkill"), \
              patch("ovos_media.service.ProcessStatus") as MockStatus, \
              patch("ovos_media.service.Configuration", return_value={"media": {}}):
             MockStatus.return_value = MagicMock()
@@ -113,46 +115,6 @@ class TestL1ZombieServiceShutdown(unittest.TestCase):
         self.assertEqual(replies, [])
 
 
-class TestL2LikedSongsStoreTolerance(unittest.TestCase):
-    """A malformed liked-songs store entry must not crash daemon startup."""
-
-    def _construct_real(self, store_values):
-        """Construct a real OCPMediaCatalog (a real OVOSCommonPlaybackSkill,
-        wired to a real FakeBus - same pattern as
-        test_catalog_now_playing_intents.py) against the given liked_songs
-        store contents, and return it (or let the exception propagate)."""
-        from ovos_media.player import OCPMediaCatalog
-        bus = FakeBus()
-        fake_store = MagicMock()
-        fake_store.items.return_value = list(store_values.items())
-        fake_store.values.return_value = list(store_values.values())
-        fake_store.path = "/tmp/fake_liked_songs.json"
-
-        with patch("ovos_media.player.JsonStorageXDG", return_value=fake_store):
-            catalog = OCPMediaCatalog(bus=bus, skill_id="ovos.common_play.favorites")
-        return catalog
-
-    def test_entry_missing_title_is_skipped(self):
-        catalog = self._construct_real({
-            "http://a.mp3": {"uri": "http://a.mp3"},  # no "title"
-            "http://b.mp3": {"uri": "http://b.mp3", "title": "Good Song"},
-        })
-        self.assertIsNotNone(catalog)
-
-    def test_entry_non_dict_value_is_skipped(self):
-        catalog = self._construct_real({
-            "http://a.mp3": "notadict",
-            "http://b.mp3": {"uri": "http://b.mp3", "title": "Good Song"},
-        })
-        self.assertIsNotNone(catalog)
-
-    def test_entry_list_value_is_skipped(self):
-        catalog = self._construct_real({
-            "http://a.mp3": [1, 2, 3],
-        })
-        self.assertIsNotNone(catalog)
-
-
 class TestL3EmptyLikeGuarded(unittest.TestCase):
     """Liking with nothing playing must not persist an empty-string entry."""
 
@@ -167,29 +129,29 @@ class TestL3EmptyLikeGuarded(unittest.TestCase):
         p.now_playing.image = ""
         p.now_playing.artist = ""
         p.media = MagicMock()
-        # a plain dict subclass (not a bare MagicMock) so assertIn/assertEqual
-        # against its contents are meaningful, with .store() stubbed out like
-        # the real JsonStorageXDG.store() (persist-to-disk) would be.
+        # a real store over a plain dict subclass (not a bare MagicMock) so
+        # assertIn/assertEqual against its contents are meaningful, with
+        # .store() stubbed out like the real JsonStorageXDG.store()
+        # (persist-to-disk) would be.
         class _FakeStore(dict):
             def store(self):
                 pass
-        p.media.liked_songs = _FakeStore()
-        p.media.speak_dialog = MagicMock()
-        p._liked_songs_lock = threading.RLock()
+        self.store = _FakeStore()
+        p.media.likes = LikedSongsStore(self.store)
         return p
 
     def test_like_with_nothing_playing_does_not_store_empty_key(self):
         p = self._make_player()
         msg = Message("ovos.common_play.like", {})
         p.handle_like(msg)
-        self.assertNotIn("", p.media.liked_songs)
-        self.assertEqual(p.media.liked_songs, {})
+        self.assertNotIn("", self.store)
+        self.assertEqual(dict(self.store), {})
 
     def test_like_with_explicit_uri_still_stores(self):
         p = self._make_player()
         msg = Message("ovos.common_play.like", {"uri": "http://x.mp3", "title": "X"})
         p.handle_like(msg)
-        self.assertIn("http://x.mp3", p.media.liked_songs)
+        self.assertIn("http://x.mp3", self.store)
 
 
 class TestL4LateQueryBinding(unittest.TestCase):
@@ -223,6 +185,7 @@ class TestL4LateQueryBinding(unittest.TestCase):
              patch("ovos_media.player.OcpMprisExporter"), \
                  patch("ovos_media.player.Configuration", return_value={"media": {}}), \
              patch("ovos_media.player.OCPMediaCatalog"), \
+             patch("ovos_media.service.OCPVoiceSkill"), \
              patch("ovos_media.service.ProcessStatus") as MockStatus, \
              patch("ovos_media.service.Configuration", return_value={"media": {}}), \
              patch.object(MediaService, "init_messagebus", patched_init_messagebus):

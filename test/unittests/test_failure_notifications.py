@@ -10,7 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""Quick-win #4: spoken failure dialogs.
+"""Failure dialogs the player asks its catalog to announce.
+
+The player never speaks: it calls MediaCatalog.notify_dialog and the
+voice skill listening on the catalog turns that into speech (see
+test_voice_skill.py). What is pinned here is WHEN the player notifies.
 
 - no.playback.backend: spoken once, at the first play attempt, when zero
   backends of any kind are loaded.
@@ -64,24 +68,24 @@ class TestNoPlaybackBackendDialog(unittest.TestCase):
     def test_spoken_when_no_backends_loaded(self):
         p = self._make_player_with_backends([])
         p.play_media({"uri": "http://x.mp3", "title": "X"})
-        p.media.speak_dialog.assert_called_once_with("no.playback.backend")
+        p.media.notify_dialog.assert_called_once_with("no.playback.backend")
 
     def test_not_spoken_when_a_backend_is_loaded(self):
         p = self._make_player_with_backends([MagicMock()])
         p.play_media({"uri": "http://x.mp3", "title": "X"})
-        p.media.speak_dialog.assert_not_called()
+        p.media.notify_dialog.assert_not_called()
 
     def test_spoken_only_once_across_repeated_play_attempts(self):
         p = self._make_player_with_backends([])
         p.play_media({"uri": "http://x.mp3", "title": "X"})
         p.play_media({"uri": "http://y.mp3", "title": "Y"})
         p.play_media({"uri": "http://z.mp3", "title": "Z"})
-        self.assertEqual(p.media.speak_dialog.call_count, 1)
+        self.assertEqual(p.media.notify_dialog.call_count, 1)
 
     def test_video_only_backend_still_counts_as_available(self):
         p = self._make_player_with_backends([], video_services=[MagicMock()])
         p.play_media({"uri": "http://x.mp4", "title": "X"})
-        p.media.speak_dialog.assert_not_called()
+        p.media.notify_dialog.assert_not_called()
 
 
 class TestTrackFailedDialog(unittest.TestCase):
@@ -106,14 +110,14 @@ class TestTrackFailedDialog(unittest.TestCase):
     def test_spoken_on_first_invalid_media(self):
         p = self._make_player()
         p.handle_invalid_media()
-        p.media.speak_dialog.assert_called_once_with("track.failed")
+        p.media.notify_dialog.assert_called_once_with("track.failed")
 
     def test_not_spoken_again_for_a_second_invalid_track_in_the_same_queue(self):
         p = self._make_player()
         p.handle_invalid_media()
         p.handle_invalid_media()
         p.handle_invalid_media()
-        self.assertEqual(p.media.speak_dialog.call_count, 1)
+        self.assertEqual(p.media.notify_dialog.call_count, 1)
 
     def test_not_reset_by_loaded_media_alone(self):
         """LOADED_MEDIA without a subsequent confirmed-PLAYING TrackState
@@ -124,12 +128,12 @@ class TestTrackFailedDialog(unittest.TestCase):
         would never trip _all_tracks_failed() and would loop unbounded."""
         p = self._make_player()
         p.handle_invalid_media()
-        self.assertEqual(p.media.speak_dialog.call_count, 1)
+        self.assertEqual(p.media.notify_dialog.call_count, 1)
         # a bare LOADED_MEDIA/BUFFERED_MEDIA transition (no PLAYING_* track
         # state) must be a no-op for the guard
         p.media_state = MediaState.LOADED_MEDIA
         p.handle_invalid_media()
-        self.assertEqual(p.media.speak_dialog.call_count, 1,
+        self.assertEqual(p.media.notify_dialog.call_count, 1,
                         "LOADED_MEDIA alone must not reset the track.failed "
                         "rate limit")
 
@@ -141,7 +145,7 @@ class TestTrackFailedDialog(unittest.TestCase):
         from ovos_utils.ocp import TrackState
         p = self._make_player()
         p.handle_invalid_media()
-        self.assertEqual(p.media.speak_dialog.call_count, 1)
+        self.assertEqual(p.media.notify_dialog.call_count, 1)
         # set_player_state()'s own status-report side effects need a fuller
         # player than this fixture builds; stub it so the test isolates the
         # guard-reset logic under test (handle_track_state_change calling
@@ -157,7 +161,7 @@ class TestTrackFailedDialog(unittest.TestCase):
         self.assertEqual(p._failed_uris, set())
         self.assertFalse(p._track_failed_spoken)
         p.handle_invalid_media()
-        self.assertEqual(p.media.speak_dialog.call_count, 2)
+        self.assertEqual(p.media.notify_dialog.call_count, 2)
 
     def test_flag_is_cleared_by_reset_body(self):
         """reset() must clear the per-queue rate-limit flag alongside
@@ -180,7 +184,7 @@ class TestTrackFailedDialog(unittest.TestCase):
         self.assertFalse(p._track_failed_spoken)
         self.assertEqual(p._failed_uris, set())
         p.handle_invalid_media()
-        self.assertEqual(p.media.speak_dialog.call_count, 2)
+        self.assertEqual(p.media.notify_dialog.call_count, 2)
 
 
 def _track(uri, title, playback=PlaybackType.AUDIO):
@@ -189,14 +193,14 @@ def _track(uri, title, playback=PlaybackType.AUDIO):
 
 def _real_player(bus=None, config=None):
     """A real OCPMediaPlayer on a FakeBus (same construction pattern as
-    test_end_of_track_handling.py), with stream extraction and the actual
-    speak_dialog call stubbed out so tests observe calls without touching
-    real dialog resources."""
+    test_end_of_track_handling.py), with stream extraction stubbed out and
+    the dialog notification captured, so tests observe the announcements
+    without a voice front-end attached."""
     from ovos_media.player import OCPMediaPlayer
     bus = bus or FakeBus()
     player = OCPMediaPlayer(bus, config=config if config is not None else {})
     player.now_playing.extract_stream = lambda: None
-    player.media.speak_dialog = MagicMock()
+    player.media.notify_dialog = MagicMock()
     return player
 
 
@@ -226,13 +230,13 @@ class TestQueueFinishedDialog(unittest.TestCase):
             player.bus.emit(Message("ovos.common_play.media.state",
                                     {"state": MediaState.END_OF_MEDIA}))
             self.assertEqual(player.now_playing.uri, b.uri)
-            player.media.speak_dialog.assert_not_called()
+            player.media.notify_dialog.assert_not_called()
 
             # track B ends -> no more tracks -> spoken exactly once
             player.media_state = MediaState.BUFFERED_MEDIA
             player.bus.emit(Message("ovos.common_play.media.state",
                                     {"state": MediaState.END_OF_MEDIA}))
-        player.media.speak_dialog.assert_called_once_with("queue.finished")
+        player.media.notify_dialog.assert_called_once_with("queue.finished")
         self.assertEqual(player.state, PlayerState.STOPPED)
         player.shutdown()
 
@@ -251,7 +255,7 @@ class TestQueueFinishedDialog(unittest.TestCase):
             player.bus.emit(Message("ovos.common_play.media.state",
                                     {"state": MediaState.END_OF_MEDIA}))
             mock_play_next.assert_not_called()
-        player.media.speak_dialog.assert_not_called()
+        player.media.notify_dialog.assert_not_called()
         player.shutdown()
 
     def test_mpris_track_end_is_silent(self):
@@ -264,7 +268,7 @@ class TestQueueFinishedDialog(unittest.TestCase):
             message=None, playback_type=PlaybackType.MPRIS,
             playback_uri=a.uri, stop_requested=False,
         )
-        player.media.speak_dialog.assert_not_called()
+        player.media.notify_dialog.assert_not_called()
         player.shutdown()
 
     def test_explicit_stop_is_silent(self):
@@ -276,7 +280,7 @@ class TestQueueFinishedDialog(unittest.TestCase):
             message=None, playback_type=PlaybackType.AUDIO,
             playback_uri=a.uri, stop_requested=True,
         )
-        player.media.speak_dialog.assert_not_called()
+        player.media.notify_dialog.assert_not_called()
         player.shutdown()
 
     def test_not_spoken_when_nothing_ever_played(self):
@@ -287,7 +291,7 @@ class TestQueueFinishedDialog(unittest.TestCase):
             message=None, playback_type=PlaybackType.UNDEFINED,
             playback_uri=None, stop_requested=False,
         )
-        player.media.speak_dialog.assert_not_called()
+        player.media.notify_dialog.assert_not_called()
         player.shutdown()
 
 

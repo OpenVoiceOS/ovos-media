@@ -11,7 +11,7 @@ Covers defects surfaced by the ecosystem audit:
   a NowPlaying instance directly used to raise
   ``TypeError: Type is not JSON serializable: NowPlaying`` whenever orjson
   was installed (the GUI-update/bus payload path via ``as_dict``).
-* ``OCPMediaCatalog.liked_songs_playlist`` used to return (and mutate) the raw
+* the liked-songs search used to return (and mutate) the raw
   persisted store dicts, mixing plain dicts with the MediaEntry objects the
   playback path expects and polluting the on-disk store.
 """
@@ -66,55 +66,52 @@ class TestNowPlayingSerializesAllFields(unittest.TestCase):
                           "file://track.mp3")
 
 
-class TestLikedSongsPlaylistShape(unittest.TestCase):
-    """liked_songs_playlist must yield canonical MediaEntry objects."""
+class TestSearchResultShape(unittest.TestCase):
+    """The liked-songs search yields dicts (the OCP search contract)
+    carrying the same data the MediaEntry path exposes as attributes."""
 
-    def _make_catalog(self, liked):
-        from ovos_media.player import OCPMediaCatalog
-        cat = OCPMediaCatalog.__new__(OCPMediaCatalog)
-        cat.liked_songs = dict(liked)
-        cat.skill_icon = "icon.svg"
-        cat.skill_id = "ovos.common_play"
-        return cat
+    def _make_skill(self, liked):
+        from ovos_media.catalog import LikedSongsStore
+        from ovos_media.skill import OCPVoiceSkill
 
-    def test_returns_media_entries_with_attribute_access(self):
-        cat = self._make_catalog({
-            "file://a.mp3": {"title": "Alpha", "play_count": 2},
-            "file://b.mp3": {"title": "Beta", "play_count": 5},
-        })
-        entries = cat.liked_songs_playlist
-        self.assertTrue(all(isinstance(e, MediaEntry) for e in entries))
-        # attribute access must work on every entry (the playback path uses it)
-        self.assertEqual([e.title for e in entries], ["Beta", "Alpha"])
-        self.assertTrue(all(e.playback == PlaybackType.AUDIO for e in entries))
-        self.assertTrue(all(e.media_type == MediaType.MUSIC for e in entries))
+        class _FakeStore(dict):
+            def store(self):
+                pass
 
-    def test_does_not_mutate_persisted_store(self):
-        stored = {"file://a.mp3": {"title": "Alpha", "play_count": 1}}
-        cat = self._make_catalog(stored)
-        _ = cat.liked_songs_playlist
-        # the raw store dict must not gain search-only keys
-        self.assertEqual(stored["file://a.mp3"],
-                         {"title": "Alpha", "play_count": 1})
+        skill = OCPVoiceSkill.__new__(OCPVoiceSkill)
+        skill.likes = LikedSongsStore(_FakeStore(liked))
+        skill.skill_icon = "icon.svg"
+        skill.skill_id = "ovos.common_play"
+        return skill
 
     def test_search_song_branch_yields_serializable_dicts(self):
-        cat = self._make_catalog(
+        skill = self._make_skill(
             {"file://a.mp3": {"title": "Alpha", "play_count": 1}})
 
-        def fake_voc_match(phrase):
-            return {"song_name": "alpha"}
-
-        with patch.object(cat, "ocp_voc_match", side_effect=fake_voc_match):
-            results = list(cat.search_db("alpha", MediaType.MUSIC))
+        with patch.object(skill, "ocp_voc_match",
+                          side_effect=lambda phrase: {"song_name": "alpha"}):
+            results = list(skill.search_db("alpha", MediaType.MUSIC))
 
         self.assertEqual(len(results), 1)
         r = results[0]
-        # yielded results are dicts (OCP search contract) but carry the same
-        # data the MediaEntry path exposes as attributes
         self.assertEqual(r["uri"], "file://a.mp3")
         self.assertEqual(r["title"], "Alpha")
         self.assertEqual(r["playback"], PlaybackType.AUDIO)
         self.assertEqual(MediaEntry.from_dict(r).title, "Alpha")
+
+    def test_playlist_branch_yields_the_liked_songs_most_played_first(self):
+        skill = self._make_skill({
+            "file://a.mp3": {"title": "Alpha", "play_count": 2},
+            "file://b.mp3": {"title": "Beta", "play_count": 5},
+        })
+
+        with patch.object(skill, "ocp_voc_match",
+                          side_effect=lambda phrase: {"playlist_name": "liked songs"}):
+            results = list(skill.search_db("liked songs", MediaType.MUSIC))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual([t["title"] for t in results[0]["playlist"]],
+                         ["Beta", "Alpha"])
 
 
 if __name__ == "__main__":
