@@ -6,9 +6,9 @@ from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
 from ovos_media.bus.api import OCPBusApi
 from ovos_media.catalog import LikedSongsStore, MediaCatalog
-from ovos_media.bus.schemas import (decode_media_state, decode_playlist_tracks,
-                                    decode_seek, decode_track_position,
-                                    validated_entries)
+from ovos_media.bus.schemas import (decode_media, decode_media_state,
+                                    decode_playlist_tracks, decode_seek,
+                                    decode_track_position, validated_entries)
 from ovos_media.player.queue import (AllFailed, KeepCurrent, PlayQueue,
                                      QueueEnd)
 from ovos_media.player.now_playing import NowPlaying
@@ -20,7 +20,7 @@ from ovos_utils.log import LOG
 from ovos_bus_client.message import Message
 from ovos_utils.ocp import Playlist
 from ovos_utils.ocp import PlayerState, LoopState, PlaybackType, PlaybackMode, TrackState, MediaState, \
-    MediaEntry, PluginStream
+    MediaEntry, PluginStream, dict2entry
 
 # The catalog is constructed through this module-level name and nothing
 # else: ovoscope's OCPPlayerHarness patches ``ovos_media.player.
@@ -454,6 +454,12 @@ class OCPMediaPlayer:
 
         data = dict(data)
         data.setdefault("skill_id", player_id)
+        # dict2entry refuses a track without a uri, and not every external
+        # player reports one (mirrors mpris/manager.py's poller path) -
+        # fall back to a synthetic identifier so now_playing can always be
+        # constructed, instead of set_now_playing raising mid-mutation
+        # after active_skill/playback_type/handle_MPRIS_takeover already ran
+        data.setdefault("uri", f"mpris://{player_id}")
         data["playback"] = PlaybackType.MPRIS
         data["status"] = TrackState.PLAYING_MPRIS
         data["bg_image"] = (data.get("bg_image") or data.get("image")
@@ -594,8 +600,11 @@ class OCPMediaPlayer:
         @param playlist: list of tracks in the current playlist
         """
         if isinstance(track, dict):
+            # dict2entry, not MediaEntry.from_dict - the edge decoder
+            # accepts playlist-/extractor_id-shaped 'media' dicts too, and
+            # from_dict short-circuits on "uri" in track regardless of them
             try:
-                track = MediaEntry.from_dict(track)
+                track = dict2entry(track)
             except Exception as e:
                 LOG.warning(f"Ignoring play request, track can not be "
                             f"represented as a valid media entry: {e}")
@@ -1097,14 +1106,14 @@ class OCPMediaPlayer:
     # ovos common play bus api requests
     def handle_play_request(self, message):
         LOG.debug("Received OCP playback request")
+        media = decode_media(message.data)
+        if media is None:
+            return
+
         repeat = message.data.get("repeat", False)
         if repeat:
             self.loop_state = LoopState.REPEAT
 
-        media = message.data.get("media")
-        if not media:
-            LOG.warning("handle_play_request: message.data missing 'media' — ignoring")
-            return
         playlist = message.data.get("playlist") or [media]
         disambiguation = message.data.get("disambiguation") or playlist
 

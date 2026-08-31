@@ -471,6 +471,110 @@ class TestCorkUncork(unittest.TestCase):
 # TestStateMessages
 # ---------------------------------------------------------------------------
 
+class TestMalformedPlayPayloads(unittest.TestCase):
+    """A malformed 'media' shape on 'ovos.common_play.play' must be dropped
+    at the edge - zero player state change, and it never overwrites
+    now_playing - while still-valid shapes play normally."""
+
+    def _assert_dropped(self, h: OCPPlayerHarness, payload: dict) -> None:
+        with OCPCaptureSession(h.bus) as session:
+            h.bus.emit(Message("ovos.common_play.play", payload))
+            time.sleep(0.05)
+        self.assertEqual(h.player.state, PlayerState.STOPPED)
+        self.assertFalse(h.player.now_playing.uri)
+        self.assertFalse(any(m.msg_type == "ovos.common_play.track.state"
+                             for m in session.messages))
+
+    def test_non_string_uri_is_dropped(self) -> None:
+        with OCPPlayerHarness() as h:
+            self._assert_dropped(h, {"media": {"uri": 123, "title": "x"}})
+
+    def test_list_uri_is_dropped(self) -> None:
+        with OCPPlayerHarness() as h:
+            self._assert_dropped(h, {"media": {"uri": ["a"]}})
+
+    def test_non_dict_media_is_dropped(self) -> None:
+        with OCPPlayerHarness() as h:
+            self._assert_dropped(h, {"media": "not-a-dict"})
+
+    def test_valid_uri_still_plays(self) -> None:
+        with OCPPlayerHarness() as h:
+            h.play(_audio_entry("http://example.com/song.mp3"))
+            h.assert_now_playing_uri("http://example.com/song.mp3")
+            self.assertEqual(h.player.state, PlayerState.PLAYING)
+
+    def test_valid_playlist_shape_still_plays(self) -> None:
+        with OCPPlayerHarness() as h:
+            h.bus.emit(Message("ovos.common_play.play", {
+                "media": {"playlist": [
+                    {"uri": "http://example.com/a.mp3", "title": "a",
+                     "playback": PlaybackType.AUDIO}]},
+            }))
+            time.sleep(0.05)
+            self.assertEqual(h.player.state, PlayerState.PLAYING)
+            h.assert_now_playing_uri("http://example.com/a.mp3")
+
+    def test_valid_extractor_stream_shape_reaches_play_media(self) -> None:
+        # no stream-extractor plugin is registered in this harness, so the
+        # track itself cannot resolve to a playable uri - the point here is
+        # that the request reaches play_media at all (now_playing updated),
+        # unlike a malformed request which is dropped before touching it
+        with OCPPlayerHarness() as h:
+            h.bus.emit(Message("ovos.common_play.play", {
+                "media": {"extractor_id": "ovos.some.extractor",
+                          "stream": "http://example.com/b.mp3",
+                          "playback": PlaybackType.AUDIO},
+            }))
+            time.sleep(0.05)
+            self.assertTrue(h.player.now_playing.uri)
+
+    def test_playlist_wins_over_an_empty_uri(self) -> None:
+        # dict2entry's precedence is playlist > extractor_id > uri: an
+        # empty 'uri' alongside a valid 'playlist' must not sink the request
+        with OCPPlayerHarness() as h:
+            h.bus.emit(Message("ovos.common_play.play", {
+                "media": {"uri": "", "playlist": [
+                    {"uri": "file:///a.mp3", "title": "a",
+                     "playback": PlaybackType.AUDIO}]},
+            }))
+            time.sleep(0.05)
+            self.assertEqual(h.player.state, PlayerState.PLAYING)
+            h.assert_now_playing_uri("file:///a.mp3")
+
+    def test_mixed_good_and_bad_nested_playlist_plays_the_good_entry(self) -> None:
+        # dict2entry/Playlist.from_dict truthiness-checks each raw nested
+        # member and builds a MediaEntry from it unconditionally, one level
+        # down from the guard on the outer 'media' dict - the bad entry must
+        # be screened out before that happens, not crash validate_stream
+        with OCPPlayerHarness() as h:
+            with OCPCaptureSession(h.bus) as session:
+                h.bus.emit(Message("ovos.common_play.play", {
+                    "media": {"playlist": [
+                        {"uri": 5, "playback": PlaybackType.AUDIO},
+                        {"uri": "file:///ok.mp3", "title": "ok",
+                         "playback": PlaybackType.AUDIO}]},
+                }))
+                time.sleep(0.05)
+            self.assertEqual(h.player.state, PlayerState.PLAYING)
+            h.assert_now_playing_uri("file:///ok.mp3")
+            self.assertFalse(any(m.msg_type.startswith("ovos.common_play.") and
+                                 "ERROR" in str(m.data)
+                                 for m in session.messages))
+
+    def test_all_bad_nested_playlist_is_dropped(self) -> None:
+        with OCPPlayerHarness() as h:
+            with OCPCaptureSession(h.bus) as session:
+                h.bus.emit(Message("ovos.common_play.play", {
+                    "media": {"playlist": [
+                        {"uri": 5}, {"uri": ["also bad"]}]},
+                }))
+                time.sleep(0.05)
+            self.assertEqual(h.player.state, PlayerState.STOPPED)
+            self.assertFalse(h.player.now_playing.uri)
+            self.assertFalse(any(m.msg_type == "ovos.common_play.track.state"
+                                 for m in session.messages))
+
+
 class TestStateMessages(unittest.TestCase):
     """Bus message emission assertions via OCPCaptureSession."""
 

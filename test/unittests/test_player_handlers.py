@@ -767,6 +767,37 @@ class TestHandlePlayRequest(unittest.TestCase):
         p.handle_play_request(msg)
         p.play_media.assert_called_once()
 
+    def test_non_string_uri_is_refused_before_play_media(self):
+        p = make_player()
+        p.play_media = MagicMock()
+        msg = Message("ovos.common_play.play",
+                      {"media": {"uri": 123, "title": "T"}})
+        p.handle_play_request(msg)
+        p.play_media.assert_not_called()
+
+    def test_list_uri_is_refused_before_play_media(self):
+        p = make_player()
+        p.play_media = MagicMock()
+        msg = Message("ovos.common_play.play", {"media": {"uri": ["a"]}})
+        p.handle_play_request(msg)
+        p.play_media.assert_not_called()
+
+    def test_non_dict_media_is_refused_before_play_media(self):
+        p = make_player()
+        p.play_media = MagicMock()
+        msg = Message("ovos.common_play.play", {"media": "not-a-dict"})
+        p.handle_play_request(msg)
+        p.play_media.assert_not_called()
+
+    def test_refused_media_does_not_set_repeat_loop_state(self):
+        # repeat must not commit ahead of the media it was requested with
+        p = make_player()
+        p.play_media = MagicMock()
+        msg = Message("ovos.common_play.play",
+                      {"media": {"uri": 123}, "repeat": True})
+        p.handle_play_request(msg)
+        self.assertNotEqual(p.loop_state, LoopState.REPEAT)
+
 
 
 # ---------------------------------------------------------------------------
@@ -819,6 +850,25 @@ class TestExternalMprisNowPlaying(unittest.TestCase):
         p = self._player()
         p.handle_mpris_now_playing(Message("x", {"title": "no id"}))
         p.set_now_playing.assert_not_called()
+
+    def test_uri_less_payload_synthesizes_a_fallback_uri(self):
+        """The bus payload documented on set_external_now_playing carries no
+        'uri' - dict2entry/MediaEntry.from_dict refuses a track without one,
+        so a fallback must be synthesized before set_now_playing is called
+        (mirrors the in-process mpris poller's mpris://<name> fallback), or
+        this crashes AFTER active_skill/playback_type were already flipped
+        and OCP's own backends already stopped. set_now_playing itself is
+        real here (only its now_playing collaborator is the fixture's
+        MagicMock) so a crash inside it is not swallowed."""
+        p = make_player(PlaybackType.AUDIO)
+        p.handle_status = MagicMock()
+        p.handle_mpris_now_playing(Message(
+            "ovos.common_play.mpris.now_playing",
+            {"external_player": "org.mpris.MediaPlayer2.spotify",
+             "title": "Song", "artist": "Artist", "state": "Playing"}))
+        self.assertEqual(p.state, PlayerState.PLAYING)
+        track = p.now_playing.update.call_args[0][0]
+        self.assertEqual(track.uri, "mpris://org.mpris.MediaPlayer2.spotify")
 
     def test_new_external_player_triggers_takeover(self):
         """A new external player starting playback stops OCP's own backends."""
