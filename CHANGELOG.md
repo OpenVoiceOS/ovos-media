@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.1a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.1a1)
+
+**Merged pull requests:**
+
+- fix: emit the previous-track verb the workshop base class listens on [\#182](https://github.com/OpenVoiceOS/ovos-media/pull/182) ([JarbasAl](https://github.com/JarbasAl))
+
+## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.0.2a1)
+
 ## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.1.0a1)
@@ -512,7 +524,6 @@
 **Merged pull requests:**
 
 - feat: modernize and stabilize ovos-media \(OCPMediaPlayer rework, tests, GUI decoupling\) [\#37](https://github.com/OpenVoiceOS/ovos-media/pull/37) ([JarbasAl](https://github.com/JarbasAl))
-- chore\(deps\): update dependency ovos-plugin-manager to v2 [\#33](https://github.com/OpenVoiceOS/ovos-media/pull/33) ([renovate[bot]](https://github.com/apps/renovate))
 
 ## [V0.0.1a22](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a22) (2024-04-09)
 
