@@ -271,7 +271,7 @@ class TestPlayPrevSkillOnly(unittest.TestCase):
         p.ocp_config = {"merge_search": False}
         p.play_prev()
         prev_msgs = [m for m in emitted
-                    if m.msg_type == f"ovos.common_play.{p.now_playing.skill_id}.prev"]
+                    if m.msg_type == f"ovos.common_play.{p.now_playing.skill_id}.previous"]
         self.assertEqual(prev_msgs, [])
 
     def test_skill_playback_type_still_defers_to_skill(self):
@@ -280,7 +280,7 @@ class TestPlayPrevSkillOnly(unittest.TestCase):
         p.bus.emit = lambda m: emitted.append(m)
         p.play_prev()
         prev_msgs = [m for m in emitted
-                    if m.msg_type == f"ovos.common_play.{p.now_playing.skill_id}.prev"]
+                    if m.msg_type == f"ovos.common_play.{p.now_playing.skill_id}.previous"]
         self.assertEqual(len(prev_msgs), 1)
 
 

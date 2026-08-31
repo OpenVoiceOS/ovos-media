@@ -207,7 +207,7 @@ class SkillPlayerAdapter(PlayerAdapter):
         self._emit("next")
 
     def prev(self) -> None:
-        self._emit("prev")
+        self._emit("previous")
 
     def seek(self, milliseconds: int) -> None:
         LOG.warning("seek is not supported for skill playback, ignoring")

@@ -188,7 +188,7 @@ class TestSkillPlayerAdapter(unittest.TestCase):
                                          "ovos.common_play.skill.test.resume",
                                          "ovos.common_play.skill.test.stop",
                                          "ovos.common_play.skill.test.next",
-                                         "ovos.common_play.skill.test.prev"])
+                                         "ovos.common_play.skill.test.previous"])
 
     def test_verbs_follow_the_current_skill(self):
         self.player.now_playing.skill_id = "other.skill"
