@@ -8,7 +8,7 @@ tests set state on it. Position and Metadata are the documented exceptions and
 still read now_playing.
 """
 import unittest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, PropertyMock, patch, AsyncMock
 
 from dbus_next.service import ServiceInterface
 
@@ -378,11 +378,21 @@ class TestMetadata(unittest.TestCase):
     A raising getter kills Properties.GetAll for the whole Player interface.
     """
 
-    def test_metadata_garbage_length_returns_empty_dict(self):
+    def test_metadata_garbage_length_drops_only_the_length(self):
         from ovos_utils.ocp import MediaEntry
         iface, player = _make_interface()
         entry = MediaEntry(uri="file:///x.mp3", title="T")
         entry.length = "not a number"
+        player.now_playing = entry
+        meta = iface.Metadata
+        self.assertNotIn("mpris:length", meta)
+        self.assertEqual(meta["xesam:url"].value, "file:///x.mp3")
+        self.assertIn("mpris:trackid", meta)
+
+    def test_metadata_raising_entry_returns_empty_dict(self):
+        iface, player = _make_interface()
+        entry = MagicMock()
+        type(entry).mpris_metadata = PropertyMock(side_effect=TypeError("boom"))
         player.now_playing = entry
         self.assertEqual(iface.Metadata, {})
 
