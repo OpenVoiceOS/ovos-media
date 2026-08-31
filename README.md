@@ -108,8 +108,12 @@ All configuration lives under the `"media"` key in `mycroft.conf`. The essential
     "preferred_audio_services": ["vlc", "mplayer", "cli"],
     "preferred_video_services": ["vlc"],
 
-    // declare the backends available to each playback type.
-    // "module" is the plugin's entry-point name; "aliases" are spoken names.
+    // every installed backend plugin loads automatically; declare an entry
+    // here to customise its name/aliases/config, control its load order, or
+    // disable it with "active": false. "module" is the plugin's entry-point
+    // name; "aliases" are spoken names. a backend that drives remote gear
+    // (casting, Music Assistant) needs an explicit entry here - it is never
+    // autoloaded.
     "audio_players": {
       "vlc": { "module": "ovos-media-audio-plugin-vlc", "aliases": ["VLC"], "active": true },
       "cli": { "module": "ovos-media-audio-plugin-cli", "aliases": ["Command Line"], "active": true }
@@ -122,7 +126,7 @@ All configuration lives under the `"media"` key in `mycroft.conf`. The essential
 ```
 
 See **[docs/configuration.md](docs/configuration.md)** for every option (per-backend
-config, MPRIS roles, queue behaviour).
+config, `autoload_backends`, MPRIS roles, queue behaviour).
 
 ---
 

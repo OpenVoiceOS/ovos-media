@@ -133,6 +133,296 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
         svc.load_services()
         self.assertEqual(svc.services, [])
 
+    def test_autoload_loads_discovered_plugin_not_in_config(self):
+        """A plugin the finder returns but no config entry names must load
+        anyway, with its entry-point name as name and alias, and an empty
+        (plugin-default) config."""
+        plugins = {"fake-audio": _FakeBackend}
+        svc = self._make_service(config={}, plugins=plugins)
+        svc.load_services()
+        self.assertEqual(len(svc.services), 1)
+        self.assertEqual(svc.services[0].name, "fake-audio")
+        self.assertEqual(svc.services[0].aliases, ["fake-audio"])
+        self.assertEqual(svc.services[0].config, {})
+
+    def test_configured_entry_takes_precedence_over_autoload(self):
+        """A module named by a configured entry keeps that entry's name and
+        aliases, loads exactly once, first - it is not also autoloaded a
+        second time under its entry-point name."""
+        plugins = {"fake-audio": _FakeBackend, "other-audio": _FakeBackend}
+        config = {
+            "audio_players": {
+                "myfake": {"module": "fake-audio", "aliases": ["mf"], "uris": ["http"]}
+            }
+        }
+        svc = self._make_service(config=config, plugins=plugins)
+        svc.load_services()
+        names = [s.name for s in svc.services]
+        self.assertEqual(names, ["myfake", "other-audio"])
+        self.assertEqual(names.count("myfake"), 1)
+        self.assertEqual(svc.services[0].aliases, ["mf"])
+
+    def test_inactive_configured_entry_blocks_autoload(self):
+        """'active: false' must disable the module for autoload too, not
+        just for the configured entry - only the sibling plugin loads."""
+        plugins = {"fake-audio": _FakeBackend, "other-audio": _FakeBackend}
+        config = {
+            "audio_players": {
+                "fake": {"module": "fake-audio", "active": False}
+            }
+        }
+        svc = self._make_service(config=config, plugins=plugins)
+        svc.load_services()
+        names = [s.name for s in svc.services]
+        self.assertEqual(names, ["other-audio"])
+
+    def test_autoload_backends_false_restores_configured_only(self):
+        """'autoload_backends: false' must fall back to configured-only
+        behaviour: a discovered-but-unconfigured plugin, which loads by
+        default, is excluded once the flag is set."""
+        plugins = {"fake-audio": _FakeBackend, "other-audio": _FakeBackend}
+        players_cfg = {"audio_players": {"myfake": {"module": "fake-audio", "uris": ["http"]}}}
+
+        svc_default = self._make_service(config=dict(players_cfg), plugins=plugins)
+        svc_default.load_services()
+        self.assertIn("other-audio", [s.name for s in svc_default.services])
+
+        svc_disabled = self._make_service(
+            config={**players_cfg, "autoload_backends": False}, plugins=plugins)
+        svc_disabled.load_services()
+        names = [s.name for s in svc_disabled.services]
+        self.assertEqual(names, ["myfake"])
+
+    def test_configured_entry_without_aliases_falls_back_to_both_names(self):
+        """A configured entry with no explicit 'aliases' must be reachable
+        by both its config key and its module id, since both are used as
+        lookup keys for spoken-name/backend resolution."""
+        plugins = {"fake-audio": _FakeBackend}
+        config = {"audio_players": {"vlc": {"module": "fake-audio"}}}
+        svc = self._make_service(config=config, plugins=plugins)
+        svc.load_services()
+        self.assertEqual(svc.services[0].aliases, ["vlc", "fake-audio"])
+
+    def test_configured_entry_with_aliases_keeps_exactly_those(self):
+        plugins = {"fake-audio": _FakeBackend}
+        config = {
+            "audio_players": {
+                "vlc": {"module": "fake-audio", "aliases": ["VLC", "Video"]}
+            }
+        }
+        svc = self._make_service(config=config, plugins=plugins)
+        svc.load_services()
+        self.assertEqual(svc.services[0].aliases, ["VLC", "Video"])
+
+    def test_autoload_skips_remote_backend(self):
+        """A discovered plugin driving remote gear (RemoteAudioPlayerBackend)
+        must not be auto-added - it needs an explicit '{ns}_players' entry,
+        same as today, so a default install never starts casting to a
+        target it was never told about."""
+        from ovos_plugin_manager.templates.media import RemoteAudioPlayerBackend
+
+        class _RemoteFake(RemoteAudioPlayerBackend):
+            def supported_uris(self):
+                return []
+
+            def set_track_start_callback(self, cb):
+                pass
+
+            def play(self, repeat=False):
+                pass
+
+            def stop(self):
+                return True
+
+            def pause(self):
+                pass
+
+            def resume(self):
+                pass
+
+            def lower_volume(self):
+                pass
+
+            def restore_volume(self):
+                pass
+
+            def get_track_length(self):
+                return 0
+
+            def get_track_position(self):
+                return 0
+
+            def set_track_position(self, milliseconds):
+                pass
+
+        plugins = {"remote-audio": _RemoteFake, "local-audio": _FakeBackend}
+
+        # not autoloaded when undeclared
+        svc = self._make_service(config={}, plugins=plugins)
+        svc.load_services()
+        names = [s.name for s in svc.services]
+        self.assertEqual(names, ["local-audio"])
+
+        # loaded when explicitly configured
+        config = {"audio_players": {"cast": {"module": "remote-audio"}}}
+        svc = self._make_service(config=config, plugins=plugins)
+        svc.load_services()
+        names = [s.name for s in svc.services]
+        self.assertIn("cast", names)
+
+    def test_autoload_skips_raising_plugin_but_loads_siblings(self):
+        """A plugin whose constructor raises must be logged and skipped
+        without blocking sibling plugins from autoloading."""
+        class _RaisingBackend:
+            def __init__(self, config, bus):
+                raise RuntimeError("boom")
+
+        plugins = {"broken-audio": _RaisingBackend, "fake-audio": _FakeBackend}
+        svc = self._make_service(config={}, plugins=plugins)
+        with patch("ovos_media.media_backends.base.LOG"):
+            svc.load_services()
+        self.assertEqual(len(svc.services), 1)
+        self.assertEqual(svc.services[0].name, "fake-audio")
+
+    def test_autoload_skips_non_class_finder_value(self):
+        """find_plugins() returns entry_point.load() verbatim - a factory
+        function loads fine. A non-class value must not abort the whole
+        namespace: it is skipped with a warning while a sibling still
+        loads and _loaded still gets set."""
+        plugins = {
+            "zzz_bad": lambda *a, **k: None,
+            "aaa_good": _FakeBackend,
+        }
+        svc = self._make_service(config={}, plugins=plugins)
+        with patch("ovos_media.media_backends.base.LOG") as mock_log:
+            svc.load_services()
+        names = [s.name for s in svc.services]
+        self.assertEqual(names, ["aaa_good"])
+        self.assertTrue(svc._loaded.is_set())
+        joined = "\n".join(
+            " ".join(str(a) for a in c.args) for c in mock_log.warning.call_args_list
+        )
+        self.assertIn("zzz_bad", joined)
+
+    def test_autoload_skips_remote_video_backend(self):
+        """RemoteVideoPlayerBackend is a sibling of RemoteAudioPlayerBackend,
+        not a subclass of it - the remote-exclusion check must cover all
+        three Remote bases, not just the audio one."""
+        from ovos_plugin_manager.templates.media import RemoteVideoPlayerBackend
+
+        class _RemoteVideoFake(RemoteVideoPlayerBackend):
+            def supported_uris(self):
+                return []
+
+            def set_track_start_callback(self, cb):
+                pass
+
+            def play(self, repeat=False):
+                pass
+
+            def stop(self):
+                return True
+
+            def pause(self):
+                pass
+
+            def resume(self):
+                pass
+
+            def lower_volume(self):
+                pass
+
+            def restore_volume(self):
+                pass
+
+            def get_track_length(self):
+                return 0
+
+            def get_track_position(self):
+                return 0
+
+            def set_track_position(self, milliseconds):
+                pass
+
+        plugins = {"remote-video": _RemoteVideoFake, "local-video": _FakeBackend}
+
+        # not autoloaded when undeclared
+        svc = self._make_service(config={}, plugins=plugins)
+        svc.load_services()
+        self.assertEqual([s.name for s in svc.services], ["local-video"])
+
+        # loaded, and sorted after the local backend, when configured
+        config = {
+            "audio_players": {
+                "remote-video": {"module": "remote-video"},
+                "local-video": {"module": "local-video"},
+            }
+        }
+        svc = self._make_service(config=config, plugins=plugins)
+        svc.load_services()
+        self.assertEqual([s.name for s in svc.services], ["local-video", "remote-video"])
+
+    def test_autoload_local_before_remote(self):
+        """Local-before-remote ordering is preserved when mixing configured
+        and autoloaded plugins."""
+        from ovos_plugin_manager.templates.media import RemoteAudioPlayerBackend
+
+        class _RemoteFake(RemoteAudioPlayerBackend):
+            def __init__(self, config, bus):
+                super().__init__(config, bus)
+                self.name = config.get("name", "remote-fake")
+                self.aliases = []
+
+            def supported_uris(self):
+                return []
+
+            def set_track_start_callback(self, cb):
+                pass
+
+            def play(self, repeat=False):
+                pass
+
+            def stop(self):
+                return True
+
+            def pause(self):
+                pass
+
+            def resume(self):
+                pass
+
+            def lower_volume(self):
+                pass
+
+            def restore_volume(self):
+                pass
+
+            def get_track_length(self):
+                return 0
+
+            def get_track_position(self):
+                return 0
+
+            def set_track_position(self, milliseconds):
+                pass
+
+        plugins = {"remote-audio": _RemoteFake, "local-audio": _FakeBackend}
+        config = {"audio_players": {"remote-audio": {"module": "remote-audio"}}}
+        svc = self._make_service(config=config, plugins=plugins)
+        svc.load_services()
+        names = [s.name for s in svc.services]
+        self.assertEqual(names, ["local-audio", "remote-audio"])
+
+    def test_no_backends_error_still_emitted_when_autoload_finds_nothing(self):
+        from ovos_media.media_backends.base import BaseMediaService
+        svc = self._make_service(config={}, plugins={})
+        received = []
+        svc.bus.on("ovos.common_play.media.state", lambda m: received.append(m))
+        svc.load_services()
+        self.assertEqual(svc.services, [])
+        self.assertTrue(len(received) > 0)
+        self.assertEqual(received[0].data["state"], MediaState.NO_MEDIA)
+
     def test_track_start_callback_registered(self):
         plugins = {"fake-audio": _FakeBackend}
         config = {

@@ -13,6 +13,9 @@ from ovos_config.config import Configuration
 from ovos_utils.log import LOG
 from ovos_utils.process_utils import MonotonicEvent
 
+_REMOTE_BASES = (RemoteAudioPlayerBackend, RemoteVideoPlayerBackend,
+                 RemoteWebPlayerBackend)
+
 
 def _safe_supported_uris(s) -> list:
     """Call s.supported_uris() defensively.
@@ -137,8 +140,38 @@ class BaseMediaService:
             LOG.debug('End of playlist!')
             self.bus.emit(Message(f'ovos.{self.namespace}.queue_end'))
 
+    def _load_plugin(self, player_name: str, plug_cfg: dict, plugs: dict,
+                      local: list, remote: list) -> None:
+        """Instantiate one backend and append it to *local* or *remote*.
+
+        A plugin whose constructor raises is logged and skipped - one
+        broken plugin must never block its siblings from loading.
+        """
+        plug_name = plug_cfg["module"] if "module" in plug_cfg else player_name
+        try:
+            service = plugs[plug_name](plug_cfg, self.bus)
+            fallback = [player_name] if player_name == plug_name else [player_name, plug_name]
+            service.aliases = plug_cfg.get("aliases", []) or fallback
+            service.name = player_name
+            if isinstance(service, _REMOTE_BASES):
+                remote.append(service)
+            else:
+                local.append(service)
+            LOG.info(f"Loaded {self.__class__.__name__} plugin: {plug_name}")
+        except:
+            LOG.exception(f"Failed to load {plug_name}")
+
     def load_services(self):
         """Method for loading services.
+
+        Every backend plugin installed for this namespace is loaded
+        unless disabled - either individually, via an ``active: false``
+        entry under ``{namespace}_players``, or altogether, via
+        ``autoload_backends: false``. Configured entries load first, in
+        config order, and keep their configured name/aliases; discovered
+        plugins not referenced by any configured entry load afterwards,
+        in sorted order, with their entry-point name as name/alias and an
+        empty (plugin-default) config.
 
         Sets up the global service, default and registers the event handlers
         for the subsystem.
@@ -153,6 +186,8 @@ class BaseMediaService:
                       f"config, got {type(players_cfg).__name__}: "
                       f"{players_cfg!r} - ignoring")
             players_cfg = {}
+
+        configured_modules = set()
         for player_name, plug_cfg in players_cfg.items():
             if not isinstance(plug_cfg, dict):
                 LOG.error(f"Expected a dict for '{self.namespace}_players' "
@@ -165,23 +200,31 @@ class BaseMediaService:
                           f"is missing the required 'module' key - ignoring")
                 continue
             plug_name = plug_cfg["module"]
+            configured_modules.add(plug_name)
             if plug_name not in plugs:
                 LOG.error(f"{plug_name} configured but not installed")
                 continue
             if not plug_cfg.get("active", True):
                 LOG.info(f"{plug_name} is disabled in configuration")
                 continue
-            try:
-                service = plugs[plug_name](plug_cfg, self.bus)
-                service.aliases = plug_cfg.get("aliases", []) or [plug_name]
-                service.name = player_name
-                if isinstance(service, RemoteAudioPlayerBackend):
-                    remote.append(service)
-                else:
-                    local.append(service)
-                LOG.info(f"Loaded {self.__class__.__name__} plugin: {plug_name}")
-            except:
-                LOG.exception(f"Failed to load {plug_name}")
+            self._load_plugin(player_name, plug_cfg, plugs, local, remote)
+
+        if self.config.get("autoload_backends", True):
+            for plug_name in sorted(plugs):
+                if plug_name in configured_modules:
+                    continue
+                plug_cls = plugs[plug_name]
+                if not isinstance(plug_cls, type):
+                    LOG.warning(f"{plug_name} is not a class "
+                                f"({type(plug_cls).__name__}) - skipping "
+                                f"autoload")
+                    continue
+                if issubclass(plug_cls, _REMOTE_BASES):
+                    LOG.info(f"{plug_name} drives a remote target - add an "
+                             f"explicit '{self.namespace}_players' entry to "
+                             f"load it")
+                    continue
+                self._load_plugin(plug_name, {}, plugs, local, remote)
 
         # Sort services so local services are checked first
         self.services = local + remote
@@ -189,7 +232,9 @@ class BaseMediaService:
         if not self.services:
             LOG.error(
                 f"No {self.namespace} backends loaded — all {self.namespace} playback will fail. "
-                f"Install at least one backend plugin (e.g. ovos-media-plugin-vlc, ovos-media-plugin-mplayer)."
+                f"Install a {self.namespace} backend plugin (e.g. ovos-media-plugin-vlc, ovos-media-plugin-mplayer), "
+                f"or check the 'autoload_backends' and 'active' settings under "
+                f"'{self.namespace}_players' in configuration."
             )
             self.bus.emit(Message("ovos.common_play.media.state",
                                   {"state": MediaState.NO_MEDIA}))
