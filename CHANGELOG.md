@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.0.2a1)
+
+**Merged pull requests:**
+
+- feat: load every installed playback backend unless disabled in config [\#178](https://github.com/OpenVoiceOS/ovos-media/pull/178) ([JarbasAl](https://github.com/JarbasAl))
+- fix: validate ovos.common\_play.play payloads at the bus edge [\#177](https://github.com/OpenVoiceOS/ovos-media/pull/177) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.0.1a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.1a2) (2026-08-31)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a1...2.0.1a2)
@@ -504,8 +513,6 @@
 
 - feat: modernize and stabilize ovos-media \(OCPMediaPlayer rework, tests, GUI decoupling\) [\#37](https://github.com/OpenVoiceOS/ovos-media/pull/37) ([JarbasAl](https://github.com/JarbasAl))
 - chore\(deps\): update dependency ovos-plugin-manager to v2 [\#33](https://github.com/OpenVoiceOS/ovos-media/pull/33) ([renovate[bot]](https://github.com/apps/renovate))
-- chore\(deps\): update dependency ovos-config to v2 [\#32](https://github.com/OpenVoiceOS/ovos-media/pull/32) ([renovate[bot]](https://github.com/apps/renovate))
-- chore\(deps\): update dependency ovos-bus-client to v1 [\#31](https://github.com/OpenVoiceOS/ovos-media/pull/31) ([renovate[bot]](https://github.com/apps/renovate))
 
 ## [V0.0.1a22](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a22) (2024-04-09)
 
