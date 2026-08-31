@@ -20,8 +20,9 @@ import unittest
 
 from ovos_utils.ocp import MediaEntry, MediaType, PlaybackType, Playlist
 
-from ovos_media.bus.schemas import (decode_playback_time, flatten_media_types,
-                                    is_injection_char, is_real_number, sanitize_nested_playlist,
+from ovos_media.bus.schemas import (decode_media, decode_playback_time,
+                                    flatten_media_types, is_injection_char,
+                                    is_real_number, sanitize_nested_playlist,
                                     sanitize_raw_playlist_dicts,
                                     validated_entries)
 
@@ -205,6 +206,54 @@ class TestValidatedEntries(unittest.TestCase):
                 result = validated_entries([entry])
                 self.assertEqual(result[0].length, 0)
                 self.assertEqual(result[0].position, 0)
+
+    def test_non_string_uri_is_skipped(self):
+        # a non-string 'uri' passes dict2entry's truthiness check and
+        # would otherwise reach MediaEntry unvalidated.
+        self.assertEqual(validated_entries([{"uri": 123, "title": "a"}]), [])
+
+    def test_empty_string_uri_is_skipped(self):
+        self.assertEqual(validated_entries([{"uri": "", "title": "a"}]), [])
+
+    def test_pluginstream_shaped_dict_without_uri_is_kept(self):
+        entries = validated_entries([{"extractor_id": "ovos.some.extractor",
+                                       "stream": "some_stream_id"}])
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].extractor_id, "ovos.some.extractor")
+
+    def test_playlist_shaped_dict_without_uri_is_kept(self):
+        entries = validated_entries([{"playlist": [
+            {"uri": "file:///a.mp3", "title": "a"}]}])
+        self.assertEqual(len(entries), 1)
+        self.assertIsInstance(entries[0], Playlist)
+
+
+class TestDecodeMedia(unittest.TestCase):
+
+    def test_absent_or_empty_media_yields_none(self):
+        for data in ({}, {"media": None}, {"media": {}}):
+            with self.subTest(data=data):
+                self.assertIsNone(decode_media(data))
+
+    def test_non_dict_media_is_refused(self):
+        for media in ("file:///a.mp3", ["file:///a.mp3"], 5):
+            with self.subTest(media=media):
+                self.assertIsNone(decode_media({"media": media}))
+
+    def test_non_string_uri_is_refused(self):
+        self.assertIsNone(decode_media({"media": {"uri": 123}}))
+
+    def test_empty_string_uri_is_refused(self):
+        self.assertIsNone(decode_media({"media": {"uri": ""}}))
+
+    def test_valid_dict_passes(self):
+        media = {"uri": "file:///a.mp3", "title": "a"}
+        self.assertEqual(decode_media({"media": media}), media)
+
+    def test_pluginstream_shaped_dict_without_uri_passes(self):
+        media = {"extractor_id": "ovos.some.extractor",
+                  "stream": "some_stream_id"}
+        self.assertEqual(decode_media({"media": media}), media)
 
     def test_nested_playlist_entries_are_also_sanitized(self):
         # bad values inside a NESTED Playlist's tracks must not reach the
