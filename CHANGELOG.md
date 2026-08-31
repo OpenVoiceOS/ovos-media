@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.1a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a9...2.0.1a1)
+
+**Merged pull requests:**
+
+- fix: refuse non-string uris at the bus edge [\#174](https://github.com/OpenVoiceOS/ovos-media/pull/174) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.0.0a9](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.0a9) (2026-08-18)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.0a8...2.0.0a9)
@@ -315,19 +323,19 @@
 
 ## [0.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.0a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.4.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.4.0a1)
 
 **Merged pull requests:**
 
 - feat: now-playing voice intents \(WhatSong/WhatAlbum/WhatArtist\) + shuffle on/off [\#90](https://github.com/OpenVoiceOS/ovos-media/pull/90) ([JarbasAl](https://github.com/JarbasAl))
 
-## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.3.4a1)
-
 ## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.3.3a5)
+
+## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.4a1)
 
 **Merged pull requests:**
 
