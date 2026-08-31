@@ -53,14 +53,17 @@ Plugin discovery runs at startup in `BaseMediaService.load_services`.
 The method:
 
 1. Calls the injected `plugin_loader` callable to obtain a dict of `{plugin_name: plugin_class}` for all installed OPM plugins of that type.
-2. Iterates the `media.<namespace>_players` configuration block (e.g. `media.audio_players` for audio). Each entry names a plugin `module` and optional `aliases`. Plugins absent from the installed set are skipped with an error log; plugins with `active: false` are skipped with an info log.
-3. Instantiates each accepted plugin as `plugin_class(plug_cfg, bus)` and appends it to either the `local` or `remote` list depending on whether the instance is a `RemoteAudioPlayerBackend` / `RemoteVideoPlayerBackend` / `RemoteWebPlayerBackend`.
-4. Concatenates `local + remote` into `self.services`, ensuring local backends are checked before remote ones.
-5. Registers the `ovos.common_play.media.state` bus event and the per-namespace `ovos.<namespace>.service.*` control events.
-6. Sets a `MonotonicEvent` (`self._loaded`) to signal that loading is complete.
+2. Iterates the `media.<namespace>_players` configuration block (e.g. `media.audio_players` for audio). Each entry names a plugin `module` and optional `aliases`. Plugins absent from the installed set are skipped with an error log; plugins with `active: false` are skipped with an info log and excluded from autoload.
+3. Unless `media.autoload_backends` is `false`, every remaining installed plugin not already covered by a configured entry is loaded too, in sorted order, under its entry-point name as both name and alias and with an empty (plugin-default) config - except a remote-target backend (a `RemoteAudioPlayerBackend` / `RemoteVideoPlayerBackend` / `RemoteWebPlayerBackend` subclass), which is never autoloaded and needs an explicit `media.<namespace>_players` entry, since it drives remote gear (a casting target, a Music Assistant install) that a default install has no business talking to unasked. A backend that needs credentials or a target should refuse to construct on an empty config, which is what keeps it out of a default install even if it were autoload-eligible.
+4. Instantiates each accepted plugin as `plugin_class(plug_cfg, bus)` and appends it to either the `local` or `remote` list depending on whether the instance is a `RemoteAudioPlayerBackend` / `RemoteVideoPlayerBackend` / `RemoteWebPlayerBackend`. A plugin whose constructor raises is logged and skipped without affecting the others.
+5. Concatenates `local + remote` into `self.services`, ensuring local backends are checked before remote ones.
+6. Registers the `ovos.common_play.media.state` bus event and the per-namespace `ovos.<namespace>.service.*` control events.
+7. Sets a `MonotonicEvent` (`self._loaded`) to signal that loading is complete.
 
 If no backends load at all, an error is logged and a `MediaState.NO_MEDIA` event
 is emitted, since all playback for that namespace would otherwise silently fail.
+This happens when no backend plugin is installed, or when every installed
+plugin is disabled via `active: false` or `autoload_backends: false`.
 
 ### Preferred backend resolution
 
@@ -235,7 +238,7 @@ The base class provides `load_track(uri, metadata=None)` (which stores the URI a
 
 `BaseMediaService.load_services` instantiates the plugin as `MyAudioBackend(plug_cfg, bus)`. The `plug_cfg` dict comes from the `media.audio_players.<player_name>` configuration block.
 
-Remote backends (servers, casting targets) subclass `RemoteAudioPlayerBackend` / `RemoteVideoPlayerBackend` / `RemoteWebPlayerBackend` instead, which the manager always checks *after* local backends so playback starts locally by default.
+Remote backends (servers, casting targets) subclass `RemoteAudioPlayerBackend` / `RemoteVideoPlayerBackend` / `RemoteWebPlayerBackend` instead, which the manager always checks *after* local backends so playback starts locally by default. All three are exempt from autoload; give a remote-target backend an explicit `media.<namespace>_players` entry rather than relying on discovery.
 
 ---
 

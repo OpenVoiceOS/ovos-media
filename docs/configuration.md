@@ -61,11 +61,32 @@ Backend plugin names are the entry-point keys registered under `opm.media.audio`
 
 ## Declaring Backends
 
-The `audio_players`, `video_players`, and `web_players` blocks declare which
-installed backends `ovos-media` should load and how they are addressed. Each
-entry's key is a local name; `module` is the plugin's entry-point name,
-`aliases` are spoken names a user can say ("play on VLC"), and `active: false`
-loads-time-disables a backend without removing it.
+Every backend plugin installed for a playback type loads automatically, so
+installing `ovos-media` plus a backend plugin is enough to get working
+playback with no configuration at all. Each discovered plugin loads under
+its entry-point name, with that name as its only alias and its own default
+config.
+
+The `audio_players`, `video_players`, and `web_players` blocks customise
+that: an entry's key is a local name; `module` is the plugin's entry-point
+name, `aliases` are spoken names a user can say ("play on VLC"), and any
+other key is passed through to the plugin's `config`. A configured entry
+takes precedence over autoload for that module, loads before any
+undeclared plugin, and keeps the name/aliases/config given here. Set
+`active: false` to disable a module, whether declared or not.
+
+Set `autoload_backends` to `false` to turn off automatic discovery and load
+only the backends declared in `audio_players` / `video_players` /
+`web_players`, matching the pre-autoload behaviour.
+
+A backend that drives remote gear (a `RemoteAudioPlayerBackend` /
+`RemoteVideoPlayerBackend` / `RemoteWebPlayerBackend` subclass, e.g. a
+casting target or a Music Assistant install) is never autoloaded — it needs
+an explicit entry in the relevant `_players` block, since starting to
+control someone's remote hardware is not something a default install should
+do unasked. A backend that needs credentials or a specific target should
+also refuse to construct on an empty config, which keeps it out of a
+default install even if it is autoload-eligible.
 
 ```json
 {
@@ -87,9 +108,10 @@ Web backends register under `opm.media.web`; add their declarations to
 
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `audio_players` | dict | `{}` | Audio backends to load (`opm.media.audio`), keyed by local name. |
-| `video_players` | dict | `{}` | Video backends to load (`opm.media.video`). |
-| `web_players` | dict | `{}` | Web/webview backends to load (`opm.media.web`). |
+| `autoload_backends` | bool | `true` | Load every installed backend plugin not covered by an `active: false` entry below. Set to `false` to load only the backends declared below. |
+| `audio_players` | dict | `{}` | Audio backends to customise, order, or disable (`opm.media.audio`), keyed by local name. |
+| `video_players` | dict | `{}` | Video backends to customise, order, or disable (`opm.media.video`). |
+| `web_players` | dict | `{}` | Web/webview backends to customise, order, or disable (`opm.media.web`). |
 
 The `module` value is the plugin's **entry-point name** (e.g.
 `ovos-media-audio-plugin-vlc`), which often differs from its pip package name

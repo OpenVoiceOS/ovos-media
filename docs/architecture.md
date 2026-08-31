@@ -350,8 +350,13 @@ Backend services are loaded by `BaseMediaService.load_services`
 (`ovos_media/media_backends/base.py`). At startup it calls the injected
 `plugin_loader` callable (one of `find_ocp_audio_plugins`, `find_ocp_video_plugins`,
 or `find_ocp_web_plugins` from `ovos-plugin-manager`) to get a dict of available
-plugin classes, then instantiates each plugin that is present in the
-`media.<namespace>_players` configuration block and not marked `active: false`.
+plugin classes. Every plugin present in the `media.<namespace>_players`
+configuration block and not marked `active: false` is instantiated first, in
+config order; every other installed plugin is then instantiated too, in
+sorted order, unless `media.autoload_backends` is `false` or the plugin is a
+remote-target backend (`RemoteAudioPlayerBackend` / `RemoteVideoPlayerBackend`
+/ `RemoteWebPlayerBackend`), which is never autoloaded and needs an explicit
+configuration entry.
 
 Local (non-remote) backend instances are placed before remote instances in
 `self.services`, so local backends are tried first when selecting a playback
