@@ -25,7 +25,7 @@ from typing import Optional
 
 from ovos_utils.log import LOG
 from ovos_utils.ocp import (MediaEntry, MediaState, Playlist, PluginStream,
-                            TrackState)
+                            TrackState, dict2entry)
 
 # fields carrying a duration/offset in milliseconds on every track-shaped
 # payload; a non-numeric value in any of them poisons Playlist.length,
@@ -120,26 +120,38 @@ def decode_media_state(data: dict) -> MediaState:
     return state
 
 
-def _requires_uri(media: dict) -> bool:
-    """True when a media dict has no alternate shape standing in for a
-    direct 'uri' - mirrors ``ovos_utils.ocp.dict2entry``'s own precedence
-    (playlist > extractor_id > uri), so :func:`decode_media` and
-    :func:`validated_entries` agree on which dicts are exempt from the uri
-    check.
+def _is_valid_media(media: dict) -> bool:
+    """True when a media dict has a shape :func:`ovos_utils.ocp.dict2entry`
+    can turn into a playable track. One predicate, shared by
+    :func:`decode_media` and :func:`validated_entries`, so the two never
+    disagree on what a malformed dict looks like.
+
+    Mirrors ``dict2entry``'s own precedence exactly - playlist >
+    extractor_id > uri - rather than letting 'uri' govern regardless of
+    the other two: a truthy 'playlist' wins and must be a non-empty
+    list/tuple; failing that, a truthy 'extractor_id' wins and must be a
+    str paired with a truthy 'stream'; failing that, a present 'uri' must
+    be a non-empty str (an int/float/list 'uri' passes ``dict2entry``'s
+    own truthiness check and reaches ``MediaEntry``/roster.select
+    unvalidated, where it dies as a logged traceback instead of the
+    warn-and-drop every other malformed bus field gets). Anything else -
+    no shape at all - is refused.
+
+    Because 'playlist'/'extractor_id' are checked first, a malformed
+    'uri' alongside a valid 'playlist' or 'extractor_id' is ignored, not
+    refused - ``dict2entry`` itself never looks at 'uri' once 'playlist'
+    or 'extractor_id' has already decided the shape.
     """
-    return not (media.get("playlist") or media.get("extractor_id"))
-
-
-def _has_valid_uri(media: dict) -> bool:
-    """True when a media dict carries a non-empty string 'uri'.
-
-    An int/float/list/etc 'uri' passes ``dict2entry``'s truthiness check
-    and reaches ``MediaEntry``/roster.select unvalidated, where it dies as
-    a logged traceback instead of the warn-and-drop every other malformed
-    bus field gets.
-    """
-    uri = media.get("uri")
-    return isinstance(uri, str) and uri != ""
+    if media.get("playlist"):
+        playlist = media["playlist"]
+        return isinstance(playlist, (list, tuple)) and len(playlist) > 0
+    if media.get("extractor_id"):
+        extractor_id = media["extractor_id"]
+        return isinstance(extractor_id, str) and bool(media.get("stream"))
+    if "uri" in media:
+        uri = media["uri"]
+        return isinstance(uri, str) and uri != ""
+    return False
 
 
 def decode_media(data: dict) -> Optional[dict]:
@@ -157,9 +169,12 @@ def decode_media(data: dict) -> Optional[dict]:
         LOG.warning(f"ignoring play request, expected a dict track, "
                     f"got: {media!r}")
         return None
-    if _requires_uri(media) and not _has_valid_uri(media):
-        LOG.warning(f"ignoring play request with invalid 'uri': "
-                    f"{media.get('uri')!r}")
+    if not _is_valid_media(media):
+        LOG.warning(f"ignoring play request with invalid media shape: "
+                    f"{media!r}")
+        return None
+    media = _screen_nested_playlist(media)
+    if media is None:
         return None
     return media
 
@@ -334,6 +349,38 @@ def sanitize_raw_playlist_dicts(members, visited: Optional[set] = None) -> None:
                 sanitize_raw_playlist_dicts(member["playlist"], visited)
 
 
+def _screen_nested_playlist(media: dict) -> Optional[dict]:
+    """When *media* is playlist-shaped, screen its nested 'playlist'
+    entries through :func:`validated_entries` before ``dict2entry`` ever
+    builds a ``Playlist`` from them.
+
+    ``dict2entry``/``Playlist.from_dict`` only truthiness-checks each raw
+    member and builds a ``MediaEntry``/``PluginStream`` from it
+    unconditionally - a bad nested entry (eg. a non-str 'uri') would
+    otherwise reach ``MediaEntry``/roster.select unvalidated one level
+    down from the guard on the outer dict, the exact failure this module
+    exists to prevent.
+
+    Returns a shallow copy of *media* with 'playlist' replaced by its
+    validated entries, or None if none of them survive - a dict2entry'd
+    Playlist with zero entries would let ``track[0]`` index into an
+    empty list. *media* itself is left untouched. A no-op (returns
+    *media* as-is) when 'playlist' is absent/empty, since that shape
+    never reaches ``Playlist.from_dict`` in the first place.
+    """
+    nested = media.get("playlist")
+    if not nested:
+        return media
+    screened = validated_entries(nested)
+    if not screened:
+        LOG.warning(f"ignoring play request, no valid entries in nested "
+                    f"playlist: {nested!r}")
+        return None
+    media = dict(media)
+    media["playlist"] = screened
+    return media
+
+
 def validated_entries(tracks) -> list:
     """Coerce a playlist payload into valid entries, skipping the bad
     ones with a warning instead of aborting mid-mutation. A non-list
@@ -347,10 +394,12 @@ def validated_entries(tracks) -> list:
     for track in tracks:
         try:
             if isinstance(track, dict):
-                if _requires_uri(track) and not _has_valid_uri(track):
-                    raise ValueError(f"invalid 'uri' in track: "
-                                      f"{track.get('uri')!r}")
-                track = MediaEntry.from_dict(track)
+                if not _is_valid_media(track):
+                    raise ValueError(f"invalid media shape: {track!r}")
+                track = _screen_nested_playlist(track)
+                if track is None:
+                    raise ValueError("nested playlist has no valid entries")
+                track = dict2entry(track)
             if not isinstance(track, (MediaEntry, Playlist, PluginStream)):
                 raise ValueError(f"not a valid track: {track!r}")
             # a non-numeric length/position (eg. bus-fed "garbage")

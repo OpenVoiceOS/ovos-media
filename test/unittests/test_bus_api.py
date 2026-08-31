@@ -240,6 +240,16 @@ class TestRegistrationTableCompleteness(unittest.TestCase):
         self.assertTrue(all(e.gated for e in play_entries))
         player.shutdown()
 
+    def test_the_play_topic_is_decoded_for_both_of_its_targets(self):
+        """A decoder on only one entry would let a malformed payload reach
+        the other target unvalidated - both must refuse it at the edge."""
+        player = _make_player(FakeBus())
+        play_entries = [e for e in player.bus_api.table
+                        if e.topic == "ovos.common_play.play"]
+
+        self.assertTrue(all(e.decoder is not None for e in play_entries))
+        player.shutdown()
+
     def test_service_topics_are_ungated(self):
         from ovos_media.bus.api import OCPBusApi
         api = OCPBusApi(FakeBus(), service=MagicMock())

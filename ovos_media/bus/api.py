@@ -184,7 +184,7 @@ class OCPBusApi:
                        player.handle_player_media_update,
                        decoder=decode_media_state),
             BusHandler("ovos.common_play.play", player.handle_play_request,
-                       gated=True),
+                       decoder=decode_media, gated=True),
             BusHandler("ovos.common_play.pause", player.handle_pause_request,
                        gated=True),
             BusHandler("ovos.common_play.play_pause",

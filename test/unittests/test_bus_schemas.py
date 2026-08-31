@@ -227,6 +227,13 @@ class TestValidatedEntries(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertIsInstance(entries[0], Playlist)
 
+    def test_playlist_wins_over_a_non_string_uri(self):
+        # mirrors dict2entry's own precedence: playlist > extractor_id > uri
+        entries = validated_entries([{"uri": 123, "playlist": [
+            {"uri": "file:///a.mp3", "title": "a"}]}])
+        self.assertEqual(len(entries), 1)
+        self.assertIsInstance(entries[0], Playlist)
+
 
 class TestDecodeMedia(unittest.TestCase):
 
@@ -254,6 +261,47 @@ class TestDecodeMedia(unittest.TestCase):
         media = {"extractor_id": "ovos.some.extractor",
                   "stream": "some_stream_id"}
         self.assertEqual(decode_media({"media": media}), media)
+
+    def test_playlist_wins_over_an_empty_uri(self):
+        # mirrors dict2entry's own precedence: playlist > extractor_id > uri
+        media = {"uri": "", "playlist": [{"uri": "file:///a.mp3"}]}
+        decoded = decode_media({"media": media})
+        self.assertIsNotNone(decoded)
+        # the nested entry is screened (see test_bus_schemas nested-playlist
+        # tests) so it comes back built, not as the original raw dict
+        self.assertEqual(len(decoded["playlist"]), 1)
+        self.assertEqual(decoded["playlist"][0].uri, "file:///a.mp3")
+
+    def test_playlist_wins_over_a_non_string_uri(self):
+        media = {"uri": 123, "playlist": [{"uri": "file:///a.mp3"}]}
+        decoded = decode_media({"media": media})
+        self.assertIsNotNone(decoded)
+        self.assertEqual(len(decoded["playlist"]), 1)
+        self.assertEqual(decoded["playlist"][0].uri, "file:///a.mp3")
+
+    def test_extractor_id_wins_over_an_empty_uri(self):
+        media = {"uri": "", "extractor_id": "yt", "stream": "x"}
+        self.assertEqual(decode_media({"media": media}), media)
+
+    def test_empty_uri_alone_is_refused(self):
+        self.assertIsNone(decode_media({"media": {"uri": ""}}))
+
+    def test_non_list_playlist_is_refused(self):
+        self.assertIsNone(decode_media({"media": {"playlist": "str"}}))
+
+    def test_empty_playlist_with_no_uri_is_refused(self):
+        self.assertIsNone(decode_media({"media": {"playlist": []}}))
+
+    def test_bad_nested_entry_is_dropped_good_one_kept(self):
+        media = {"playlist": [{"uri": 5}, {"uri": "file:///ok.mp3"}]}
+        decoded = decode_media({"media": media})
+        self.assertIsNotNone(decoded)
+        self.assertEqual(len(decoded["playlist"]), 1)
+        self.assertEqual(decoded["playlist"][0].uri, "file:///ok.mp3")
+
+    def test_all_bad_nested_entries_refuses_the_whole_media_dict(self):
+        media = {"playlist": [{"uri": 5}, {"uri": ["also bad"]}]}
+        self.assertIsNone(decode_media({"media": media}))
 
     def test_nested_playlist_entries_are_also_sanitized(self):
         # bad values inside a NESTED Playlist's tracks must not reach the
