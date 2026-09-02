@@ -51,7 +51,7 @@ def _make_player(bus=None, config=None):
     bus = bus or FakeBus()
     player = OCPMediaPlayer(bus, config=config if config is not None else {})
     # extract_stream() would hit the network; the uris here are already streams
-    player.now_playing.extract_stream = lambda: None
+    player.now_playing.extract_stream = lambda **kwargs: None
     return player
 
 

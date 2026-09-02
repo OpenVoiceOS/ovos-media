@@ -87,6 +87,33 @@ class TestExtractStream(unittest.TestCase):
         with self.assertRaises(ValueError):
             _extract(entry, None)
 
+    def test_scheme_claimed_by_a_loaded_backend_is_accepted(self):
+        # library:// is not a builtin prefix, but a backend that claims it
+        # via supported_uris() (eg. ovos-media-plugin-mass claiming
+        # "library") must not be refused before roster selection even gets
+        # a chance to route to it
+        entry = _Entry(uri="library://radio/1")
+        xtract = MagicMock()
+        xtract.extract_stream.return_value = {}
+        streams.extract_stream(entry, False, xtract, allowed_schemes={"library"})
+        self.assertEqual(entry.uri, "library://radio/1")
+
+    def test_scheme_nobody_claims_is_still_refused(self):
+        # the garbage-rejection behaviour is unchanged: a scheme not
+        # built-in and not claimed by any loaded backend still drops
+        entry = _Entry(uri="bogus://x")
+        xtract = MagicMock()
+        xtract.extract_stream.return_value = {}
+        with self.assertRaises(ValueError):
+            streams.extract_stream(entry, False, xtract, allowed_schemes={"library"})
+
+    def test_no_allowed_schemes_behaves_like_before(self):
+        entry = _Entry(uri="library://radio/1")
+        xtract = MagicMock()
+        xtract.extract_stream.return_value = {}
+        with self.assertRaises(ValueError):
+            streams.extract_stream(entry, False, xtract)
+
     def test_extractor_loaded_on_demand_when_none_is_given(self):
         entry = _Entry(uri="ocp://original")
         with patch("ovos_media.player.streams.load_stream_extractors") as loader:
@@ -226,3 +253,20 @@ class TestPlayerValidateStreamException(unittest.TestCase):
         result = p.validate_stream()
 
         self.assertFalse(result)
+
+
+class TestPlayerValidateStreamClaimedSchemes(unittest.TestCase):
+    """validate_stream() must widen extract_stream's whitelist with every
+    scheme a loaded backend across the three services claims."""
+
+    def test_claimed_schemes_from_all_three_services_are_forwarded(self):
+        p = make_player()
+        p.now_playing.playback = PlaybackType.AUDIO
+        p.audio_service.claimed_schemes.return_value = {"library"}
+        p.video_service.claimed_schemes.return_value = {"cast"}
+        p.web_service.claimed_schemes.return_value = set()
+
+        p.validate_stream()
+
+        p.now_playing.extract_stream.assert_called_once_with(
+            allowed_schemes={"library", "cast"})

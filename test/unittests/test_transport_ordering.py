@@ -73,7 +73,7 @@ class _OrderingTest(unittest.TestCase):
     def setUp(self):
         self.bus = FakeBus()
         self.player = OCPMediaPlayer(self.bus, config=dict(self.config))
-        self.player.now_playing.extract_stream = lambda: None
+        self.player.now_playing.extract_stream = lambda **kwargs: None
         # replace the inline test dispatcher with a real one, then rebuild
         # the bus edge so its listeners submit to it
         self.player.dispatcher.shutdown()
