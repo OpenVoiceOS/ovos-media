@@ -276,6 +276,12 @@ class OCPBusApi:
                        gated=True),
             BusHandler("ovos.common_play.status", player.handle_status,
                        dispatch=False),
+            # OCP-1 §4.4.2: read-only, like status - mutate nothing, so
+            # neither is gated or dispatched.
+            BusHandler("ovos.common_play.disambiguation",
+                       player.handle_disambiguation_query, dispatch=False),
+            BusHandler("ovos.common_play.likes",
+                       player.handle_likes_query, dispatch=False),
             # external MPRIS player → reflect as OCP now_playing (no local
             # backend)
             BusHandler("ovos.common_play.mpris.now_playing",
