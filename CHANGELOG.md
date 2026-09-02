@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.2.0a1) (2026-09-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.2a1...2.2.0a1)
+
+**Closed issues:**
+
+- No way to read back the disambiguation candidates or the liked list [\#184](https://github.com/OpenVoiceOS/ovos-media/issues/184)
+
+**Merged pull requests:**
+
+- feat: answer disambiguation and likes queries [\#186](https://github.com/OpenVoiceOS/ovos-media/pull/186) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.1.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.2a1) (2026-09-02)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.1a1...2.1.2a1)
@@ -10,19 +22,19 @@
 
 ## [2.1.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.1a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.1.1a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.1a1)
 
 **Merged pull requests:**
 
 - fix: emit the previous-track verb the workshop base class listens on [\#182](https://github.com/OpenVoiceOS/ovos-media/pull/182) ([JarbasAl](https://github.com/JarbasAl))
 
-## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.0a1)
-
 ## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.0.2a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.0.2a1)
+
+## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.1.0a1)
 
 **Merged pull requests:**
 
