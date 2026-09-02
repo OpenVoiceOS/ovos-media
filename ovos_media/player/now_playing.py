@@ -83,12 +83,15 @@ class NowPlaying(MediaEntry):
         if newonly and entry.get("uri"):
             super().update({"uri": entry["uri"]})
 
-    def extract_stream(self):
+    def extract_stream(self, allowed_schemes=None):
         """
         Get metadata from ocp_plugins and add it to this MediaEntry
+        @param allowed_schemes: extra uri schemes to accept, see
+            streams.extract_stream
         """
         streams.extract_stream(self, self.playback == PlaybackType.VIDEO,
-                               self.stream_xtract)
+                               self.stream_xtract,
+                               allowed_schemes=allowed_schemes)
 
     # bus api
     def handle_external_play(self, message):

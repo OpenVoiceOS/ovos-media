@@ -598,5 +598,47 @@ class TestStateMessages(unittest.TestCase):
             )
 
 
+# ---------------------------------------------------------------------------
+# TestBackendClaimedSchemes
+# ---------------------------------------------------------------------------
+
+class TestBackendClaimedSchemes(unittest.TestCase):
+    """A backend that claims a non-builtin uri scheme via supported_uris()
+    (eg. ovos-media-plugin-mass claiming "library" for library://) must be
+    allowed to play it - the stream validator's http/file// whitelist only
+    protects against schemes nobody claims, it must not itself decide which
+    schemes are playable when that is what backends declare.
+    """
+
+    def test_backend_claimed_scheme_reaches_playing(self) -> None:
+        with OCPPlayerHarness() as h:
+            # the harness wires player.audio_service as a MagicMock (see
+            # OCPPlayerHarness mock-backend mode); give it a real
+            # claimed_schemes() return so validate_stream() sees "library"
+            # as claimed the same way a real BaseMediaService would after
+            # loading a backend whose supported_uris() includes it
+            h.player.audio_service.claimed_schemes.return_value = {"library"}
+            h.player.video_service.claimed_schemes.return_value = set()
+            h.player.web_service.claimed_schemes.return_value = set()
+
+            h.play(_audio_entry("library://radio/1", "Radio"))
+
+            h.assert_now_playing_uri("library://radio/1")
+            self.assertEqual(h.player.state, PlayerState.PLAYING)
+
+    def test_unclaimed_scheme_is_still_rejected(self) -> None:
+        # control: without any backend claiming "library", the same uri
+        # must still be refused as invalid - the garbage-rejection
+        # behaviour for truly unclaimed schemes is unchanged
+        with OCPPlayerHarness() as h:
+            h.player.audio_service.claimed_schemes.return_value = set()
+            h.player.video_service.claimed_schemes.return_value = set()
+            h.player.web_service.claimed_schemes.return_value = set()
+
+            h.play(_audio_entry("library://radio/1", "Radio"))
+
+            self.assertNotEqual(h.player.state, PlayerState.PLAYING)
+
+
 if __name__ == "__main__":
     unittest.main()

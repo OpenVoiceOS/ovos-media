@@ -539,7 +539,10 @@ class OCPMediaPlayer:
                                       PlaybackType.UNDEFINED,
                                       PlaybackType.MPRIS]:
             try:
-                self.now_playing.extract_stream()
+                allowed_schemes = (self.audio_service.claimed_schemes() |
+                                   self.video_service.claimed_schemes() |
+                                   self.web_service.claimed_schemes())
+                self.now_playing.extract_stream(allowed_schemes=allowed_schemes)
             except Exception as e:
                 LOG.exception(e)
                 return False

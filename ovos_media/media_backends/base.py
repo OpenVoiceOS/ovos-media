@@ -110,6 +110,20 @@ class BaseMediaService:
                 continue
         return data
 
+    def claimed_schemes(self) -> set:
+        """Every uri scheme/prefix some loaded backend declares via
+        ``supported_uris()``.
+
+        Cheap and IO-free (unlike :meth:`can_play`, which may probe a
+        backend) - just the union of what each loaded backend already
+        advertises. Computed fresh from the current ``self.services`` on
+        every call, so it always reflects the backends presently loaded.
+        """
+        schemes = set()
+        for s in self.services:
+            schemes.update(_safe_supported_uris(s))
+        return schemes
+
     def can_play(self, uri: str, preferred_service: MediaBackend = None) -> bool:
         """Return True if some loaded backend would claim *uri*, without
         actually loading it. Mirrors the backend-selection resolution

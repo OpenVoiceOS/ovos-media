@@ -730,6 +730,31 @@ class TestBaseMediaServiceInit(unittest.TestCase):
         self.assertIs(svc.config, cfg)
 
 
+class TestClaimedSchemes(unittest.TestCase):
+    """BaseMediaService.claimed_schemes() - the union of what loaded
+    backends declare via supported_uris(), used to widen the stream
+    validator's whitelist beyond the http/file// builtins."""
+
+    def test_union_of_loaded_backends(self):
+        svc, _ = _make_base_svc()
+        svc.services = [
+            _FullFakeBackend(uris=["http", "https"], name="vlc"),
+            _FullFakeBackend(uris=["library"], name="mass"),
+        ]
+        self.assertEqual(svc.claimed_schemes(), {"http", "https", "library"})
+
+    def test_no_backends_loaded_returns_empty_set(self):
+        svc, _ = _make_base_svc()
+        svc.services = []
+        self.assertEqual(svc.claimed_schemes(), set())
+
+    def test_raising_backend_does_not_break_the_others(self):
+        svc, _ = _make_base_svc()
+        svc.services = [_RaisingUrisBackend({"name": "bad"}, None),
+                        _FullFakeBackend(uris=["http"], name="vlc")]
+        self.assertEqual(svc.claimed_schemes(), {"http"})
+
+
 class TestAvailableBackends(unittest.TestCase):
 
     def test_returns_dict_with_backend_info(self):

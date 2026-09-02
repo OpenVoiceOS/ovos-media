@@ -201,7 +201,7 @@ def _real_player(bus=None, config=None):
     from ovos_media.player import OCPMediaPlayer
     bus = bus or FakeBus()
     player = OCPMediaPlayer(bus, config=config if config is not None else {})
-    player.now_playing.extract_stream = lambda: None
+    player.now_playing.extract_stream = lambda **kwargs: None
     player.media.notify_dialog = MagicMock()
     return player
 

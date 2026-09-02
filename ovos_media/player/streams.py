@@ -11,13 +11,23 @@ from ovos_utils.log import LOG
 
 from ovos_media.bus.schemas import is_injection_char
 
+# schemes always playable, regardless of what backends are loaded
+_BUILTIN_SCHEMES = ("http", "file", "/")
 
-def extract_stream(entry, video: bool, stream_xtract=None) -> None:
+
+def extract_stream(entry, video: bool, stream_xtract=None,
+                    allowed_schemes=None) -> None:
     """Resolve the stream of *entry* and merge the extractor metadata into it.
 
     @param entry: MediaEntry (or NowPlaying) to resolve and update in place
     @param video: whether a video stream is wanted
     @param stream_xtract: stream extractor collection; loaded on demand
+    @param allowed_schemes: extra uri schemes to accept on top of the
+        built-in http/file//, eg. ``{"library"}`` when a loaded backend
+        declared it via ``supported_uris()``. A uri whose scheme is not
+        built-in and not in this set is still refused - this is not a
+        blanket bypass, it only recognizes schemes a loaded backend
+        actually claims.
     @raise ValueError: the entry has no uri, or the resolved uri is not a
         playable stream
     """
@@ -38,8 +48,12 @@ def extract_stream(entry, video: bool, stream_xtract=None) -> None:
         entry.update(meta, newonly=True)
         entry.original_uri = uri
 
-    # validate extracted uri
-    if not any(entry.uri.startswith(s) for s in ["http", "file", "/"]):
+    # validate extracted uri: http/file// are always playable; any other
+    # scheme is only accepted when a loaded backend claimed it via
+    # supported_uris() (eg. ovos-media-plugin-mass claiming "library" for
+    # "library://radio/1") - everything else is still refused as garbage
+    claimed = tuple(f"{s}:" for s in (allowed_schemes or ()))
+    if not (entry.uri.startswith(_BUILTIN_SCHEMES) or entry.uri.startswith(claimed)):
         raise ValueError(f"invalid stream: {entry.uri!r}")
     # a uri passing the prefix check above may still smuggle control
     # characters (eg. embedded newlines for header/log injection) - refuse
