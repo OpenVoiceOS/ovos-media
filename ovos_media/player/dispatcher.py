@@ -293,6 +293,7 @@ class PlayerSnapshot:
     image: str = ""
     track_info: dict = field(default_factory=dict)
     queue: Tuple[dict, ...] = ()
+    candidates: Tuple[dict, ...] = ()
 
     @property
     def as_status_dict(self) -> dict:
@@ -310,6 +311,13 @@ class PlayerSnapshot:
             "artist": self.artist,
             "image": self.image,
         }
+
+    @property
+    def as_disambiguation_dict(self) -> dict:
+        """The 'ovos.common_play.disambiguation' response payload: the
+        candidate set (OCP-1 §4.4.2) the last playback request was chosen
+        from, in descending match order."""
+        return {"entries": list(self.candidates)}
 
     @classmethod
     def of(cls, player) -> "PlayerSnapshot":
@@ -330,4 +338,5 @@ class PlayerSnapshot:
             image=now_playing.image,
             track_info=dict(now_playing.as_dict),
             queue=tuple(e.as_dict for e in playlist.entries),
+            candidates=tuple(e.as_dict for e in player.media.search_playlist.entries),
         )

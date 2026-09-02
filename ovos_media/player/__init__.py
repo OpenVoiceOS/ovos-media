@@ -179,6 +179,19 @@ class OCPMediaPlayer:
     def handle_status(self, message):
         self.bus.emit(message.response(self.snapshot.as_status_dict))
 
+    def handle_disambiguation_query(self, message):
+        """OCP-1 §4.4.2: the candidate set the current queue was chosen
+        from, in descending match order. Empty when nothing has been
+        requested yet. Answers from the same snapshot 'status' does."""
+        self.bus.emit(message.response(self.snapshot.as_disambiguation_dict))
+
+    def handle_likes_query(self, message):
+        """OCP-1 §4.4.2: the liked-songs store's entries. Reads the store
+        live — it owns its own lock and is not part of the dispatcher-
+        serialized player state 'status'/'disambiguation' snapshot from."""
+        entries = [e.as_dict for e in self.media.likes.as_entries()]
+        self.bus.emit(message.response({"entries": entries}))
+
     def handle_like(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri

@@ -70,6 +70,8 @@ PLAYER_TOPICS = [
     "ovos.common_play.like",
     "ovos.common_play.unlike",
     "ovos.common_play.status",
+    "ovos.common_play.disambiguation",
+    "ovos.common_play.likes",
     "ovos.common_play.mpris.now_playing",
 ]
 SERVICE_TOPICS = [
@@ -127,6 +129,8 @@ UNGATED_TOPICS = {
     "mycroft.stop",
     "ovos.common_play.SEI.get",
     "ovos.common_play.status",
+    "ovos.common_play.disambiguation",
+    "ovos.common_play.likes",
     "ovos.common_play.mpris.now_playing",
 }
 
