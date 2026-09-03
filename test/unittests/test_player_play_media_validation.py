@@ -185,6 +185,36 @@ class TestPlayMediaAllInvalidDisambiguationKeepsPriorResults(unittest.TestCase):
                          [VALID_TRACK_2["uri"]])
 
 
+class TestPlayMediaDisambiguationIsTheCandidateSet(unittest.TestCase):
+
+    def test_replaying_a_candidate_keeps_the_candidate_set(self):
+        """Playing an entry already among the candidates must not wipe them."""
+        p = _make_player()
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+        candidates = [VALID_TRACK, VALID_TRACK_2]
+
+        p.play_media(VALID_TRACK, disambiguation=candidates)
+        # the user picks a candidate from the set the UI was just handed
+        p.play_media(VALID_TRACK_2, disambiguation=candidates)
+
+        self.assertEqual(sorted(e.uri for e in p.media.search_playlist.entries),
+                         sorted([VALID_TRACK["uri"], VALID_TRACK_2["uri"]]))
+
+    def test_partly_new_disambiguation_keeps_the_overlap(self):
+        """A new candidate set replaces the old one wholesale — entries the
+        old set also contained stay, because they are in the new set."""
+        p = _make_player()
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+
+        p.play_media(VALID_TRACK, disambiguation=[VALID_TRACK])
+        p.play_media(VALID_TRACK, disambiguation=[VALID_TRACK, VALID_TRACK_2])
+
+        self.assertEqual(sorted(e.uri for e in p.media.search_playlist.entries),
+                         sorted([VALID_TRACK["uri"], VALID_TRACK_2["uri"]]))
+
+
 class TestPlayMedia(unittest.TestCase):
     """play_media sets up now_playing and calls play."""
 

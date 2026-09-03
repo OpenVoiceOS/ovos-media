@@ -77,6 +77,29 @@ class TestDisambiguationQueryE2E(unittest.TestCase):
                 self.assertIn("title", entry)
                 self.assertIn("uri", entry)
 
+    def test_repicking_a_candidate_keeps_the_candidate_set(self):
+        """Playing an entry the previous request already offered as a
+        candidate must leave the full candidate set queryable."""
+        with OCPPlayerHarness() as h:
+            h.player.media.search_playlist = Playlist()
+            a = _audio_entry("http://example.com/a.mp3", "A", 95)
+            b = _audio_entry("http://example.com/b.mp3", "B", 50)
+            candidates = [a.as_dict, b.as_dict]
+
+            h.bus.emit(Message("ovos.common_play.play", {
+                "media": a.as_dict, "disambiguation": candidates}))
+            time.sleep(0.05)
+            # the user picks the other candidate from the set just shown
+            h.bus.emit(Message("ovos.common_play.play", {
+                "media": b.as_dict, "disambiguation": candidates}))
+            time.sleep(0.05)
+
+            data = _query(h, "ovos.common_play.disambiguation")
+
+            self.assertEqual([e["uri"] for e in data["entries"]],
+                             ["http://example.com/a.mp3",
+                              "http://example.com/b.mp3"])
+
     def test_empty_before_any_playback_request(self):
         with OCPPlayerHarness() as h:
             h.player.media.search_playlist = Playlist()
