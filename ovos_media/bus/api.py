@@ -31,6 +31,7 @@ own 'ovos.common_play.media.state' listener in
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple
 
+from ovos_bus_client.session import SessionManager
 from ovos_utils.log import LOG
 
 from ovos_media.bus.schemas import (decode_media, decode_media_state,
@@ -94,6 +95,11 @@ class OCPBusApi:
     :meth:`shutdown` undoes exactly it.
     """
 
+    # session_ids a gated drop has already been WARNING-logged for, bounded
+    # so a malicious/misbehaving peer spraying distinct session ids cannot
+    # grow this without limit (see _log_gated_drop)
+    _MAX_WARNED_DROPPED_SESSIONS = 32
+
     def __init__(self, bus, player=None, service=None) -> None:
         self.bus = bus
         self.player = player
@@ -101,6 +107,7 @@ class OCPBusApi:
         self.table: List[BusHandler] = self._build_table()
         # (topic, wrapper) pairs actually bound on the bus
         self._registrations: List[Tuple[str, Callable]] = []
+        self._warned_dropped_sessions: set = set()
         self.register()
 
     @property
@@ -300,6 +307,35 @@ class OCPBusApi:
             BusHandler("opm.audio.query", topics.handle_opm_audio_query),
         ]
 
+    def _log_gated_drop(self, entry: "BusHandler", message) -> None:
+        """Log a session-gated drop (see is_default_session).
+
+        The FIRST drop for a given session_id is a WARNING, naming the
+        dropped topic, the offending session, and the remedy - a hub
+        operator whose satellite commands are silently ignored otherwise
+        has no clue why without reading source. Every later drop for a
+        session already warned about stays DEBUG, so a chatty satellite
+        does not flood the log. ``_warned_dropped_sessions`` is bounded
+        (see _MAX_WARNED_DROPPED_SESSIONS); once full, a newly seen
+        session_id keeps warning on every drop rather than being silently
+        forgotten - erring toward visibility over log volume.
+        """
+        try:
+            session_id = SessionManager.get(message).session_id
+        except Exception:
+            session_id = "?"
+        if session_id in self._warned_dropped_sessions:
+            LOG.debug(f"ignoring '{entry.topic}' message, not from the "
+                      f"default/local session ({session_id!r})")
+            return
+        if len(self._warned_dropped_sessions) < self._MAX_WARNED_DROPPED_SESSIONS:
+            self._warned_dropped_sessions.add(session_id)
+        LOG.warning(f"ignoring '{entry.topic}' from session {session_id!r}: "
+                   f"this daemon only serves the default session; a hub "
+                   f"serving satellites directly needs "
+                   f"media.validate_source: false - satellite-embedded "
+                   f"daemons see 'default' after HiveMind NAT")
+
     def _wrap(self, entry: BusHandler) -> Callable:
         """Build the listener for one table entry.
 
@@ -334,8 +370,7 @@ class OCPBusApi:
                     return
             if entry.gated and not is_default_session(message,
                                                       self.validate_source):
-                LOG.debug(f"ignoring '{entry.topic}' message, not from the "
-                          f"default/local session")
+                self._log_gated_drop(entry, message)
                 return
             if entry.dispatch and dispatcher is not None:
                 dispatcher.submit(lambda: entry.target(message))

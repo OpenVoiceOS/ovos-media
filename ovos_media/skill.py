@@ -54,17 +54,25 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
         self.register_intent_file("ShuffleOff.intent", self.handle_shuffle_off)
 
     def handle_dialog_notification(self, dialog: str,
-                                   data: Optional[dict] = None) -> None:
+                                   data: Optional[dict] = None,
+                                   message: Optional[Message] = None) -> None:
         """Speak a dialog the player asked the catalog to announce.
 
-        These announcements (track.failed, queue.finished,
-        no.playback.backend, nothing.playing) always land on the default
-        session: they are reached from bus events that carry no session of
-        their own (END_OF_MEDIA, INVALID_MEDIA, the invalid-stream retry
-        timer). A satellite-triggered playback therefore announces
-        locally. Fixing that needs the player to stash the triggering
-        message's session at play time and pass it along; see the issue
-        tracker.
+        END_OF_MEDIA/INVALID_MEDIA-derived announcements tied to a specific
+        playback (track.failed, queue.finished) carry *message*: the
+        'ovos.common_play.play' Message that started that playback,
+        stashed by OCPMediaPlayer at play time (see OCPMediaPlayer.
+        _play_message/_notify_dialog) and forwarded here through
+        MediaCatalog.notify_dialog. speak_dialog()'s underlying speak()
+        digs the call stack for a Message to carry context/session from
+        (dig_for_message) - naming this parameter *message* and holding it
+        as a local here is what makes that lookup find it, so the dialog is
+        spoken back on the ORIGINATING session instead of the default one.
+
+        Announcements with no playback of their own to tie to
+        (no.playback.backend, nothing.playing) - or a notify_dialog call
+        from a plain in-process caller that passed no message - land on the
+        default session (*message* is None).
         """
         self.speak_dialog(dialog, data)
 

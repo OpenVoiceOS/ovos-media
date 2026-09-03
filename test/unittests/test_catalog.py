@@ -134,7 +134,9 @@ class TestDialogNotifications(unittest.TestCase):
 
         catalog.notify_dialog("queue.finished", {"title": "X"})
 
-        listener.assert_called_once_with("queue.finished", {"title": "X"})
+        # notify_dialog always calls the listener with the (dialog, data,
+        # message) shape - message is None here since the caller gave none
+        listener.assert_called_once_with("queue.finished", {"title": "X"}, None)
 
     def test_listener_is_registered_once(self):
         catalog = MediaCatalog(FakeBus(), _likes())

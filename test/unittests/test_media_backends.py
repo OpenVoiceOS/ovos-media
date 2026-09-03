@@ -1,34 +1,51 @@
 """Tests for BaseMediaService, AudioService, VideoService, WebService.
 
-Covers service loading, backend selection by URI scheme, and bus event
-registration. Uses FakeBus and mock plugins — no real playback.
+Covers service loading, backend selection by URI scheme, and the v2
+MediaBackend physical-event contract (bind_event_reporter /
+PlaybackEvent). Uses FakeBus and mock plugins — no real playback.
 """
 import threading
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
 from ovos_bus_client.message import Message
+from ovos_plugin_manager.templates.media import PlaybackEvent
 from ovos_utils.fakebus import FakeBus
 from ovos_utils.ocp import MediaState, TrackState
 
 
 class _FakeBackend:
-    """Minimal MediaBackend stub for testing service selection."""
+    """Minimal v2 MediaBackend stub for testing service selection."""
+
+    is_remote = False
 
     def __init__(self, config, bus):
         self.config = config
         self.bus = bus
         self.name = config.get("name", "fake")
         self.aliases = []
-        self._track_start_callback = None
+        self._event_reporter = None
 
     def supported_uris(self):
         return self.config.get("uris", [])
 
-    def set_track_start_callback(self, cb):
-        self._track_start_callback = cb
+    def bind_event_reporter(self, reporter):
+        self._event_reporter = reporter
 
-    def play(self, repeat=False):
+    def report(self, event, **data):
+        """Mirrors the real OPM template's report(): dereferences
+        self._event_reporter fresh, at call time - never a closure a
+        caller might have saved earlier. This is the ONLY path a real
+        plugin uses; tests must drive events through this, not by calling
+        a saved reporter reference directly (see TestUriProvenance*)."""
+        if self._event_reporter is not None:
+            self._event_reporter(event, **data)
+
+    def load_track(self, uri, metadata=None):
+        return True
+
+    def play(self):
         pass
 
     def stop(self):
@@ -225,13 +242,13 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
             def supported_uris(self):
                 return []
 
-            def set_track_start_callback(self, cb):
+            def load_track(self, uri, metadata=None):
+                return True
+
+            def play(self):
                 pass
 
-            def play(self, repeat=False):
-                pass
-
-            def stop(self):
+            def _stop(self):
                 return True
 
             def pause(self):
@@ -314,13 +331,13 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
             def supported_uris(self):
                 return []
 
-            def set_track_start_callback(self, cb):
+            def load_track(self, uri, metadata=None):
+                return True
+
+            def play(self):
                 pass
 
-            def play(self, repeat=False):
-                pass
-
-            def stop(self):
+            def _stop(self):
                 return True
 
             def pause(self):
@@ -376,13 +393,13 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
             def supported_uris(self):
                 return []
 
-            def set_track_start_callback(self, cb):
+            def load_track(self, uri, metadata=None):
+                return True
+
+            def play(self):
                 pass
 
-            def play(self, repeat=False):
-                pass
-
-            def stop(self):
+            def _stop(self):
                 return True
 
             def pause(self):
@@ -423,7 +440,10 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
         self.assertTrue(len(received) > 0)
         self.assertEqual(received[0].data["state"], MediaState.NO_MEDIA)
 
-    def test_track_start_callback_registered(self):
+    def test_event_reporter_bound(self):
+        """load_services() must bind every loaded backend's event reporter
+        to _handle_backend_event (partial-applied with that backend) - the
+        v2 replacement for the old set_track_start_callback wiring."""
         plugins = {"fake-audio": _FakeBackend}
         config = {
             "audio_players": {
@@ -432,7 +452,15 @@ class TestBaseMediaServiceLoading(unittest.TestCase):
         }
         svc = self._make_service(config=config, plugins=plugins)
         svc.load_services()
-        self.assertIsNotNone(svc.services[0]._track_start_callback)
+        backend = svc.services[0]
+        self.assertIsNotNone(backend._event_reporter)
+        # calling report() must route straight to _handle_backend_event
+        backend.current = backend
+        svc.current = backend
+        received = []
+        svc.bus.on("ovos.common_play.track.state", lambda m: received.append(m))
+        backend.report(PlaybackEvent.TRACK_START)
+        self.assertEqual(len(received), 1)
 
 
 class TestBaseMediaServiceSelection(unittest.TestCase):
@@ -449,7 +477,6 @@ class TestBaseMediaServiceSelection(unittest.TestCase):
         return svc
 
     def test_selects_backend_that_supports_uri(self):
-        from ovos_media.media_backends.base import BaseMediaService
         http_backend = MagicMock()
         http_backend.supported_uris.return_value = ["http", "https"]
         http_backend.name = "http-player"
@@ -575,39 +602,45 @@ class TestWebServiceNamespace(unittest.TestCase):
 
 
 class _FullFakeBackend:
-    """Full stub matching the interface used by BaseMediaService."""
+    """Full v2 stub matching the interface used by BaseMediaService."""
 
-    def __init__(self, uris=None, name="fake"):
+    def __init__(self, uris=None, name="fake", load_ok=True):
         self.uris = uris or []
         self.name = name
         self.aliases = [name]
-        self._track_start_callback = None
+        self._event_reporter = None
         self.loaded_uri = None
+        self.load_ok = load_ok
+        self.played = False
         self.paused = False
         self.resumed = False
         self.stopped = False
-        self.ocp_paused = False
-        self.ocp_resumed = False
         self.pause_calls = 0
         self.resume_calls = 0
-        self.ocp_stopped = False
         self.volume_lowered = False
         self.volume_restored = False
-        self.seek_forward_seconds = None
-        self.seek_backward_seconds = None
         self.track_position = None
 
     def supported_uris(self):
         return self.uris
 
-    def set_track_start_callback(self, cb):
-        self._track_start_callback = cb
+    def bind_event_reporter(self, reporter):
+        self._event_reporter = reporter
 
-    def load_track(self, uri):
+    def report(self, event, **data):
+        """Mirrors the real OPM template's report(): dereferences
+        self._event_reporter fresh, at call time. The only path a real
+        plugin uses - drive events through this, never a saved reporter
+        reference (see TestUriProvenanceGuardsStaleEvents)."""
+        if self._event_reporter is not None:
+            self._event_reporter(event, **data)
+
+    def load_track(self, uri, metadata=None):
         self.loaded_uri = uri
+        return self.load_ok
 
-    def play(self, repeat=False):
-        pass
+    def play(self):
+        self.played = True
 
     def stop(self):
         self.stopped = True
@@ -621,32 +654,11 @@ class _FullFakeBackend:
         self.resumed = True
         self.resume_calls += 1
 
-    def ocp_pause(self):
-        # mirrors the real ovos_plugin_manager MediaBackend template, which
-        # emits the PAUSED TrackState and then calls self.pause() once
-        self.ocp_paused = True
-        self.pause()
-
-    def ocp_resume(self):
-        # mirrors the real template, which emits state events then calls
-        # self.resume() once
-        self.ocp_resumed = True
-        self.resume()
-
-    def ocp_stop(self):
-        self.ocp_stopped = True
-
     def lower_volume(self):
         self.volume_lowered = True
 
     def restore_volume(self):
         self.volume_restored = True
-
-    def seek_forward(self, seconds):
-        self.seek_forward_seconds = seconds
-
-    def seek_backward(self, seconds):
-        self.seek_backward_seconds = seconds
 
     def get_track_length(self):
         return 120000
@@ -729,6 +741,19 @@ class TestBaseMediaServiceInit(unittest.TestCase):
                                    autoload=False)
         self.assertIs(svc.config, cfg)
 
+    def test_init_does_not_subscribe_to_media_state_bus_topic(self):
+        """The v1 self-listening loop must be gone: __init__ must not
+        register any handler for 'ovos.common_play.media.state' - the
+        service now learns of playback state exclusively via its backends'
+        bound event reporters (see load_services)."""
+        from ovos_media.media_backends.base import BaseMediaService
+        mock_bus = MagicMock()
+        with patch("ovos_media.media_backends.base.Configuration", return_value={"media": {}}):
+            BaseMediaService(mock_bus, namespace="audio",
+                             plugin_loader=lambda: {}, autoload=False)
+        registered = [c[0][0] for c in mock_bus.on.call_args_list]
+        self.assertNotIn("ovos.common_play.media.state", registered)
+
 
 class TestClaimedSchemes(unittest.TestCase):
     """BaseMediaService.claimed_schemes() - the union of what loaded
@@ -758,9 +783,9 @@ class TestClaimedSchemes(unittest.TestCase):
 class TestAvailableBackends(unittest.TestCase):
 
     def test_returns_dict_with_backend_info(self):
-        from ovos_plugin_manager.templates.media import RemoteAudioPlayerBackend
         svc, bus = _make_base_svc()
         b = _FullFakeBackend(uris=["http", "https"], name="vlc")
+        b.is_remote = False
         svc.services = [b]
         result = svc.available_backends()
         self.assertIn("vlc", result)
@@ -784,10 +809,11 @@ class TestAvailableBackends(unittest.TestCase):
             def supported_uris(self):
                 return ["http"]
 
-            def play(self, *a, **kw): pass
+            def load_track(self, uri, metadata=None): return True
+            def play(self): pass
             def pause(self): pass
             def resume(self): pass
-            def stop(self): pass
+            def _stop(self): pass
             def lower_volume(self): pass
             def restore_volume(self): pass
             def get_track_length(self): return 0
@@ -799,24 +825,9 @@ class TestAvailableBackends(unittest.TestCase):
         svc.services = [r]
         result = svc.available_backends()
         self.assertTrue(result["remote-player"]["remote"])
-
-
-class TestTrackStart(unittest.TestCase):
-
-    def test_track_start_with_track_emits_playing_track(self):
-        svc, bus = _make_base_svc(namespace="audio")
-        emitted = []
-        bus.on("ovos.audio.playing_track", lambda m: emitted.append(m))
-        svc.track_start("my_track.mp3")
-        self.assertEqual(len(emitted), 1)
-        self.assertEqual(emitted[0].data["track"], "my_track.mp3")
-
-    def test_track_start_none_emits_queue_end(self):
-        svc, bus = _make_base_svc(namespace="audio")
-        emitted = []
-        bus.on("ovos.audio.queue_end", lambda m: emitted.append(m))
-        svc.track_start(None)
-        self.assertEqual(len(emitted), 1)
+        # this is the contract switch: 'remote' now comes straight off the
+        # template's own is_remote flag, not an isinstance() check here
+        self.assertTrue(r.is_remote)
 
 
 class TestPlay(unittest.TestCase):
@@ -829,6 +840,7 @@ class TestPlay(unittest.TestCase):
         svc.play("http://example.com/track.mp3", preferred_service=b1)
         self.assertEqual(svc.current, b1)
         self.assertEqual(b1.loaded_uri, "http://example.com/track.mp3")
+        self.assertTrue(b1.played)
 
     def test_play_skips_preferred_service_if_uri_not_supported(self):
         b1 = _FullFakeBackend(uris=["http"], name="vlc")
@@ -867,22 +879,49 @@ class TestPlay(unittest.TestCase):
         self.assertIsNone(svc.current)
         self.assertIsNone(b1.loaded_uri)
 
+    def test_play_emits_loaded_media_and_calls_backend_play(self):
+        """A successful load_track()==True must emit LOADED_MEDIA and call
+        play() on the backend directly — v2 replaces the old wait-for-the-
+        backend-to-emit-LOADED_MEDIA-itself self-listening loop."""
+        b1 = _FullFakeBackend(uris=["http"], name="vlc")
+        svc, bus = _make_base_svc(services=[b1])
+        received = []
+        bus.on("ovos.common_play.media.state", lambda m: received.append(m))
+
+        svc.play("http://example.com/track.mp3")
+
+        self.assertTrue(b1.played)
+        states = [m.data["state"] for m in received]
+        self.assertIn(MediaState.LOADED_MEDIA, states)
+        self.assertNotIn(MediaState.INVALID_MEDIA, states)
+
+    def test_play_load_track_returns_false_emits_invalid_media(self):
+        """A backend returning False from load_track() (the v2 failure
+        signal) must emit INVALID_MEDIA and clear current, without ever
+        calling play()."""
+        b1 = _FullFakeBackend(uris=["http"], name="vlc", load_ok=False)
+        svc, bus = _make_base_svc(services=[b1])
+        received = []
+        bus.on("ovos.common_play.media.state", lambda m: received.append(m))
+
+        svc.play("http://example.com/track.mp3")
+
+        self.assertIsNone(svc.current)
+        self.assertFalse(b1.played)
+        states = [m.data["state"] for m in received]
+        self.assertEqual(states, [MediaState.INVALID_MEDIA])
+
 
 class TestPauseResume(unittest.TestCase):
 
     def test_pause_calls_backend_pause_exactly_once(self):
-        # Regression: BaseMediaService.pause() used to call both
-        # self.current.pause() AND self.current.ocp_pause(), and
-        # ocp_pause() itself calls pause() again — double-invoking a
-        # single bus-level pause request. A toggling backend pause command
-        # would end up NOT paused. Only ocp_pause() should be called here,
-        # which performs the pause exactly once.
+        """v2: pause() calls the backend's plain pause() verb directly -
+        there is no ocp_pause() wrapper to double-invoke it any more."""
         svc, bus = _make_base_svc()
         b = _FullFakeBackend(uris=["http"], name="vlc")
         svc.current = b
         svc.pause()
         self.assertTrue(b.paused)
-        self.assertTrue(b.ocp_paused)
         self.assertEqual(b.pause_calls, 1)
 
     def test_pause_no_current_does_nothing(self):
@@ -891,24 +930,33 @@ class TestPauseResume(unittest.TestCase):
         svc.pause()
 
     def test_resume_calls_backend_resume_exactly_once(self):
-        # Regression: symmetric to the pause case above — resume() must
-        # invoke the backend's resume() exactly once per bus request.
         svc, bus = _make_base_svc()
         b = _FullFakeBackend(uris=["http"], name="vlc")
         svc.current = b
         svc.resume()
         self.assertTrue(b.resumed)
-        self.assertTrue(b.ocp_resumed)
         self.assertEqual(b.resume_calls, 1)
 
     def test_resume_no_current_does_nothing(self):
         svc, bus = _make_base_svc()
         svc.resume()
 
+    def test_pause_does_not_emit_player_state_itself(self):
+        """The matching player.state PAUSED is emitted by OCPMediaPlayer's
+        own pause() (set_player_state), not by BaseMediaService any more -
+        emitting it here too would duplicate the message on the wire."""
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        received = []
+        bus.on("ovos.common_play.player.state", lambda m: received.append(m))
+        svc.pause()
+        self.assertEqual(received, [])
+
 
 class TestStop(unittest.TestCase):
 
-    def test_stop_calls_ocp_stop_and_clears_current(self):
+    def test_stop_calls_backend_stop_and_clears_current(self):
         import time as _time
         svc, bus = _make_base_svc()
         b = _FullFakeBackend(uris=["http"], name="vlc")
@@ -939,6 +987,34 @@ class TestStop(unittest.TestCase):
         bus.on("mycroft.stop.handled", lambda m: emitted.append(m))
         svc.stop()
         self.assertEqual(len(emitted), 1)
+
+    def test_stop_emits_end_of_media_itself(self):
+        """v2: the daemon emits END_OF_MEDIA directly from _perform_stop()
+        on a successful backend.stop() — v1 backends emitted this
+        themselves from ocp_stop(), which no longer exists."""
+        import time as _time
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.play_start_time = _time.monotonic() - 5
+        received = []
+        bus.on("ovos.common_play.media.state", lambda m: received.append(m))
+        svc.stop()
+        states = [m.data["state"] for m in received]
+        self.assertEqual(states, [MediaState.END_OF_MEDIA])
+
+    def test_stop_does_not_emit_player_state_itself(self):
+        """player.state STOPPED is emitted by OCPMediaPlayer.stop() -
+        _perform_stop() must not duplicate it."""
+        import time as _time
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        svc.play_start_time = _time.monotonic() - 5
+        received = []
+        bus.on("ovos.common_play.player.state", lambda m: received.append(m))
+        svc.stop()
+        self.assertEqual(received, [])
 
 
 class TestVolumeHandlers(unittest.TestCase):
@@ -983,80 +1059,478 @@ class TestVolumeHandlers(unittest.TestCase):
         self.assertFalse(b.volume_restored)
 
 
-class TestHandleMediaStateChange(unittest.TestCase):
+class TestHandleBackendEvent(unittest.TestCase):
+    """_handle_backend_event - the v2 replacement for
+    handle_media_state_change's self-listening loop. Driven directly, as a
+    real backend's bound reporter would call it."""
 
-    def _msg(self, state):
-        return Message("ovos.common_play.media.state", {"state": state})
-
-    def test_audio_namespace_emits_playing_audio(self):
-        from ovos_utils.ocp import MediaState, TrackState
-        from ovos_bus_client.message import Message
-
+    def test_track_start_audio_namespace_emits_playing_audio(self):
         svc, bus = _make_base_svc(namespace="audio")
         b = _FullFakeBackend(uris=["http"], name="vlc")
         svc.current = b
         emitted = []
         bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
-        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
+        svc._handle_backend_event(b, PlaybackEvent.TRACK_START)
         self.assertEqual(len(emitted), 1)
         self.assertEqual(emitted[0].data["state"], TrackState.PLAYING_AUDIO)
 
-    def test_video_namespace_emits_playing_video(self):
-        from ovos_utils.ocp import MediaState, TrackState
-
+    def test_track_start_video_namespace_emits_playing_video(self):
         svc, bus = _make_base_svc(namespace="video")
         b = _FullFakeBackend(uris=["http"], name="mpv")
         svc.current = b
         emitted = []
         bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
-        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
+        svc._handle_backend_event(b, PlaybackEvent.TRACK_START)
         self.assertEqual(emitted[0].data["state"], TrackState.PLAYING_VIDEO)
 
-    def test_web_namespace_emits_playing_webview(self):
-        from ovos_utils.ocp import MediaState, TrackState
-
+    def test_track_start_web_namespace_emits_playing_webview(self):
         svc, bus = _make_base_svc(namespace="web")
         b = _FullFakeBackend(uris=["https"], name="browser")
         svc.current = b
         emitted = []
         bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
-        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
+        svc._handle_backend_event(b, PlaybackEvent.TRACK_START)
         self.assertEqual(emitted[0].data["state"], TrackState.PLAYING_WEBVIEW)
 
-    def test_no_current_does_not_emit(self):
-        from ovos_utils.ocp import MediaState
-
-        svc, bus = _make_base_svc(namespace="audio")
-        svc.current = None
-        emitted = []
-        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
-        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
-        self.assertEqual(len(emitted), 0)
-
-    def test_non_loaded_state_does_not_emit(self):
-        from ovos_utils.ocp import MediaState
-
-        svc, bus = _make_base_svc(namespace="audio")
-        b = _FullFakeBackend(uris=["http"], name="vlc")
-        svc.current = b
-        emitted = []
-        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
-        svc.handle_media_state_change(self._msg(MediaState.NO_MEDIA))
-        self.assertEqual(len(emitted), 0)
-
-    def test_unknown_namespace_normalizes_and_forwards(self):
-        """A custom namespace must NOT silently drop the state change; it is
+    def test_track_start_unknown_namespace_normalizes_and_forwards(self):
+        """A custom namespace must NOT silently drop the event; it is
         normalized to a generic PLAYING_AUDIO TrackState and forwarded."""
-        from ovos_utils.ocp import MediaState, TrackState
-
         svc, bus = _make_base_svc(namespace="custom-thing")
         b = _FullFakeBackend(uris=["http"], name="thing")
         svc.current = b
         emitted = []
         bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
-        svc.handle_media_state_change(self._msg(MediaState.LOADED_MEDIA))
+        svc._handle_backend_event(b, PlaybackEvent.TRACK_START)
         self.assertEqual(len(emitted), 1)
         self.assertEqual(emitted[0].data["state"], TrackState.PLAYING_AUDIO)
+
+    def test_no_current_does_not_emit(self):
+        """svc.current is None -> `backend is not self.current` is True for
+        any real backend, so this is the same guard as
+        test_event_from_inactive_backend_is_ignored, just with no current
+        backend at all rather than a stale one - pinned separately since it
+        is the more common real-world case (eg. a backend event racing a
+        stop that already cleared current)."""
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = None
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+        svc._handle_backend_event(b, PlaybackEvent.TRACK_START)
+        svc._handle_backend_event(b, PlaybackEvent.END_OF_MEDIA)
+        self.assertEqual(len(emitted), 0)
+
+    def test_unrecognized_event_is_a_noop(self):
+        """A PlaybackEvent this service does not know about (eg. one added
+        to a later template revision) must be dropped quietly, not raise -
+        forward compatibility for the plugin side of the contract."""
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+        bus.on("ovos.common_play.player.state", lambda m: emitted.append(m))
+        svc._handle_backend_event(b, "some_future_event")  # must not raise
+        self.assertEqual(emitted, [])
+
+    def test_event_from_inactive_backend_is_ignored(self):
+        """A backend that is no longer self.current (deactivated by a
+        playback-type switch, or superseded by a later play()) must not be
+        able to move state with a late event."""
+        svc, bus = _make_base_svc(namespace="audio")
+        stale = _FullFakeBackend(uris=["http"], name="stale")
+        current = _FullFakeBackend(uris=["http"], name="current")
+        svc.current = current
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+        svc._handle_backend_event(stale, PlaybackEvent.TRACK_START)
+        svc._handle_backend_event(stale, PlaybackEvent.END_OF_MEDIA)
+        self.assertEqual(len(emitted), 0)
+
+    def test_end_of_media_emits_media_state(self):
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        emitted = []
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+        svc._handle_backend_event(b, PlaybackEvent.END_OF_MEDIA)
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].data["state"], MediaState.END_OF_MEDIA)
+        # a natural end never resets `current` — same as the v1 behaviour,
+        # where the plugin's own ocp_stop() never touched this service
+        self.assertIs(svc.current, b)
+
+    def test_error_emits_invalid_media_and_leaves_current_untouched(self):
+        """v1 parity: current is NOT cleared from the event path - the
+        player's on_invalid_stream/play_next flow (triggered by the
+        INVALID_MEDIA message) owns the transition away from a failed
+        track, exactly like it already owns it for a natural END_OF_MEDIA."""
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        emitted = []
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+        svc._handle_backend_event(b, PlaybackEvent.ERROR, error="boom")
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].data["state"], MediaState.INVALID_MEDIA)
+        self.assertIs(svc.current, b)
+
+    def test_paused_resumed_stopped_do_not_emit_anything(self):
+        """These are already covered by the daemon's own verb call sites
+        (OCPMediaPlayer.pause/resume/stop -> set_player_state) - see
+        TestPauseResume/TestStop above. Re-emitting on the plugin's
+        physical confirmation would just duplicate the message."""
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        emitted = []
+        bus.on("ovos.common_play.player.state", lambda m: emitted.append(m))
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+        svc._handle_backend_event(b, PlaybackEvent.PAUSED)
+        svc._handle_backend_event(b, PlaybackEvent.RESUMED)
+        svc._handle_backend_event(b, PlaybackEvent.STOPPED)
+        self.assertEqual(emitted, [])
+
+    def test_paused_resumed_stopped_relayed_to_on_external_event(self):
+        """PAUSED/RESUMED/STOPPED must not be silently dropped: they are
+        relayed to the on_external_event callback (OCPMediaPlayer registers
+        one - see player/__init__.py's _on_backend_external_event), which is
+        how a device/plugin-side transport change (Chromecast app, Music
+        Assistant UI...) not requested by this daemon reaches the player's
+        own state machine."""
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+        received = []
+        svc.on_external_event = lambda event: received.append(event)
+
+        svc._handle_backend_event(b, PlaybackEvent.PAUSED)
+        svc._handle_backend_event(b, PlaybackEvent.RESUMED)
+        svc._handle_backend_event(b, PlaybackEvent.STOPPED)
+
+        self.assertEqual(received, [PlaybackEvent.PAUSED, PlaybackEvent.RESUMED,
+                                    PlaybackEvent.STOPPED])
+
+    def test_on_external_event_exception_does_not_propagate(self):
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+
+        def _raise(event):
+            raise RuntimeError("boom")
+
+        svc.on_external_event = _raise
+        # must not raise
+        svc._handle_backend_event(b, PlaybackEvent.PAUSED)
+
+
+class TestThreadingSingleRead(unittest.TestCase):
+    """Executed repro from review: _perform_stop used to read self.current
+    twice (`if self.current: ... if self.current.stop(): ...`), racing any
+    concurrent write to self.current from another thread (eg a backend
+    event handler running concurrently) - AttributeError on ``None.stop()``,
+    the backend left playing forever with no END_OF_MEDIA or
+    mycroft.stop.handled ever emitted. A single local read removes the
+    window entirely."""
+
+    def test_perform_stop_survives_concurrent_current_mutation(self):
+        svc, bus = _make_base_svc()
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+
+        # simulate another thread clearing self.current WHILE stop() is
+        # running - exactly what a second read of self.current, after the
+        # first, would have raced against
+        real_stop = b.stop
+
+        def _stop_and_mutate():
+            svc.current = None
+            return real_stop()
+
+        b.stop = _stop_and_mutate
+
+        received = []
+        bus.on("mycroft.stop.handled", lambda m: received.append(m))
+
+        svc._perform_stop()  # must not raise AttributeError
+
+        self.assertIsNone(svc.current)
+        self.assertEqual(len(received), 1)
+
+    def test_handle_backend_event_takes_service_lock(self):
+        """_handle_backend_event must serialize its self.current/self._gen
+        read-and-compare through the same service_lock _perform_stop() and
+        _play() use, so it cannot interleave with either."""
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.current = b
+
+        order = []
+        svc.service_lock.acquire()
+        try:
+            t = threading.Thread(
+                target=lambda: (svc._handle_backend_event(b, PlaybackEvent.END_OF_MEDIA),
+                               order.append("event_processed")))
+            t.start()
+            time.sleep(0.1)
+            order.append("still_held")
+        finally:
+            svc.service_lock.release()
+        t.join(timeout=2)
+        self.assertEqual(order, ["still_held", "event_processed"])
+
+
+class TestUriProvenanceGuardsStaleEvents(unittest.TestCase):
+    """Design decision (round 3, replacing an earlier generation-counter
+    attempt): two consecutive tracks on the SAME backend instance are
+    indistinguishable by identity alone. A late END_OF_MEDIA/ERROR from
+    track 1, arriving after track 2's _play() has already (re)started on
+    that same backend, is otherwise indistinguishable from one genuinely
+    about track 2.
+
+    A bind-time "generation" baked into a fresh partial rebound on every
+    _play() does NOT work: the OPM template's report() always dereferences
+    self._event_reporter fresh, at CALL time - never a stale closure a
+    caller happened to save earlier - so no in-flight physical event can
+    ever actually be carrying an old generation by the time it reaches
+    _handle_backend_event (confirmed by an executed repro: a watcher-thread
+    END_OF_MEDIA for track 1 sailed straight through while track 2 was
+    already playing, because report() looked up the ALREADY-rebound,
+    current-generation reporter). Every test below drives events through
+    backend.report(...) - the real path a plugin uses - never a saved
+    reporter reference directly, so this class cannot repeat that mistake.
+
+    The actual mechanism: self._current_uri, the uri _play() last loaded
+    onto the backend. END_OF_MEDIA/ERROR carrying a uri that disagrees with
+    it is dropped. An event with no uri passes through un-filtered - a
+    documented limitation, no worse than v1 (no detection at all)."""
+
+    def test_late_end_of_media_with_track1_uri_after_track2_loaded_is_dropped(self):
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.services = [b]
+
+        svc.play("http://example.com/track1.mp3")
+        svc.play("http://example.com/track2.mp3")  # same backend, reused
+        self.assertIs(svc.current, b)
+
+        emitted = []
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+
+        b.report(PlaybackEvent.END_OF_MEDIA, uri="http://example.com/track1.mp3")
+
+        self.assertEqual(emitted, [], "a stale END_OF_MEDIA carrying track "
+                                      "1's uri reached the wire after track "
+                                      "2 had already loaded on the same "
+                                      "backend")
+        self.assertIs(svc.current, b)
+
+    def test_late_error_with_track1_uri_after_track2_loaded_is_dropped(self):
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.services = [b]
+
+        svc.play("http://example.com/track1.mp3")
+        svc.play("http://example.com/track2.mp3")
+
+        emitted = []
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+
+        b.report(PlaybackEvent.ERROR, uri="http://example.com/track1.mp3",
+                error="track1 died")
+
+        self.assertEqual(emitted, [], "a stale ERROR carrying track 1's uri "
+                                      "reached the wire after track 2 had "
+                                      "already loaded on the same backend")
+
+    def test_event_without_uri_passes_through_documented_limitation(self):
+        """A plugin that does not attach uri= gives the daemon nothing to
+        compare against - the event passes through un-filtered, exactly as
+        it would have in v1 (no staleness detection existed there either).
+        This is a deliberate, documented limitation, not a bug."""
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.services = [b]
+
+        svc.play("http://example.com/track1.mp3")
+        svc.play("http://example.com/track2.mp3")
+
+        emitted = []
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+
+        b.report(PlaybackEvent.END_OF_MEDIA)  # no uri kwarg at all
+
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].data["state"], MediaState.END_OF_MEDIA)
+
+    def test_matching_uri_is_not_dropped(self):
+        """The uri check must not become a one-way latch: an END_OF_MEDIA
+        genuinely reporting the CURRENTLY loaded uri must still reach the
+        wire."""
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.services = [b]
+
+        svc.play("http://example.com/track1.mp3")
+
+        emitted = []
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+
+        b.report(PlaybackEvent.END_OF_MEDIA, uri="http://example.com/track1.mp3")
+
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].data["state"], MediaState.END_OF_MEDIA)
+
+    def test_backend_identity_mismatch_still_dropped(self):
+        """The ordinary `backend is not self.current` guard, unrelated to
+        uri provenance, still applies - a genuinely different, deactivated
+        backend instance is dropped regardless of what uri it reports."""
+        svc, bus = _make_base_svc(namespace="audio")
+        stale = _FullFakeBackend(uris=["http"], name="stale")
+        current = _FullFakeBackend(uris=["http"], name="current")
+        svc.services = [stale, current]
+        svc.current = current
+
+        emitted = []
+        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+
+        stale.report(PlaybackEvent.END_OF_MEDIA)
+
+        self.assertEqual(emitted, [])
+
+    def test_track_start_is_not_uri_gated(self):
+        """Only the destructive events (ERROR/END_OF_MEDIA) are uri-gated -
+        a stale TRACK_START/PAUSED/etc is already excluded by the ordinary
+        backend-identity check, and this pins that scope is deliberate, not
+        incidental."""
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="vlc")
+        svc.services = [b]
+
+        svc.play("http://example.com/track1.mp3")
+        svc.play("http://example.com/track2.mp3")
+
+        emitted = []
+        bus.on("ovos.common_play.track.state", lambda m: emitted.append(m))
+        b.report(PlaybackEvent.TRACK_START, uri="http://example.com/track1.mp3")
+        self.assertEqual(len(emitted), 1)
+
+
+class TestNoDeadlockOnSynchronousReport(unittest.TestCase):
+    """Executed repro from review (CONFIRMED, then fixed): _perform_stop
+    used to call current.stop() WHILE HOLDING service_lock. A backend that
+    reports synchronously from inside its own stop() - eg.
+    ``self.report(PlaybackEvent.STOPPED)`` before returning, a perfectly
+    legal thing for a plugin to do - re-enters _handle_backend_event on the
+    SAME thread, which needs that same, non-reentrant Lock: permanent
+    wedge. In the real player this ran on the single-worker dispatcher
+    thread, so it killed every subsequent command, not just this one call.
+
+    The fix is release-before-call, not RLock: RLock only fixes the
+    same-thread case shown here and would still leave the plugin verb call
+    inside the critical section, serializing every play/stop against every
+    other backend's events for no reason. _perform_stop() now snapshots and
+    clears self.current under a BRIEF lock section, releases it, and only
+    then calls current.stop() - see its docstring in base.py."""
+
+    def test_synchronous_report_from_stop_does_not_deadlock(self):
+        class _SyncReportingBackend(_FullFakeBackend):
+            def stop(self):
+                # exactly like a real plugin whose stop() reports its own
+                # completion synchronously, on the calling thread, BEFORE
+                # returning - via the real report() path, never a saved
+                # reporter reference
+                self.report(PlaybackEvent.STOPPED)
+                return super().stop()
+
+        svc, bus = _make_base_svc()
+        b = _SyncReportingBackend(uris=["http"], name="vlc")
+        svc.services = [b]
+
+        result = {}
+
+        def _drive():
+            svc.play("http://example.com/track.mp3")
+            svc.play_start_time = 0.0  # clear stop()'s <1s guard window
+            svc.stop()
+            result["done"] = True
+
+        t = threading.Thread(target=_drive)
+        t.start()
+        t.join(timeout=10)
+
+        self.assertFalse(t.is_alive(), "play()/stop() never completed - "
+                         "service_lock deadlocked on a synchronous report() "
+                         "from inside stop()")
+        self.assertTrue(result.get("done"))
+        self.assertIsNone(svc.current)
+
+    def test_synchronous_report_from_load_track_does_not_deadlock(self):
+        """The same shape, for load_track() reporting an early ERROR
+        synchronously before returning False."""
+        class _SyncErrorBackend(_FullFakeBackend):
+            def load_track(self, uri, metadata=None):
+                self.report(PlaybackEvent.ERROR, error="synchronous failure")
+                return False
+
+        svc, bus = _make_base_svc()
+        b = _SyncErrorBackend(uris=["http"], name="vlc")
+        svc.services = [b]
+
+        result = {}
+
+        def _drive():
+            svc.play("http://example.com/track.mp3")
+            result["done"] = True
+
+        t = threading.Thread(target=_drive)
+        t.start()
+        t.join(timeout=10)
+
+        self.assertFalse(t.is_alive())
+        self.assertTrue(result.get("done"))
+
+
+
+class TestBindEventReporterFailureIsolation(unittest.TestCase):
+    """Executed repro from review: one broken plugin's bind_event_reporter()
+    raising during load_services() must not stop siblings from binding, and
+    must not leave _loaded unset (which previously wedged wait_for_load()
+    forever for a fully-loaded, otherwise-healthy service)."""
+
+    def test_broken_bind_event_reporter_does_not_block_siblings_or_loaded_flag(self):
+        class _BrokenReporterBackend(_FullFakeBackend):
+            def __init__(self, config, bus):
+                super().__init__(uris=["http"], name="broken")
+
+            def bind_event_reporter(self, reporter):
+                raise RuntimeError("boom")
+
+        class _GoodBackend(_FullFakeBackend):
+            def __init__(self, config, bus):
+                super().__init__(uris=["https"], name="good")
+
+        plugins = {"broken-audio": _BrokenReporterBackend, "good-audio": _GoodBackend}
+        svc, bus = _make_base_svc(config={})
+        svc.plugin_loader = lambda: plugins
+
+        with patch("ovos_media.media_backends.base.LOG"):
+            svc.load_services()
+
+        names = [s.name for s in svc.services]
+        self.assertIn("broken-audio", names)
+        self.assertIn("good-audio", names)
+        good = next(s for s in svc.services if s.name == "good-audio")
+        self.assertIsNotNone(good._event_reporter,
+                            "the broken sibling's bind failure stopped "
+                            "'good' from binding its own reporter")
+        self.assertTrue(svc._loaded.is_set(),
+                        "_loaded was never set after a bind_event_reporter "
+                        "failure - wait_for_load() would hang forever")
 
 
 class TestGetPreferredPlayers(unittest.TestCase):
@@ -1160,7 +1634,7 @@ class TestShutdownAndListeners(unittest.TestCase):
         registered_events = [c[0][0] for c in mock_bus.on.call_args_list]
         self.assertEqual(
             [e for e in registered_events if e.startswith("ovos.audio.service.")],
-            [], "load_services() must not register any ovos.audio.service.* handler")
+            [], "load_services() must not register any ovos.audio.service. handler")
 
 
 class TestPluginLoadingExceptionHandling(unittest.TestCase):
@@ -1181,19 +1655,62 @@ class TestPluginLoadingExceptionHandling(unittest.TestCase):
         svc.load_services()
         self.assertEqual(svc.services, [])
 
+    def test_typeerror_on_instantiation_names_v1_plugin_specifically(self):
+        """A plugin whose constructor raises TypeError (eg. an unported
+        MediaBackend v1 plugin missing a v2-only concrete method) gets a
+        specific, actionable log line naming it as likely v1, distinct from
+        the generic 'Failed to load' for any other exception."""
+        def v1_plugin(cfg, bus):
+            raise TypeError("missing required positional argument")
 
-class _TogglingRealTemplateBackend:
-    """Real ovos_plugin_manager MediaBackend subclass whose pause command
-    toggles a single paused flag, as many real subprocess/IPC-wrapper
-    backends do (e.g. mpv/vlc "cycle pause"). Only pause()/resume() and
-    the abstract methods are implemented; ocp_pause()/ocp_resume()/ocp_stop()
-    are inherited UNMODIFIED from the real template."""
+        plugins = {"v1-audio": v1_plugin}
+        config = {"audio_players": {"legacy": {"module": "v1-audio"}}}
+        svc, bus = _make_base_svc(config=config)
+        svc.plugin_loader = lambda: plugins
+
+        from ovos_media.media_backends import base as base_mod
+        with patch.object(base_mod, "LOG") as mock_log:
+            svc.load_services()
+
+        self.assertEqual(svc.services, [])
+        joined = "\n".join(
+            " ".join(str(a) for a in c.args) for c in mock_log.exception.call_args_list
+        )
+        self.assertIn("v1-audio", joined)
+        self.assertIn("MediaBackend v1", joined)
+        self.assertIn("MediaBackend v2", joined)
+
+    def test_load_track_returning_none_is_logged_as_likely_v1_and_treated_as_failure(self):
+        """load_track() returning None (v1's load_track had no return
+        statement) must be treated as a failed load, with a log line naming
+        the plugin as likely v1 - distinct from an honest False return."""
+        class _NoneReturningBackend(_FullFakeBackend):
+            def load_track(self, uri, metadata=None):
+                return None
+
+        b = _NoneReturningBackend(uris=["http"], name="legacy-vlc")
+        svc, bus = _make_base_svc(services=[b])
+
+        from ovos_media.media_backends import base as base_mod
+        with patch.object(base_mod, "LOG") as mock_log:
+            svc.play("http://example.com/track.mp3")
+
+        self.assertIsNone(svc.current)
+        joined = "\n".join(
+            " ".join(str(a) for a in c.args) for c in mock_log.error.call_args_list
+        )
+        self.assertIn("None", joined)
+        self.assertIn("MediaBackend v1", joined)
+
+
+class _RealTemplateBackend:
+    """Real ovos_plugin_manager MediaBackend subclass, so the tests below
+    exercise the actual base-class report()/bind_event_reporter() plumbing,
+    not a hand-rolled fake."""
 
     def __new__(cls, *a, **kw):
         from ovos_plugin_manager.templates.media import MediaBackend
 
-        # build a real dynamic subclass so we exercise the actual
-        # ocp_pause/ocp_resume implementations, not a hand-rolled fake
         class _Backend(MediaBackend):
             def __init__(self, config=None, bus=None):
                 super().__init__(config, bus)
@@ -1212,11 +1729,13 @@ class _TogglingRealTemplateBackend:
             def supported_uris(self):
                 return ["http"]
 
-            def play(self, repeat=False):
+            def load_track(self, uri, metadata=None):
+                return True
+
+            def play(self):
                 pass
 
-            def stop(self):
-                self._now_playing = None
+            def _stop(self):
                 return True
 
             def lower_volume(self):
@@ -1239,21 +1758,18 @@ class _TogglingRealTemplateBackend:
 
 class TestPauseResumeRealTemplateIntegration(unittest.TestCase):
     """Integration-grade regression test: exercises the REAL
-    ovos_plugin_manager.templates.media.MediaBackend ocp_pause()/
-    ocp_resume() implementations (not mocked/stubbed), driven through
-    BaseMediaService.pause()/resume().
+    ovos_plugin_manager.templates.media.MediaBackend base class (not
+    mocked/stubbed), driven through BaseMediaService.pause()/resume().
 
-    Before the fix, BaseMediaService.pause() called both
-    self.current.pause() AND self.current.ocp_pause() — and ocp_pause()
-    itself calls self.pause() again — so a single bus-level pause request
-    invoked the backend's pause() TWICE. A backend whose pause command
-    toggles (common for subprocess/IPC wrappers) would end up NOT paused.
+    A single bus-level pause/resume request must invoke the backend's
+    pause()/resume() exactly once — the v2 template has no ocp_pause()/
+    ocp_resume() wrapper any more to double-invoke it.
     """
 
     def test_single_bus_pause_invokes_backend_pause_exactly_once(self):
         svc, bus = _make_base_svc()
-        b = _TogglingRealTemplateBackend()
-        b.load_track("http://example.com/track.mp3")  # sets _now_playing
+        b = _RealTemplateBackend()
+        b.load_track("http://example.com/track.mp3")
         svc.current = b
 
         svc.pause()
@@ -1263,7 +1779,7 @@ class TestPauseResumeRealTemplateIntegration(unittest.TestCase):
 
     def test_single_bus_resume_invokes_backend_resume_exactly_once(self):
         svc, bus = _make_base_svc()
-        b = _TogglingRealTemplateBackend()
+        b = _RealTemplateBackend()
         b.load_track("http://example.com/track.mp3")
         svc.current = b
         b.paused = True  # start paused
@@ -1301,7 +1817,7 @@ class TestSupportedUrisExceptionIsolation(unittest.TestCase):
 
     def test_play_selects_good_backend_after_raising_one(self):
         good = _FakeBackend({"name": "good", "uris": ["http"]}, None)
-        good.load_track = MagicMock()
+        good.load_track = MagicMock(return_value=True)
         bad = _RaisingUrisBackend({"name": "bad"}, None)
         svc, _bus = _make_base_svc(services=[bad, good])
 
@@ -1332,7 +1848,7 @@ class TestCanPlayMatchesPlayParity(unittest.TestCase):
 
     def test_services_scan_match_after_raising_backend(self):
         good = _FakeBackend({"name": "good", "uris": ["http"]}, None)
-        good.load_track = MagicMock()
+        good.load_track = MagicMock(return_value=True)
         bad = _RaisingUrisBackend({"name": "bad"}, None)
         svc, _bus = _make_base_svc(services=[bad, good])
         self.assertTrue(self._assert_parity(svc, "http://example.com/a.mp3"))
@@ -1347,9 +1863,9 @@ class TestCanPlayMatchesPlayParity(unittest.TestCase):
 
     def test_preferred_service_match_takes_precedence(self):
         preferred = _FakeBackend({"name": "preferred", "uris": ["http"]}, None)
-        preferred.load_track = MagicMock()
+        preferred.load_track = MagicMock(return_value=True)
         other = _FakeBackend({"name": "other", "uris": ["http"]}, None)
-        other.load_track = MagicMock()
+        other.load_track = MagicMock(return_value=True)
         svc, _bus = _make_base_svc(services=[other])
         self.assertTrue(self._assert_parity(
             svc, "http://example.com/a.mp3", preferred_service=preferred))
@@ -1358,7 +1874,7 @@ class TestCanPlayMatchesPlayParity(unittest.TestCase):
 
     def test_current_backend_match_is_reused(self):
         current = _FakeBackend({"name": "current", "uris": ["http"]}, None)
-        current.load_track = MagicMock()
+        current.load_track = MagicMock(return_value=True)
         svc, _bus = _make_base_svc(services=[current])
         svc.current = current
         self.assertTrue(self._assert_parity(svc, "http://example.com/a.mp3"))
@@ -1421,9 +1937,9 @@ class TestSeekApiDelegation(unittest.TestCase):
 
 
 class TestSilentPlayFailures(unittest.TestCase):
-    """Exceptions raised by a crashing backend during play() or during
-    handle_media_state_change() must emit MediaState.INVALID_MEDIA and clear
-    self.current, rather than dying silently."""
+    """Exceptions raised by a crashing backend during load_track() or
+    play() must emit MediaState.INVALID_MEDIA and clear self.current,
+    rather than dying silently."""
 
     def test_play_load_track_exception_emits_invalid_media_and_clears_current(self):
         crashing = MagicMock()
@@ -1456,23 +1972,30 @@ class TestSilentPlayFailures(unittest.TestCase):
         self.assertEqual(len(received), 1)
         self.assertEqual(received[0].data["state"], MediaState.INVALID_MEDIA)
 
-    def test_handle_media_state_change_play_exception_emits_invalid_media_and_clears_current(self):
+    def test_play_call_exception_emits_invalid_media_and_clears_current(self):
+        """load_track() succeeds but the subsequent play() call raises —
+        the v2-flow analogue of the old handle_media_state_change try/except
+        around current.play()."""
         crashing = MagicMock()
+        crashing.supported_uris.return_value = ["file"]
+        crashing.load_track.return_value = True
         crashing.play.side_effect = RuntimeError("boom")
 
-        svc = _make_base_service(crashing)
+        svc = _make_base_service(None)
+        svc.services = [crashing]
 
         received = []
         svc.bus.on("ovos.common_play.media.state", lambda m: received.append(m))
 
-        svc.handle_media_state_change(Message("ovos.common_play.media.state",
-                                             {"state": MediaState.LOADED_MEDIA}))
+        svc.play("file:///tmp/track.mp3")
 
         self.assertIsNone(svc.current)
-        # first call is the incoming LOADED_MEDIA-triggering message is not
-        # re-emitted by us; only the INVALID_MEDIA emission we make matters
-        invalid = [m for m in received if m.data.get("state") == MediaState.INVALID_MEDIA]
-        self.assertEqual(len(invalid), 1)
+        states = [m.data.get("state") for m in received]
+        # LOADED_MEDIA fires before play() is attempted, then INVALID_MEDIA
+        # once it raises - both are on the wire, same overall sequence v1
+        # produced (LOADED_MEDIA then INVALID_MEDIA for a load-ok/play-fail
+        # track), just emitted by the daemon instead of the plugin.
+        self.assertEqual(states, [MediaState.LOADED_MEDIA, MediaState.INVALID_MEDIA])
 
 
 class TestMalformedPlayersConfig(unittest.TestCase):
@@ -1530,86 +2053,12 @@ class TestMalformedPlayersConfig(unittest.TestCase):
         self.assertEqual(len(services), 1)
 
 
-def _make_service():
-    """Return a BaseMediaService with mocked dependencies."""
-    from ovos_media.media_backends.base import BaseMediaService
-    bus = FakeBus()
-    svc = BaseMediaService.__new__(BaseMediaService)
-    svc._init_runtime_state()
-    svc.bus = bus
-    svc.services = []
-    svc.current = None
-    svc.volume_is_low = False
-    svc.service_lock = threading.Lock()
-    svc.play_start_time = 0.0
-    svc.namespace = "audio"
-    svc.config = {}
-    svc._pending_playlist = []
-    svc._pending_repeat = False
-    svc._last_full_playlist = []
-    svc._loaded = threading.Event()
-    svc._loaded.set()
-    return svc, bus
-
-
-class TestHandleMediaStateChangeUnknownNamespace(unittest.TestCase):
-    """Test handle_media_state_change with unknown namespace."""
-
-    def test_unknown_namespace_logs_warning(self):
-        """handle_media_state_change with unknown namespace should log warning."""
-        svc, bus = _make_service()
-        svc.namespace = "unknown"
-        svc.current = MagicMock()
-
-        # This should log a warning but not raise
-        svc.handle_media_state_change(Message("ovos.common_play.media.state",
-                                             {"state": MediaState.LOADED_MEDIA}))
-
-
-class TestHandleMediaStateChangeVideo(unittest.TestCase):
-    """Test handle_media_state_change with video namespace."""
-
-    def test_loaded_media_video_emits_playing_video_state(self):
-        """handle_media_state_change LOADED_MEDIA with video should emit PLAYING_VIDEO."""
-        svc, bus = _make_service()
-        svc.namespace = "video"
-        svc.current = MagicMock()
-
-        received = []
-        bus.on("ovos.common_play.track.state", lambda m: received.append(m))
-
-        svc.handle_media_state_change(Message("ovos.common_play.media.state",
-                                             {"state": MediaState.LOADED_MEDIA}))
-
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].data["state"], TrackState.PLAYING_VIDEO)
-
-
-class TestHandleMediaStateChangeWeb(unittest.TestCase):
-    """Test handle_media_state_change with web namespace."""
-
-    def test_loaded_media_web_emits_playing_webview_state(self):
-        """handle_media_state_change LOADED_MEDIA with web should emit PLAYING_WEBVIEW."""
-        svc, bus = _make_service()
-        svc.namespace = "web"
-        svc.current = MagicMock()
-
-        received = []
-        bus.on("ovos.common_play.track.state", lambda m: received.append(m))
-
-        svc.handle_media_state_change(Message("ovos.common_play.media.state",
-                                             {"state": MediaState.LOADED_MEDIA}))
-
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].data["state"], TrackState.PLAYING_WEBVIEW)
-
-
 class TestWaitForLoad(unittest.TestCase):
     """Test wait_for_load timeout mechanism."""
 
     def test_wait_for_load_returns_true_when_already_loaded(self):
         """wait_for_load should return True if _loaded is already set."""
-        svc, bus = _make_service()
+        svc, bus = _make_base_svc()
         svc._loaded.set()
 
         result = svc.wait_for_load(timeout=0.1)
@@ -1618,7 +2067,7 @@ class TestWaitForLoad(unittest.TestCase):
 
     def test_wait_for_load_times_out(self):
         """wait_for_load should return False on timeout."""
-        svc, bus = _make_service()
+        svc, bus = _make_base_svc()
         svc._loaded.clear()
 
         result = svc.wait_for_load(timeout=0.01)
@@ -1626,188 +2075,3 @@ class TestWaitForLoad(unittest.TestCase):
         self.assertFalse(result)
 
 
-class TestPauseWithCurrent(unittest.TestCase):
-    """Test pause with current service."""
-
-    def test_pause_calls_ocp_pause_only(self):
-        """pause() must invoke current.ocp_pause() exactly once, and must
-        NOT call current.pause() directly. The real ovos_plugin_manager
-        MediaBackend template's ocp_pause() itself calls pause() once (after
-        emitting the PAUSED TrackState), so calling both would invoke the
-        backend's pause() twice per bus-level pause request."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-
-        svc.pause()
-
-        svc.current.pause.assert_not_called()
-        svc.current.ocp_pause.assert_called_once()
-
-    def test_pause_with_no_current_does_nothing(self):
-        """pause() with no current should not raise."""
-        svc, bus = _make_service()
-        svc.current = None
-
-        svc.pause()  # should not raise
-
-
-class TestResumeWithCurrent(unittest.TestCase):
-    """Test resume with current service."""
-
-    def test_resume_calls_ocp_resume_only(self):
-        """resume() must invoke current.ocp_resume() exactly once, and must
-        NOT call current.resume() directly (symmetric to the pause case —
-        the real template's ocp_resume() already calls resume() once)."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-
-        svc.resume()
-
-        svc.current.resume.assert_not_called()
-        svc.current.ocp_resume.assert_called_once()
-
-    def test_resume_with_no_current_does_nothing(self):
-        """resume() with no current should not raise."""
-        svc, bus = _make_service()
-        svc.current = None
-
-        svc.resume()  # should not raise
-
-
-class TestPerformStop(unittest.TestCase):
-    """Test _perform_stop."""
-
-    def test_perform_stop_calls_stop_and_emits_handled(self):
-        """_perform_stop should call current.stop() and emit mycroft.stop.handled."""
-        svc, bus = _make_service()
-        mock_current = MagicMock()
-        mock_current.stop.return_value = True
-        svc.current = mock_current
-
-        received = []
-        bus.on("mycroft.stop.handled", lambda m: received.append(m))
-
-        svc._perform_stop()
-
-        # Check that stop was called before svc.current was set to None
-        mock_current.stop.assert_called_once()
-        mock_current.ocp_stop.assert_called_once()
-        self.assertEqual(len(received), 1)
-        # Verify that svc.current was cleared
-        self.assertIsNone(svc.current)
-
-
-class TestStopWithPlayStartTime(unittest.TestCase):
-    """Test stop() with play_start_time guard."""
-
-    def test_stop_requires_1_second_elapsed(self):
-        """stop() should check that >= 1 second has elapsed since play started."""
-        import time
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-        svc.current.stop.return_value = True
-        svc.play_start_time = time.monotonic()  # just now
-
-        with patch.object(svc, "_perform_stop") as mock_perform:
-            svc.stop()
-
-        # Should not call _perform_stop because < 1 second elapsed
-        mock_perform.assert_not_called()
-
-
-class TestLowerVolumeWithCurrent(unittest.TestCase):
-    """Test lower_volume."""
-
-    def test_lower_volume_calls_current_and_sets_flag(self):
-        """lower_volume() should call current.lower_volume() and set volume_is_low."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-        svc.volume_is_low = False
-
-        svc.lower_volume()
-
-        svc.current.lower_volume.assert_called_once()
-        self.assertTrue(svc.volume_is_low)
-
-    def test_lower_volume_with_no_current_does_nothing(self):
-        """lower_volume() with no current should not raise."""
-        svc, bus = _make_service()
-        svc.current = None
-
-        svc.lower_volume()  # should not raise
-
-    def test_lower_volume_when_already_low_skips(self):
-        """lower_volume() should skip if volume_is_low is already True."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-        svc.volume_is_low = True
-
-        svc.lower_volume()
-
-        svc.current.lower_volume.assert_not_called()
-
-
-class TestRestoreVolumeWithCurrent(unittest.TestCase):
-    """Test restore_volume."""
-
-    def test_restore_volume_calls_current_when_low(self):
-        """restore_volume() should call current.restore_volume() when volume_is_low."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-        svc.volume_is_low = True
-
-        svc.restore_volume()
-
-        svc.current.restore_volume.assert_called_once()
-        self.assertFalse(svc.volume_is_low)
-
-    def test_restore_volume_with_no_current_does_nothing(self):
-        """restore_volume() with no current should not raise."""
-        svc, bus = _make_service()
-        svc.current = None
-
-        svc.restore_volume()  # should not raise
-
-    def test_restore_volume_when_not_low_skips(self):
-        """restore_volume() should skip if volume_is_low is False."""
-        svc, bus = _make_service()
-        svc.current = MagicMock()
-        svc.volume_is_low = False
-
-        svc.restore_volume()
-
-        svc.current.restore_volume.assert_not_called()
-
-
-class TestTrackStartOcpEmits(unittest.TestCase):
-    """track_start must emit ovos.{namespace}.playing_track / queue_end and
-    nothing else — the mycroft.audio.* twins served by the old ovos-audio
-    stack are not this service's concern."""
-
-    def test_track_start_emits_ovos_playing_track(self):
-        svc, bus = _make_service()
-        svc.namespace = "audio"
-
-        received = {"ovos": [], "mycroft": []}
-        bus.on("ovos.audio.playing_track", lambda m: received["ovos"].append(m))
-        bus.on("mycroft.audio.playing_track", lambda m: received["mycroft"].append(m))
-
-        svc.track_start("http://example.com/track.mp3")
-
-        self.assertEqual(len(received["ovos"]), 1)
-        self.assertEqual(received["ovos"][0].data["track"],
-                         "http://example.com/track.mp3")
-        self.assertEqual(len(received["mycroft"]), 0)
-
-    def test_track_start_none_emits_ovos_queue_end(self):
-        svc, bus = _make_service()
-        svc.namespace = "audio"
-
-        received = {"ovos": [], "mycroft": []}
-        bus.on("ovos.audio.queue_end", lambda m: received["ovos"].append(m))
-        bus.on("mycroft.audio.queue_end", lambda m: received["mycroft"].append(m))
-
-        svc.track_start(None)
-
-        self.assertEqual(len(received["ovos"]), 1)
-        self.assertEqual(len(received["mycroft"]), 0)

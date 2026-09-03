@@ -34,7 +34,7 @@ class MediaCatalog:
         self.search_playlist = Playlist()
         self.ocp_skills = {}
         self.featured_skills = {}
-        self._dialog_listeners: List[Callable[[str, Optional[dict]], None]] = []
+        self._dialog_listeners: List[Callable[[str, Optional[dict], Optional[Message]], None]] = []
 
     def add_dialog_listener(self, listener: Callable) -> None:
         """Register a voice front-end to speak notified dialogs."""
@@ -45,16 +45,27 @@ class MediaCatalog:
         if listener in self._dialog_listeners:
             self._dialog_listeners.remove(listener)
 
-    def notify_dialog(self, dialog: str, data: Optional[dict] = None) -> None:
+    def notify_dialog(self, dialog: str, data: Optional[dict] = None,
+                      message: Optional[Message] = None) -> None:
         """Ask the voice front-end to speak a dialog.
 
         A listener that raises must not take the caller down with it — the
         callers are playback paths where a failed announcement is never a
         reason to abort playback.
+
+        Args:
+            dialog: the dialog file key to speak.
+            data: information used to populate the dialog.
+            message: the 'ovos.common_play.play' Message that started the
+                playback this dialog is about, when the caller knows one
+                (see OCPMediaPlayer._play_message) - so the listener can
+                speak back on the ORIGINATING session (OCP-1 §4) instead of
+                the default one; None when there is no such playback to
+                tie the dialog to.
         """
         for listener in list(self._dialog_listeners):
             try:
-                listener(dialog, data)
+                listener(dialog, data, message)
             except Exception as e:
                 LOG.exception(f"Failed to speak {dialog} dialog: {e}")
 

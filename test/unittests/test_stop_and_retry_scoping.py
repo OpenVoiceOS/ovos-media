@@ -58,7 +58,11 @@ def _wait_for_retry(player, deadline=3.0):
 
 
 class _StubBackend:
-    """Minimal MediaBackend stand-in mirroring the OPM template's stop path."""
+    """Minimal v2 MediaBackend stand-in. load_track()==True and play()
+    starting cleanly means BaseMediaService itself emits LOADED_MEDIA (see
+    base.py's _play) - this stub reports nothing over the bus itself."""
+
+    is_remote = False
 
     def __init__(self, bus, name="stub", uris=("http", "https", "file")):
         self.bus = bus
@@ -72,14 +76,15 @@ class _StubBackend:
     def supported_uris(self):
         return self._uris
 
-    def set_track_start_callback(self, cb):
-        self._cb = cb
+    def bind_event_reporter(self, reporter):
+        self._reporter = reporter
 
-    def load_track(self, uri):
+    def load_track(self, uri, metadata=None):
         self.loaded.append(uri)
         self._playing = True
+        return True
 
-    def play(self, repeat=False):
+    def play(self):
         pass
 
     def stop(self):
@@ -88,18 +93,16 @@ class _StubBackend:
         self._playing = False
         return was
 
-    def ocp_stop(self):
-        self.bus.emit(Message("ovos.common_play.player.state",
-                              {"state": PlayerState.STOPPED}))
-        self.bus.emit(Message("ovos.common_play.media.state",
-                              {"state": MediaState.END_OF_MEDIA}))
-
     def shutdown(self):
         pass
 
 
 class _InvalidBackend:
-    """Backend that always reports INVALID_MEDIA when asked to play."""
+    """Backend that always fails to load (the v2 load_track()==False
+    failure signal) - BaseMediaService._play emits INVALID_MEDIA itself
+    from that return value, this stub reports nothing over the bus."""
+
+    is_remote = False
 
     def __init__(self, bus, name="badstub", uris=("http", "https", "file")):
         self.bus = bus
@@ -112,15 +115,13 @@ class _InvalidBackend:
     def supported_uris(self):
         return self._uris
 
-    def set_track_start_callback(self, cb):
-        self._cb = cb
+    def bind_event_reporter(self, reporter):
+        self._reporter = reporter
 
-    def load_track(self, uri):
-        # mirrors a real backend that fails to load and reports INVALID_MEDIA
-        self.bus.emit(Message("ovos.common_play.media.state",
-                              {"state": MediaState.INVALID_MEDIA}))
+    def load_track(self, uri, metadata=None):
+        return False
 
-    def play(self, repeat=False):
+    def play(self):
         pass
 
     def stop(self):
@@ -128,12 +129,6 @@ class _InvalidBackend:
         was = self._playing
         self._playing = False
         return was
-
-    def ocp_stop(self):
-        self.bus.emit(Message("ovos.common_play.player.state",
-                              {"state": PlayerState.STOPPED}))
-        self.bus.emit(Message("ovos.common_play.media.state",
-                              {"state": MediaState.END_OF_MEDIA}))
 
     def shutdown(self):
         pass
@@ -221,8 +216,14 @@ class TestStopCancelsInvalidRetry(unittest.TestCase):
         armed_epoch = player.dispatcher.epoch
 
         # simulate the backend having something to actually stop, so
-        # BaseMediaService._perform_stop signals on_stop()
+        # BaseMediaService._perform_stop signals on_stop(). v2's
+        # load_track()==False failure clears audio_service.current (unlike
+        # v1's fire-and-forget bus self-emission, which never touched it) -
+        # re-arm it here to isolate what this test actually exercises: a
+        # direct stop() with an active backend must flag on_stop and cancel
+        # the pending retry, regardless of how that backend got there.
         backend._playing = True
+        player.audio_service.current = backend
         player.audio_service.play_start_time = time.monotonic() - 5
         player.audio_service.stop()
 

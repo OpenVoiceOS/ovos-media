@@ -5,11 +5,13 @@ player: an OPM backend family through its BaseMediaService, or an OCP skill
 through the bus.
 """
 import unittest
+from functools import partial
 from unittest.mock import MagicMock
 
 from ovos_bus_client.message import Message
+from ovos_plugin_manager.templates.media import PlaybackEvent
 from ovos_utils.fakebus import FakeBus
-from ovos_utils.ocp import TrackState
+from ovos_utils.ocp import MediaState, TrackState
 
 from ovos_media.media_backends.audio import AudioService
 from ovos_media.player.adapters import (OPMBackendAdapter, PlayerAdapter,
@@ -56,6 +58,26 @@ class _Backend:
 
     def set_track_start_callback(self, cb):
         pass
+
+
+class _ReportingBackend(_Backend):
+    """A backend whose stop() reports END_OF_MEDIA synchronously, on the
+    SAME thread and before returning - the interleaving a dying backend's
+    own watcher thread can also produce, just with a wider window."""
+
+    def __init__(self, name, uris, uri):
+        super().__init__(name, uris)
+        self._reporter = None
+        self._uri = uri
+
+    def bind_event_reporter(self, reporter):
+        self._reporter = reporter
+
+    def stop(self):
+        self.stopped = True
+        if self._reporter is not None:
+            self._reporter(PlaybackEvent.END_OF_MEDIA, uri=self._uri)
+        return True
 
 
 def _audio_service(*backends):
@@ -135,6 +157,33 @@ class TestOPMBackendAdapter(unittest.TestCase):
         self.player.audio_service.current = backend
         self.adapter.deactivate()
         self.assertIsNone(self.player.audio_service.current)
+
+    def test_deactivate_drops_a_synchronous_end_of_media_from_the_dying_backend(self):
+        # a switch to a different playback type calls deactivate() on the
+        # OLD backend; if that backend reports END_OF_MEDIA from inside its
+        # own stop() before self.current is cleared, the currency check in
+        # _handle_backend_event must already see it as inactive - otherwise
+        # the just-started NEW track's queue gets spuriously advanced.
+        uri = "file://track.mp3"
+        backend = _ReportingBackend("vlc", ["file"], uri)
+        service = _audio_service(backend)
+        bus = service.bus
+        emitted = []
+        bus.on("message", lambda m: emitted.append(Message.deserialize(m)))
+        backend.bind_event_reporter(partial(service._handle_backend_event, backend))
+        service.current = backend
+        service._current_uri = uri
+        self.player.audio_service = service
+
+        self.adapter.deactivate()
+
+        self.assertTrue(backend.stopped)
+        self.assertIsNone(service.current)
+        self.assertIsNone(service._current_uri)
+        end_of_media = [m for m in emitted
+                        if m.msg_type == "ovos.common_play.media.state"
+                        and m.data.get("state") == MediaState.END_OF_MEDIA]
+        self.assertEqual(end_of_media, [])
 
 
 class TestOPMBackendAdapterRouting(unittest.TestCase):

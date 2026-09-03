@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, PropertyMock, patch, AsyncMock
 
 from dbus_next.service import ServiceInterface
 
+from ovos_bus_client.message import Message
 from ovos_utils.ocp import PlaybackType, PlayerState, LoopState
 
 from ovos_media.player.dispatcher import PlayerSnapshot
@@ -181,6 +182,8 @@ class TestSignalPrecedesTheSnapshot(unittest.TestCase):
             self.mpris = MagicMock()
             self.handle_status = MagicMock()
             self._snapshot = PlayerSnapshot(player_state=self.state)
+            self._play_message = None
+            self._play_msg_or_default = lambda topic, data=None: Message(topic, data)
 
         def publish_snapshot(self):
             self._snapshot = PlayerSnapshot(player_state=self.state)
