@@ -657,8 +657,10 @@ class OCPMediaPlayer:
         if disambiguation:
             valid_disambiguation = validated_entries(disambiguation)
             if valid_disambiguation:
-                self.media.search_playlist.replace([t for t in valid_disambiguation
-                                                    if t not in self.media.search_playlist])
+                # the payload is the complete candidate set for this play
+                # request; playing an entry that is already among the
+                # candidates must keep the set intact, not shrink it
+                self.media.search_playlist.replace(valid_disambiguation)
                 self.media.search_playlist.sort_by_conf()
         if playlist:
             valid_playlist = validated_entries(playlist)
