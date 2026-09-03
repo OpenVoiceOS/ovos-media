@@ -45,7 +45,7 @@ class MediaService(Thread):
                                       on_stopping=stopping_hook,
                                       on_alive=alive_hook,
                                       on_started=started_hook)
-        self.status = ProcessStatus('audio', callback_map=callbacks)
+        self.status = ProcessStatus('media', callback_map=callbacks)
         self.status.set_started()
 
         self.config = Configuration().get("media", {})
