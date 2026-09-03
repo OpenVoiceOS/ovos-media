@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.2.1a1) (2026-09-03)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.2.0a1...2.2.1a1)
+
+**Closed issues:**
+
+- Playing an entry already in the search playlist empties the candidate set [\#189](https://github.com/OpenVoiceOS/ovos-media/issues/189)
+
+**Merged pull requests:**
+
+- fix: keep the candidate set when playing an entry already among the candidates [\#190](https://github.com/OpenVoiceOS/ovos-media/pull/190) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.2.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.2.0a1) (2026-09-02)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.2a1...2.2.0a1)
@@ -22,19 +34,19 @@
 
 ## [2.1.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.1a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.1a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.1.1a1)
 
 **Merged pull requests:**
 
 - fix: emit the previous-track verb the workshop base class listens on [\#182](https://github.com/OpenVoiceOS/ovos-media/pull/182) ([JarbasAl](https://github.com/JarbasAl))
 
-## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.0.2a1)
-
 ## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.1.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.0a1)
+
+## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.0.2a1)
 
 **Merged pull requests:**
 
@@ -540,10 +552,6 @@
 ## [0.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.0.2a1) (2026-06-22)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/V0.0.1a22...0.0.2a1)
-
-**Merged pull requests:**
-
-- feat: modernize and stabilize ovos-media \(OCPMediaPlayer rework, tests, GUI decoupling\) [\#37](https://github.com/OpenVoiceOS/ovos-media/pull/37) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [V0.0.1a22](https://github.com/OpenVoiceOS/ovos-media/tree/V0.0.1a22) (2024-04-09)
 
