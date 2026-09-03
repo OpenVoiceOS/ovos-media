@@ -16,6 +16,7 @@ from ovos_media.player.adapters import OPMBackendAdapter, SkillPlayerAdapter
 from ovos_media.player.roster import PlayerRoster
 from ovos_media.player.dispatcher import Dispatcher, PlayerSnapshot
 from ovos_plugin_manager.ocp import load_stream_extractors
+from ovos_plugin_manager.templates.media import PlaybackEvent
 from ovos_utils.log import LOG
 from ovos_bus_client.message import Message
 from ovos_utils.ocp import Playlist
@@ -66,13 +67,16 @@ class OCPMediaPlayer:
         self.now_playing: NowPlaying = NowPlaying(bus, player=self)
         # A stop the player itself asked for needs no callback any more:
         # stop() runs to completion on the dispatcher, so the END_OF_MEDIA
-        # the backend's ocp_stop() emits is a later queued command and
+        # _perform_stop() emits is a later queued command and
         # already sees _stop_requested. on_stop covers the other caller —
         # a skill stopping a backend service directly — whose stop the
         # player would otherwise mistake for a track ending.
-        self.audio_service = AudioService(bus, on_stop=self._on_backend_stop)
-        self.video_service = VideoService(bus, on_stop=self._on_backend_stop)
-        self.web_service = WebService(bus, on_stop=self._on_backend_stop)
+        self.audio_service = AudioService(bus, on_stop=self._on_backend_stop,
+                                          on_external_event=self._on_backend_external_event)
+        self.video_service = VideoService(bus, on_stop=self._on_backend_stop,
+                                          on_external_event=self._on_backend_external_event)
+        self.web_service = WebService(bus, on_stop=self._on_backend_stop,
+                                      on_external_event=self._on_backend_external_event)
         self.mpris: Optional[OcpMprisExporter] = None
 
         # MPRIS settings
@@ -116,7 +120,7 @@ class OCPMediaPlayer:
         self._snapshot: PlayerSnapshot = PlayerSnapshot()
         # True between a stop request and the next play(). An explicit stop
         # must NOT advance the queue, but OPM backends emit END_OF_MEDIA from
-        # ocp_stop(), so a stop is indistinguishable from a natural track end at
+        # _perform_stop(), so a stop is indistinguishable from a natural track end at
         # the media.state level without this flag.
         self._stop_requested: bool = False
         # owns the user queue, the identity of the selected entry and the
@@ -275,7 +279,7 @@ class OCPMediaPlayer:
         """Flag that the current playback is ending because it was stopped.
 
         Called from OCPMediaPlayer.stop(), before the adapters are asked to
-        stop and therefore before the backend's ocp_stop() emits
+        stop and therefore before _perform_stop() emits
         END_OF_MEDIA.
 
         Also supersedes any pending invalid-stream retry. Without this, a
@@ -290,15 +294,38 @@ class OCPMediaPlayer:
         """A backend service was stopped by someone other than this player.
 
         A stop this player itself commanded reaches here from the
-        dispatcher, having already flagged it — submitting a second write
-        would land after whatever command came next (a play arriving while
-        the stop ran), re-flagging a stop the user has already replaced.
-        Only a stop from another thread, a skill calling a backend
-        service's stop() directly, still has to be recorded.
+        dispatcher, having already flagged it (and already set player.state
+        STOPPED itself, see stop()) — submitting a second write would land
+        after whatever command came next (a play arriving while the stop
+        ran), re-flagging a stop the user has already replaced. Only a stop
+        from another thread — a skill calling a backend service's stop()
+        directly, or a device/plugin-side STOPPED PlaybackEvent relayed via
+        _on_backend_external_event — still has to be recorded AND reflected
+        as player.state STOPPED, since nothing else will.
         """
         if self.dispatcher.in_command():
             return
-        self.dispatcher.submit(self._mark_stop_requested)
+
+        def _handle():
+            self._mark_stop_requested()
+            self.set_player_state(PlayerState.STOPPED)
+
+        self.dispatcher.submit(_handle)
+
+    def _on_backend_external_event(self, event) -> None:
+        """A PlaybackEvent.{PAUSED,RESUMED,STOPPED} this player did not
+        itself request - a Chromecast app, a Music Assistant UI, a hardware
+        remote... - relayed here by BaseMediaService.on_external_event (see
+        media_backends/base.py's _handle_backend_event). Reflects the
+        transport change into this player's own state machine, the same way
+        _on_backend_stop already does for an external stop.
+        """
+        if event == PlaybackEvent.PAUSED:
+            self.dispatcher.submit(lambda: self.set_player_state(PlayerState.PAUSED))
+        elif event == PlaybackEvent.RESUMED:
+            self.dispatcher.submit(lambda: self.set_player_state(PlayerState.PLAYING))
+        elif event == PlaybackEvent.STOPPED:
+            self._on_backend_stop()
 
     def _locator_uri(self, uri: str = None) -> Optional[str]:
         """The uri to locate the current track by, when entry identity does
@@ -729,7 +756,17 @@ class OCPMediaPlayer:
             self.mpris.update_props({"CanGoNext": self.can_next})
             self.mpris.update_props({"CanGoPrevious": self.can_prev})
 
-        self.set_player_state(PlayerState.PLAYING)
+        if self.media_state != MediaState.INVALID_MEDIA:
+            # An invalid stream - whether no adapter claimed the uri above,
+            # or the adapter's own backend selection failed one layer down
+            # inside BaseMediaService._play - must not be overwritten back
+            # to PLAYING here. Most bus implementations (including FakeBus)
+            # dispatch a synchronous emit()'s subscribers before it returns,
+            # so handle_player_media_update's INVALID_MEDIA branch (which
+            # sets PlayerState.STOPPED, mirroring v1's ocp_error()) can
+            # already have updated self.media_state by the time this line
+            # runs - forcing PLAYING unconditionally silently overwrote it.
+            self.set_player_state(PlayerState.PLAYING)
 
     def play_shuffle(self) -> bool:
         """
@@ -944,7 +981,7 @@ class OCPMediaPlayer:
         Request stopping current playback and searching
         """
         # flag BEFORE asking the backends to stop. OPM backends emit
-        # END_OF_MEDIA from ocp_stop(), which is indistinguishable from a track
+        # END_OF_MEDIA from _perform_stop(), which is indistinguishable from a track
         # ending naturally; without this flag an explicit stop advanced the
         # queue, contradicting the documented "stop must not advance" semantics.
         self._mark_stop_requested()
@@ -1066,6 +1103,11 @@ class OCPMediaPlayer:
                                        stop_requested=stop_requested)
         elif invalid:
             self.handle_invalid_media(message)
+            # v1's ocp_error() emitted player.state STOPPED right alongside
+            # INVALID_MEDIA; this is the daemon's equivalent. A subsequent
+            # autoplay retry that succeeds moves the player back to PLAYING
+            # via play_next()->play(), same as it always did.
+            self.set_player_state(PlayerState.STOPPED)
             if self.ocp_config.get("autoplay", True):
                 # go through the delayed on_invalid_stream() path rather
                 # than calling play_next() inline — an inline call recursed
@@ -1100,7 +1142,7 @@ class OCPMediaPlayer:
 
         if stop_requested:
             # an explicit stop must never advance the queue. OPM backends
-            # emit END_OF_MEDIA from ocp_stop(), so a stop reaches here
+            # emit END_OF_MEDIA from _perform_stop(), so a stop reaches here
             # regardless of which BaseMediaService instance it was called on.
             LOG.debug("Playback ended by an explicit stop request; not advancing")
             return
@@ -1120,6 +1162,18 @@ class OCPMediaPlayer:
         # ending — neither of which is the queue actually finishing.
         # The real "no more tracks" detection, and the single speak site
         # for it, lives in play_next()'s end-of-queue branch.
+        #
+        # A natural end that does NOT advance still has to leave the wire
+        # in a state that matches reality: nothing is playing any more.
+        # v1 backends emitted player.state STOPPED unconditionally from
+        # ocp_stop()/ocp_error() on every end-of-media; this is the daemon's
+        # equivalent for the "ended, but did not advance" case (the
+        # advancing case above reaches PLAYING again via play_next->play()).
+        # MPRIS is excluded: an external player's own state (Playing/Paused/
+        # Stopped) is reflected exclusively through set_external_now_playing,
+        # and forcing STOPPED here would fight that independent state machine.
+        if playback_type != PlaybackType.MPRIS:
+            self.set_player_state(PlayerState.STOPPED)
 
     # ovos common play bus api requests
     def handle_play_request(self, message):
@@ -1158,14 +1212,18 @@ class OCPMediaPlayer:
         if seek is None:
             return
         if "seekValue" in seek:
-            # absolute position, from the audio player GUI seekbar
-            self.seek(seek["seekValue"])
+            # absolute position, from the audio player GUI seekbar.
+            # decode_seek only refuses non-numeric values, not negative
+            # ones, so a negative seekValue must still be floored here.
+            self.seek(max(0, seek["seekValue"]))
             return
         # relative offset, from the bus api
         position = self.now_playing.position or 0
         for adapter in self.roster.route("position_offset", self.playback_type):
             position = adapter.position() or position
-        self.seek(position + seek["seconds"] * 1000)
+        # a backward seek past the start of the track must not send a
+        # negative absolute position to the backend
+        self.seek(max(0, position + seek["seconds"] * 1000))
 
     def handle_next_request(self, message):
         self.play_next()

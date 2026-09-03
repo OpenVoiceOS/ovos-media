@@ -20,4 +20,4 @@ jobs:
       # version on — ovos-media no longer defines GUIInterface at all after
       # the GUI-removal restructure, and older ovoscope harness builds
       # unconditionally patched it, AttributeError-ing on construction.
-      pre_install_pip: "ovoscope[media]>=1.6.11a1"
+      pre_install_pip: "ovoscope[media]>=1.6.11a1 git+https://github.com/OpenVoiceOS/ovos-plugin-manager@feat/media-backend-v2"  # TEMPORARY: v2 template until opm 3.0.0a1

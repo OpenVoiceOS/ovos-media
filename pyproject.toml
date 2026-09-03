@@ -14,7 +14,16 @@ dependencies = [
     "ovos-utils~=0.0, >=0.13.14a1",
     "ovos-bus-client~=2.0, >=2.0.0a1",
     "ovos-config~=2.1,>=2.1.1",
-    "ovos-plugin-manager~=2.1, >=2.2.0a1",
+    # MediaBackend v2 (bind_event_reporter/PlaybackEvent, no ocp_*
+    # self-emission) is a breaking OPM change (PR #442 carries the breaking
+    # label, so release automation cuts it as 3.0.0a1): a v1 plugin resolves
+    # against the <3.0.0 line and keeps working there, unaware of this pin;
+    # a plugin ported to v2 pins >=3.0.0a1 for itself. This PR stays draft
+    # until #442 actually publishes 3.0.0a1 and the plugin fleet is ported.
+    # MediaBackend v2 template. Floor kept resolvable while 3.0.0a1 is
+    # unreleased (CI overlays the template branch via pre_install_pip);
+    # bumped to >=3.0.0a1,<4.0.0 at the OPM v2 release, before merge.
+    "ovos-plugin-manager>=2.11.6a1,<4.0.0",
     "ovos-workshop>=0.0.15",
     "json-database>=0.9.0",
     "dbus_next",
