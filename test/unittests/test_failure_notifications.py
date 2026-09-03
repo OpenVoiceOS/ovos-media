@@ -112,7 +112,7 @@ class TestTrackFailedDialog(unittest.TestCase):
     def test_spoken_on_first_invalid_media(self):
         p = self._make_player()
         p.handle_invalid_media()
-        p.media.notify_dialog.assert_called_once_with("track.failed")
+        p.media.notify_dialog.assert_called_once_with("track.failed", None, None)
 
     def test_not_spoken_again_for_a_second_invalid_track_in_the_same_queue(self):
         p = self._make_player()
@@ -238,7 +238,7 @@ class TestQueueFinishedDialog(unittest.TestCase):
             player.media_state = MediaState.BUFFERED_MEDIA
             player.bus.emit(Message("ovos.common_play.media.state",
                                     {"state": MediaState.END_OF_MEDIA}))
-        player.media.notify_dialog.assert_called_once_with("queue.finished")
+        player.media.notify_dialog.assert_called_once_with("queue.finished", None, None)
         self.assertEqual(player.state, PlayerState.STOPPED)
         player.shutdown()
 
@@ -304,11 +304,11 @@ class TestHandleInvalidMedia(unittest.TestCase):
         p = make_player()
         p.media.notify_dialog = MagicMock()
         p.handle_invalid_media(Message("ovos.common_play.media.state"))
-        p.media.notify_dialog.assert_called_once_with("track.failed")
+        p.media.notify_dialog.assert_called_once_with("track.failed", None, None)
         self.assertTrue(p._track_failed_spoken)
         # rate-limited: a second call must not speak again
         p.handle_invalid_media(Message("ovos.common_play.media.state"))
-        p.media.notify_dialog.assert_called_once_with("track.failed")
+        p.media.notify_dialog.assert_called_once_with("track.failed", None, None)
 
 
 class TestPlayerOnInvalidStream(unittest.TestCase):

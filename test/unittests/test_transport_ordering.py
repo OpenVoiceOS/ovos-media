@@ -26,7 +26,12 @@ def _track(uri, title):
 
 
 class _StubBackend:
-    """Backend that loads anything and reports nothing on its own."""
+    """v2 backend that loads anything and reports nothing on its own -
+    BaseMediaService itself emits END_OF_MEDIA from stop()==True (see
+    base.py's _perform_stop), indistinguishable from a track ending
+    naturally except for the order it arrives in."""
+
+    is_remote = False
 
     def __init__(self, bus, name="stub"):
         self.bus = bus
@@ -39,14 +44,15 @@ class _StubBackend:
     def supported_uris(self):
         return ["http", "https", "file"]
 
-    def set_track_start_callback(self, cb):
-        pass
+    def bind_event_reporter(self, reporter):
+        self._reporter = reporter
 
-    def load_track(self, uri):
+    def load_track(self, uri, metadata=None):
         self.loaded.append(uri)
         self._playing = True
+        return True
 
-    def play(self, repeat=False):
+    def play(self):
         pass
 
     def stop(self):
@@ -54,12 +60,6 @@ class _StubBackend:
         was = self._playing
         self._playing = False
         return was
-
-    def ocp_stop(self):
-        # what an OPM backend emits from stop(): indistinguishable from a
-        # track ending naturally, except for the order it arrives in
-        self.bus.emit(Message("ovos.common_play.media.state",
-                              {"state": MediaState.END_OF_MEDIA}))
 
     def shutdown(self):
         pass

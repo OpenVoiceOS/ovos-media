@@ -599,6 +599,72 @@ class TestStateMessages(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# TestShuffleRepeatStatus
+# ---------------------------------------------------------------------------
+
+def _status(h: OCPPlayerHarness) -> dict:
+    """Query 'ovos.common_play.status' and return the response payload."""
+    replies = []
+    h.bus.on("ovos.common_play.status.response", lambda m: replies.append(m))
+    h.bus.emit(Message("ovos.common_play.status"))
+    time.sleep(0.05)
+    assert len(replies) == 1, "expected exactly one status response"
+    return replies[0].data
+
+
+class TestShuffleRepeatStatus(unittest.TestCase):
+    """shuffle.set/unset/toggle and repeat.set/unset/toggle over the bus,
+    each checked against the 'ovos.common_play.status' query."""
+
+    def test_shuffle_set_unset_toggle_reflected_in_status(self) -> None:
+        with OCPPlayerHarness() as h:
+            h.play(_audio_entry("http://example.com/song.mp3"))
+            self.assertFalse(_status(h)["shuffle"])
+
+            h.bus.emit(Message("ovos.common_play.shuffle.set"))
+            time.sleep(0.05)
+            self.assertTrue(_status(h)["shuffle"])
+
+            h.bus.emit(Message("ovos.common_play.shuffle.unset"))
+            time.sleep(0.05)
+            self.assertFalse(_status(h)["shuffle"])
+
+            h.bus.emit(Message("ovos.common_play.shuffle.toggle"))
+            time.sleep(0.05)
+            self.assertTrue(_status(h)["shuffle"])
+
+            h.bus.emit(Message("ovos.common_play.shuffle.toggle"))
+            time.sleep(0.05)
+            self.assertFalse(_status(h)["shuffle"])
+
+    def test_repeat_set_unset_toggle_reflected_in_status(self) -> None:
+        with OCPPlayerHarness() as h:
+            h.play(_audio_entry("http://example.com/song.mp3"))
+            self.assertEqual(_status(h)["loop_state"], LoopState.NONE)
+
+            h.bus.emit(Message("ovos.common_play.repeat.set"))
+            time.sleep(0.05)
+            self.assertEqual(_status(h)["loop_state"], LoopState.REPEAT)
+
+            h.bus.emit(Message("ovos.common_play.repeat.unset"))
+            time.sleep(0.05)
+            self.assertEqual(_status(h)["loop_state"], LoopState.NONE)
+
+            # toggle cycles NONE -> REPEAT -> REPEAT_TRACK -> NONE
+            h.bus.emit(Message("ovos.common_play.repeat.toggle"))
+            time.sleep(0.05)
+            self.assertEqual(_status(h)["loop_state"], LoopState.REPEAT)
+
+            h.bus.emit(Message("ovos.common_play.repeat.toggle"))
+            time.sleep(0.05)
+            self.assertEqual(_status(h)["loop_state"], LoopState.REPEAT_TRACK)
+
+            h.bus.emit(Message("ovos.common_play.repeat.toggle"))
+            time.sleep(0.05)
+            self.assertEqual(_status(h)["loop_state"], LoopState.NONE)
+
+
+# ---------------------------------------------------------------------------
 # TestBackendClaimedSchemes
 # ---------------------------------------------------------------------------
 
