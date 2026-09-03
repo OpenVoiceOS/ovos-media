@@ -139,3 +139,47 @@ class TestMediaServiceBusInitialization(unittest.TestCase):
 
             # Verify the service uses the provided bus
             self.assertIs(svc.bus, provided_bus)
+
+
+class TestMediaServiceProcessStatusNamespace(unittest.TestCase):
+    """MediaService must claim its own 'media' process-status identity,
+    not squat ovos-audio's 'audio' one; two daemons sharing a bus would
+    otherwise both answer mycroft.audio.is_ready."""
+
+    def _make_service_with_real_status(self):
+        from ovos_utils.fakebus import FakeBus
+        from ovos_media.service import MediaService
+
+        bus = FakeBus()
+        with patch("ovos_media.service.MessageBusClient"), \
+             patch("ovos_media.service.OCPMediaPlayer"), \
+             patch("ovos_media.service.Configuration", return_value={"media": {}}):
+            svc = MediaService(bus=bus)
+        return svc, bus
+
+    def test_responds_on_media_is_ready(self):
+        from ovos_bus_client.message import Message
+
+        svc, bus = self._make_service_with_real_status()
+        svc.status.set_ready()
+
+        responses = []
+        bus.on("mycroft.media.is_ready.response",
+               lambda m: responses.append(m))
+        bus.emit(Message("mycroft.media.is_ready"))
+
+        self.assertEqual(len(responses), 1)
+        self.assertTrue(responses[0].data["status"])
+
+    def test_does_not_respond_on_audio_is_ready(self):
+        from ovos_bus_client.message import Message
+
+        svc, bus = self._make_service_with_real_status()
+        svc.status.set_ready()
+
+        responses = []
+        bus.on("mycroft.audio.is_ready.response",
+               lambda m: responses.append(m))
+        bus.emit(Message("mycroft.audio.is_ready"))
+
+        self.assertEqual(len(responses), 0)
