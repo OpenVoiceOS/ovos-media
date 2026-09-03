@@ -378,10 +378,25 @@ class TestSessionGate(unittest.TestCase):
 
         target.assert_called_once()
 
-    def test_malformed_session_context_is_refused_not_raised(self):
+    def test_malformed_session_field_defaults_and_passes_gate(self):
+        # SESSION-1 §2/§2.1: an empty session_id on a well-formed session
+        # object behaves as if the field were omitted and resolves to the
+        # "default" session, so the gate opens; a consumer MUST NOT reject
+        # a Message over one field's value.
         api, target = _make_api(FakeBus(), gated=True)
         msg = Message("ovos.common_play.probe",
                       context={"session": {"session_id": ""}})
+
+        _dispatch(api, "ovos.common_play.probe", message=msg)  # must not raise
+
+        target.assert_called_once()
+
+    def test_malformed_session_carrier_is_refused_not_raised(self):
+        # SESSION-1 §2.5: a session that is not a JSON object is dropped
+        # and MUST NOT be defaulted.
+        api, target = _make_api(FakeBus(), gated=True)
+        msg = Message("ovos.common_play.probe",
+                      context={"session": "junk"})
 
         _dispatch(api, "ovos.common_play.probe", message=msg)  # must not raise
 

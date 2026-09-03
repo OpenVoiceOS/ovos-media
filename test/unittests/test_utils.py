@@ -15,22 +15,50 @@ import unittest
 
 
 class TestIsDefaultSessionMalformedContext(unittest.TestCase):
-    """A malformed session context (empty session_id, non-dict session)
-    must never crash a gated handler — it must be refused (treated as
-    NOT-default) and logged, not raised, so any peer cannot DoS a handler
-    with context={"session": {"session_id": ""}}."""
+    """SESSION-1 splits malformed sessions into fields and carriers.
 
-    def test_empty_session_id_refused_no_exception(self):
+    A malformed FIELD (empty or wrong-typed ``session_id`` on a session
+    that IS a JSON object) behaves as if the field were omitted and
+    resolves to the "default" session (§2, §2.1) — the gate opens; a
+    consumer MUST NOT reject a Message over one field's value. A
+    malformed CARRIER (``session`` present but not a JSON object) is
+    refused and MUST NOT be defaulted (§2.5). Neither may ever raise
+    out of a gated handler.
+    """
+
+    def test_empty_session_id_field_defaults_no_exception(self):
         from ovos_bus_client.message import Message
         from ovos_media.utils import is_default_session
         msg = Message("x", context={"session": {"session_id": ""}})
 
-        self.assertFalse(is_default_session(msg))  # must not raise
+        self.assertTrue(is_default_session(msg))  # must not raise
 
-    def test_str_session_refused_no_exception(self):
+    def test_none_session_id_field_defaults_no_exception(self):
+        from ovos_bus_client.message import Message
+        from ovos_media.utils import is_default_session
+        msg = Message("x", context={"session": {"session_id": None}})
+
+        self.assertTrue(is_default_session(msg))  # must not raise
+
+    def test_empty_session_object_defaults(self):
+        # {} is equivalent to an absent session (§2.1)
+        from ovos_bus_client.message import Message
+        from ovos_media.utils import is_default_session
+        msg = Message("x", context={"session": {}})
+
+        self.assertTrue(is_default_session(msg))
+
+    def test_str_session_carrier_refused_no_exception(self):
         from ovos_bus_client.message import Message
         from ovos_media.utils import is_default_session
         msg = Message("x", context={"session": "not_a_dict"})
+
+        self.assertFalse(is_default_session(msg))  # must not raise
+
+    def test_list_session_carrier_refused_no_exception(self):
+        from ovos_bus_client.message import Message
+        from ovos_media.utils import is_default_session
+        msg = Message("x", context={"session": ["not", "a", "dict"]})
 
         self.assertFalse(is_default_session(msg))  # must not raise
 
@@ -38,6 +66,15 @@ class TestIsDefaultSessionMalformedContext(unittest.TestCase):
         from ovos_bus_client.message import Message
         from ovos_media.utils import is_default_session
         msg = Message("x", context={"session": {"session_id": "default"}})
+
+        self.assertTrue(is_default_session(msg))
+
+    def test_missing_session_context_still_defers_to_default(self):
+        # absent "session" key: legitimate local emitters omit it, so this
+        # keeps falling through to SessionManager.get's local default.
+        from ovos_bus_client.message import Message
+        from ovos_media.utils import is_default_session
+        msg = Message("x", context={})
 
         self.assertTrue(is_default_session(msg))
 
