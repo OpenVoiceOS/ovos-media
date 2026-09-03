@@ -35,9 +35,17 @@ def is_default_session(message=None, validate_source: bool = True) -> bool:
         - ``validate_source`` is falsy (act on everything), OR
         - its session id is ``"default"`` (local request).
 
-    A malformed session context (empty/non-str session id, a session that is
-    not a dict) is refused rather than raised: a hostile or buggy peer must
-    never be able to crash a gated handler.
+    Malformed session handling follows SESSION-1's field-vs-carrier split:
+    a malformed FIELD (e.g. an empty or wrong-typed ``session_id`` on a
+    session that is a JSON object) is treated as if the field were omitted
+    and resolves to the ``"default"`` session (SESSION-1 §2, §2.1 — a
+    consumer MUST NOT reject a Message over any single field's value); a
+    malformed CARRIER (a ``session`` value that is not a JSON object at
+    all) is refused, never defaulted (SESSION-1 §2.5) — ``SessionManager``
+    raises on it and the except path below implements the drop. Either
+    way a hostile or buggy peer can never crash a gated handler; the trust
+    boundary for session identity is the bus/bridge (HIVEMIND-BRIDGE-1
+    session NAT), not consumer-side field policing.
     """
     if message is None or not validate_source:
         return True
