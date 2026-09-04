@@ -34,6 +34,11 @@ class MediaCatalog:
         self.search_playlist = Playlist()
         self.ocp_skills = {}
         self.featured_skills = {}
+        # OCP-1 §4.3.1: a rendering skill that can reposition its own
+        # playback declares `can_seek: true` in its announcement. Absent
+        # (or non-boolean) that declaration the skill's rendering is
+        # non-seekable, so this only ever holds skills that opted in.
+        self._can_seek = {}
         self._dialog_listeners: List[Callable[[str, Optional[dict]], None]] = []
         self._likes_listeners: List[Callable[[], None]] = []
 
@@ -93,6 +98,11 @@ class MediaCatalog:
             LOG.debug(f"Registered {skill_id}")
             self.ocp_skills[skill_id] = []
 
+        # only a literal boolean True opts in (OCP-1 §4.3.1); anything else,
+        # including truthy-but-not-boolean values like "yes" or 1, keeps the
+        # skill non-seekable
+        self._can_seek[skill_id] = message.data.get("can_seek") is True
+
         if has_featured:
             LOG.debug(f"Found skill with featured media: {skill_id}")
             self.featured_skills[skill_id] = {
@@ -108,6 +118,21 @@ class MediaCatalog:
             self.ocp_skills.pop(skill_id)
         if skill_id in self.featured_skills:
             self.featured_skills.pop(skill_id)
+        self._can_seek.pop(skill_id, None)
+
+    def can_seek(self, skill_id: Optional[str]) -> bool:
+        """Whether *skill_id* declared ``can_seek: true`` on announce
+        (OCP-1 §4.3.1). False for an unknown or undeclared skill.
+
+        The catalog has no reference back to the player or its MPRIS
+        exporter, so a (re-)announce that changes this value for the
+        currently-playing skill does not push an MPRIS CanSeek
+        PropertiesChanged signal on its own; the property is still correct
+        on the next live read, and every play/state transition that already
+        signals CanSeek (see OCPMediaPlayer.set_now_playing/
+        set_player_state/play) picks up the new value then.
+        """
+        return self._can_seek.get(skill_id, False)
 
     def get_featured_skills(self, adult: bool = False) -> list:
         """Emit a skills-get broadcast and return the registered featured skills.
