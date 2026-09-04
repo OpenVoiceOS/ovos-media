@@ -316,10 +316,12 @@ state over the bus.
 
 `OcpMprisExporter` (`ovos_media/mpris/`) runs in a background thread, splitting
 the D-Bus loop, the exported OCP player and the external-player manager into
-`loop.py`, `exporter.py` and `manager.py`. MPRIS
-participation is enabled with the `enable_mpris` config key (off by default); when
-enabled, `OCPMediaPlayer.__init__` creates the exporter, passing `manage_players`
-from `ocp_config.get("manage_external_players", False)`.
+`loop.py`, `exporter.py` and `manager.py`. OCP is a desktop MPRIS player by
+default, so the `enable_mpris` config key defaults to on; a machine with no
+session bus to talk to logs a single warning and stays healthy, which is what
+lets a headless install carry the same default without any special-casing.
+`OCPMediaPlayer.__init__` creates the exporter, passing `manage_players` from
+`ocp_config.get("manage_external_players", False)`.
 
 There are two distinct directions:
 

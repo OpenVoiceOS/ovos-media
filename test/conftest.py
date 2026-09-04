@@ -20,4 +20,11 @@ _conf_dir = tempfile.mkdtemp(prefix="ovos-media-test-xdg-")
 os.environ["XDG_CONFIG_HOME"] = _conf_dir
 os.makedirs(os.path.join(_conf_dir, "mycroft"), exist_ok=True)
 with open(os.path.join(_conf_dir, "mycroft", "mycroft.conf"), "w") as f:
-    json.dump({"lang": "en-us"}, f)
+    # media.enable_mpris now defaults to True in the player itself, which
+    # is correct for a real install; a test that builds a player from a
+    # config lacking the key must not fall through to that default, or
+    # every such test starts a real D-Bus thread and claims
+    # org.mpris.MediaPlayer2.OCP on whatever session bus the runner has.
+    # Tests exercising MPRIS behaviour opt in explicitly with their own
+    # config instead of relying on this fallback.
+    json.dump({"lang": "en-us", "media": {"enable_mpris": False}}, f)

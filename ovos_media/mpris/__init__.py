@@ -19,7 +19,8 @@ from ovos_utils.log import LOG
 from ovos_media.mpris.loop import DbusLoop, patch_dbus_next
 from ovos_media.mpris.exporter import (MprisExporter, submit_to_player,
                                        _MediaPlayer2Interface,
-                                       _MediaPlayer2PlayerInterface)
+                                       _MediaPlayer2PlayerInterface,
+                                       _MediaPlayer2PlaylistsInterface)
 from ovos_media.mpris.manager import ExternalPlayerManager
 
 

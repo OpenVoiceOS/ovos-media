@@ -61,11 +61,15 @@ class MprisExporter:
             player, 'org.mpris.MediaPlayer2')
         self.mediaPlayer2PlayerInterface = _MediaPlayer2PlayerInterface(
             player, 'org.mpris.MediaPlayer2.Player')
+        self.playlistsInterface = _MediaPlayer2PlaylistsInterface(
+            player, 'org.mpris.MediaPlayer2.Playlists')
 
     async def export(self, dbus):
         dbus.export(self.OBJECT_PATH, self.mediaPlayer2Interface)
         dbus.export(self.OBJECT_PATH, self.mediaPlayer2PlayerInterface)
+        dbus.export(self.OBJECT_PATH, self.playlistsInterface)
         await dbus.request_name(self.BUS_NAME)
+        LOG.info(f"MPRIS exported as {self.BUS_NAME} on the session bus")
 
     def update_props(self, props):
         self.mediaPlayer2PlayerInterface.emit_properties_changed(props)
@@ -112,7 +116,11 @@ class _MediaPlayer2Interface(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def HasTrackList(self) -> 'b':
-        return True
+        # no org.mpris.MediaPlayer2.TrackList interface is exported yet;
+        # claiming True here is exactly the "advertises an interface that
+        # isn't there" defect this module exists to fix. False until a
+        # TrackList stub ships alongside the stored-collections work.
+        return False
 
     @dbus_property(access=PropertyAccess.READ)
     def CanQuit(self) -> 'b':
@@ -134,6 +142,45 @@ class _MediaPlayer2Interface(ServiceInterface):
     def Quit(self):
         if self._canQuit:
             self._ocp_player.shutdown()
+
+
+class _MediaPlayer2PlaylistsInterface(ServiceInterface):
+    """A minimal ``org.mpris.MediaPlayer2.Playlists`` stub.
+
+    Optional per the MPRIS spec, but a desktop shell probing for it without
+    finding it makes dbus_next log an UNKNOWN_INTERFACE error traceback via
+    the root logger on every real desktop. Registering the interface with no
+    playlists silences that noise and reserves the surface stored playlists
+    can fill in later, without promising anything is stored today.
+    """
+
+    def __init__(self, player, name='org.mpris.MediaPlayer2.Playlists'):
+        self._ocp_player = player
+        super().__init__(name)
+
+    @dbus_property(access=PropertyAccess.READ)
+    def PlaylistCount(self) -> 'u':
+        return 0
+
+    @dbus_property(access=PropertyAccess.READ)
+    def Orderings(self) -> 'as':
+        return ["Alphabetical"]
+
+    @dbus_property(access=PropertyAccess.READ)
+    def ActivePlaylist(self) -> '(b(oss))':
+        # dbus_next marshals a STRUCT from a list, not a tuple; a tuple here
+        # passes at the Python level and blows up SignatureBodyMismatchError
+        # the moment anything (ObjectManager.InterfacesAdded, GetAll) tries
+        # to put it on the wire.
+        return [False, ["/", "", ""]]
+
+    @method()
+    def ActivatePlaylist(self, playlist_id: 'o'):
+        pass
+
+    @method()
+    def GetPlaylists(self, index: 'u', max_count: 'u', order: 's', reverse: 'b') -> 'a(oss)':
+        return []
 
 
 class _MediaPlayer2PlayerInterface(ServiceInterface):
