@@ -5,7 +5,7 @@ from ovos_config import Configuration
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
 from ovos_media.bus.api import OCPBusApi
-from ovos_media.catalog import LikedSongsStore, MediaCatalog
+from ovos_media.catalog import LikedSongsStore, MediaCatalog, PlayHistoryStore
 from ovos_media.bus.schemas import (decode_media, decode_media_state,
                                     decode_playlist_tracks, decode_seek,
                                     decode_track_position, validated_entries)
@@ -39,7 +39,7 @@ class OCPMediaPlayer:
     """
 
     def __init__(self, bus: MessageBusClient, config: Optional[dict] = None,
-                 validate_source: bool = True, likes=None) -> None:
+                 validate_source: bool = True, likes=None, history=None) -> None:
         self.bus = bus
         self.ocp_config = config or Configuration().get("media", {})
         # When True, playback-executing handlers act only on the local/"default"
@@ -55,9 +55,15 @@ class OCPMediaPlayer:
         self.track_history: dict = {}  # Dict of track URI to play count
         # MediaService injects the store it also gives the voice skill; a
         # player built on its own has no one to share with, so it opens the
-        # store itself.
+        # store itself. The history store is skipped entirely (not just
+        # unused) when media.history.enabled is false, so a disabled
+        # feature never touches disk.
+        history_cfg = self.ocp_config.get("history", {})
+        if history is None and history_cfg.get("enabled", True):
+            history = PlayHistoryStore(max_entries=history_cfg.get("max_entries", 500))
         self.media: MediaCatalog = OCPMediaCatalog(
-            bus=bus, likes=likes if likes is not None else LikedSongsStore())
+            bus=bus, likes=likes if likes is not None else LikedSongsStore(),
+            history=history)
         self._init_runtime_state()
         # the owned queue, also the container the rest of the world reads as
         # "the playlist" (bus status, MPRIS track list)
@@ -730,6 +736,13 @@ class OCPMediaPlayer:
             LOG.warning("Stream Validation Failed")
             self.on_invalid_stream()
             return
+
+        # only a track that actually validated gets recorded - a dead
+        # track's skip chain (on_invalid_stream -> play_next -> play -> ...)
+        # would otherwise record+disk-write every corpse it tries, poisoning
+        # both "recently played" and "most played"
+        if self.ocp_config.get("history", {}).get("enabled", True):
+            self.media.history.record_play(self.now_playing.as_dict)
 
         self.track_history.setdefault(self.now_playing.uri, 0)
         self.track_history[self.now_playing.uri] += 1

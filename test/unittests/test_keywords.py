@@ -8,8 +8,10 @@ from unittest.mock import MagicMock
 from ovos_utils.fakebus import FakeBus
 from ovos_utils.ocp import MediaType
 
-from ovos_media.catalog.keywords import (PLAYLIST_KEYWORDS, KeywordRegistrar,
-                                         normalize_title)
+from ovos_media.catalog.keywords import (MOST_PLAYED_KEYWORDS,
+                                         PLAYLIST_KEYWORDS,
+                                         RECENTLY_PLAYED_KEYWORDS,
+                                         KeywordRegistrar, normalize_title)
 
 SKILL_ID = "ovos.common_play.favorites"
 
@@ -129,6 +131,48 @@ class TestLargeSampleSets(unittest.TestCase):
         self.assertEqual(lines[0], "label,sample")
         self.assertEqual(len(lines), 26)
         self.assertTrue(all(line.startswith("song_name,") for line in lines[1:]))
+
+
+class TestHistoryPlaylistRegistration(unittest.TestCase):
+    """register_history_playlists registers only the static playlist-name
+    synonyms - never per-title keywords (history churns too much and
+    registration is append-only, see the comment at the call site)."""
+
+    def test_ner_backed_registers_both_synonym_sets(self):
+        ner = MagicMock()
+        _registrar(FakeBus(), ner).register_history_playlists()
+
+        ner.assert_any_call(MediaType.MUSIC, "playlist_name",
+                            RECENTLY_PLAYED_KEYWORDS)
+        ner.assert_any_call(MediaType.MUSIC, "playlist_name",
+                            MOST_PLAYED_KEYWORDS)
+        # never a song_name/per-title registration
+        labels = {c.args[1] for c in ner.call_args_list}
+        self.assertEqual(labels, {"playlist_name"})
+
+    def test_nothing_is_emitted_on_the_bus_when_ner_is_available(self):
+        bus = FakeBus()
+        emitted = []
+        bus.on("ovos.common_play.register_keyword",
+              lambda m: emitted.append(m.data))
+
+        _registrar(bus, MagicMock()).register_history_playlists()
+
+        self.assertEqual(emitted, [])
+
+    def test_fallback_emits_both_synonym_sets_on_the_bus(self):
+        bus = FakeBus()
+        emitted = []
+        bus.on("ovos.common_play.register_keyword",
+              lambda m: emitted.append(m.data))
+
+        _registrar(bus).register_history_playlists()
+
+        self.assertEqual(len(emitted), 2)
+        samples = [set(e["samples"]) for e in emitted]
+        self.assertIn(set(RECENTLY_PLAYED_KEYWORDS), samples)
+        self.assertIn(set(MOST_PLAYED_KEYWORDS), samples)
+        self.assertTrue(all(e["label"] == "playlist_name" for e in emitted))
 
 
 if __name__ == "__main__":
