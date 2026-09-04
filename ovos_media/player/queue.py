@@ -246,17 +246,17 @@ class PlayQueue:
 
         Returns the MediaEntry to play, ``ALL_FAILED`` when *repeat* would
         restart a queue whose every track is broken, or ``QUEUE_END``.
+
+        Logs nothing: this is also called from a read-only preview (see
+        OCPMediaPlayer.next_track_preview), which runs on every status
+        query - the caller that actually acts on the selection logs it.
         """
         idx = self.index(queue, uri=uri, position=position)
         if idx >= 0 and idx + 1 < len(queue):
-            next_track = queue[idx + 1]
-            LOG.info(f"Next track: {next_track.title!r} "
-                     f"(queue index {idx + 1}/{len(queue) - 1})")
-            return next_track
+            return queue[idx + 1]
         if repeat and queue:
             if self.all_failed(queue):
                 return ALL_FAILED
-            LOG.info("End of queue, repeat == True — restarting from beginning")
             return queue[0]
         return QUEUE_END
 

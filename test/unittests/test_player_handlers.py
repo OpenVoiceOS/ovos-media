@@ -318,6 +318,39 @@ class TestHandleRepeatRequests(unittest.TestCase):
         p.handle_unset_repeat(Message("ovos.common_play.repeat.unset"))
         self.assertEqual(p.loop_state, LoopState.NONE)
 
+    def test_unset_repeat_clears_repeat_track_too(self):
+        p = make_player()
+        p.loop_state = LoopState.REPEAT_TRACK
+        p.handle_unset_repeat(Message("ovos.common_play.repeat.unset"))
+        self.assertEqual(p.loop_state, LoopState.NONE)
+
+    def test_set_repeat_mode_track_sets_repeat_track(self):
+        p = make_player()
+        p.loop_state = LoopState.NONE
+        p.handle_set_repeat(Message("ovos.common_play.repeat.set",
+                                    {"mode": "track"}))
+        self.assertEqual(p.loop_state, LoopState.REPEAT_TRACK)
+
+    def test_set_repeat_mode_queue_sets_repeat(self):
+        p = make_player()
+        p.loop_state = LoopState.NONE
+        p.handle_set_repeat(Message("ovos.common_play.repeat.set",
+                                    {"mode": "queue"}))
+        self.assertEqual(p.loop_state, LoopState.REPEAT)
+
+    def test_set_repeat_mode_absent_preserves_shipped_wire_behavior(self):
+        p = make_player()
+        p.loop_state = LoopState.NONE
+        p.handle_set_repeat(Message("ovos.common_play.repeat.set"))
+        self.assertEqual(p.loop_state, LoopState.REPEAT)
+
+    def test_set_repeat_mode_garbage_treated_as_absent(self):
+        p = make_player()
+        p.loop_state = LoopState.NONE
+        p.handle_set_repeat(Message("ovos.common_play.repeat.set",
+                                    {"mode": "nonsense"}))
+        self.assertEqual(p.loop_state, LoopState.REPEAT)
+
 
 
 # ---------------------------------------------------------------------------

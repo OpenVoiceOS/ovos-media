@@ -30,7 +30,7 @@ from unittest.mock import MagicMock, patch
 from ovos_bus_client.message import Message
 from ovos_bus_client.session import Session, SessionManager
 from ovos_utils.fakebus import FakeBus
-from ovos_utils.ocp import LoopState, MediaState, MediaType, PlaybackType, PlayerState
+from ovos_utils.ocp import LoopState, MediaEntry, MediaState, MediaType, PlaybackType, PlayerState
 
 from ovos_media.catalog import LikedSongsStore, MediaCatalog, PlayHistoryStore
 
@@ -284,6 +284,50 @@ def _make_real_player(bus, title="Bohemian Rhapsody", artist="Queen"):
         p.mpris = None
         p.bus = bus
         bus.on("ovos.common_play.status", p.handle_status)
+    return p
+
+
+def _make_next_track_player(entries, position=0, loop_state=LoopState.NONE,
+                            shuffle=False, search_entries=None,
+                            playback_type=PlaybackType.AUDIO,
+                            now_playing_uri=None):
+    """A real OCPMediaPlayer with a real PlayQueue (not a MagicMock), for
+    exercising next_track_preview()/_merged_queue() against actual queue
+    algebra instead of a synthetic status dict."""
+    with patch("ovos_media.player.AudioService"), \
+         patch("ovos_media.player.VideoService"), \
+         patch("ovos_media.player.WebService"), \
+         patch("ovos_media.player.OcpMprisExporter"), \
+         patch("ovos_media.player.Configuration", return_value={"media": {}}), \
+         patch("ovos_media.player.OCPMediaCatalog"):
+        p = OCPMediaPlayer.__new__(OCPMediaPlayer)
+        p._init_runtime_state()
+        p.ocp_config = {}
+        p.loop_state = loop_state
+        p.shuffle = shuffle
+        for e in entries:
+            p._queue.add_entry(e)
+        if entries:
+            p._queue.set_position(position)
+            p._queue.current = p._queue.entries[position]
+        p.playlist = p._queue
+        p.media = MagicMock()
+        p.media.search_playlist.entries = search_entries or []
+        p.now_playing = MagicMock()
+        # a MagicMock().as_entry() called with no current entry set would
+        # return None too, which the idle guard also treats as "nothing" -
+        # falling back to an empty MediaEntry here keeps that test honest
+        # about REPEAT_TRACK's own None-vs-empty-entry distinction instead
+        # of passing for free
+        p.now_playing.as_entry.return_value = (
+            p._queue.current if p._queue.current is not None
+            else MediaEntry(uri="", title=""))
+        p.now_playing.playback = playback_type
+        # falls back to the current entry's uri when playing, "" when idle -
+        # matches NowPlaying tracking the loaded track's own uri
+        default_uri = p._queue.current.uri if p._queue.current is not None else ""
+        p.now_playing.uri = default_uri if now_playing_uri is None else now_playing_uri
+        p.mpris = None
     return p
 
 
@@ -661,6 +705,393 @@ class TestHistorySearchDb(unittest.TestCase):
         # one for liked-songs synonyms, one for recently-played, one for
         # most-played
         self.assertEqual(len(playlist_msgs), 3)
+
+
+class TestNewIntentsRegistered(unittest.TestCase):
+    """Companion to TestFiveIntentsRegistered above, for the like/unlike,
+    repeat, seek, shuffle-query and what's-next intents added alongside
+    it."""
+
+    def test_all_new_intents_registered(self):
+        bus = FakeBus()
+        registrations = []
+        bus.on("padatious:register_intent",
+              lambda m: registrations.append(m.data))
+
+        _make_skill(bus)
+
+        names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
+                 for r in registrations}
+        for expected in ("Like", "Unlike", "RepeatOn", "RepeatOff", "RepeatTrack",
+                         "SeekForward", "SeekBackward", "WhatShuffle",
+                         "WhatNext"):
+            self.assertIn(expected, names,
+                          f"expected {expected} to be registered; got {names}")
+
+
+class TestLikeUnlikeIntents(unittest.TestCase):
+    def test_like_emits_like_message(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.like", lambda m: received.append(m))
+        skill.handle_like(Message("Like"))
+        self.assertEqual(len(received), 1)
+
+    def test_unlike_emits_unlike_message(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.unlike", lambda m: received.append(m))
+        skill.handle_unlike(Message("Unlike"))
+        self.assertEqual(len(received), 1)
+
+    def test_like_does_not_act_on_named_session(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.like", lambda m: received.append(m))
+        m = Message("Like")
+        m.context["session"] = Session(session_id="sat-42").serialize()
+        skill.handle_like(m)
+        self.assertEqual(len(received), 0)
+        self.assertEqual(len(spoken), 1)
+
+    def test_unlike_does_not_act_on_named_session(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.unlike", lambda m: received.append(m))
+        m = Message("Unlike")
+        m.context["session"] = Session(session_id="sat-42").serialize()
+        skill.handle_unlike(m)
+        self.assertEqual(len(received), 0)
+        self.assertEqual(len(spoken), 1)
+
+
+class TestRepeatIntents(unittest.TestCase):
+    def test_repeat_on_emits_repeat_set_and_speaks(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.repeat.set", lambda m: received.append(m))
+        skill.handle_repeat_on(Message("RepeatOn"))
+        self.assertEqual(len(received), 1)
+        self.assertEqual(len(spoken), 1)
+
+    def test_repeat_off_emits_repeat_unset_and_speaks(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.repeat.unset", lambda m: received.append(m))
+        skill.handle_repeat_off(Message("RepeatOff"))
+        self.assertEqual(len(received), 1)
+        self.assertEqual(len(spoken), 1)
+
+    def test_repeat_on_does_not_claim_success_on_named_session(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.repeat.set", lambda m: received.append(m))
+        m = Message("RepeatOn")
+        m.context["session"] = Session(session_id="sat-42").serialize()
+        skill.handle_repeat_on(m)
+        self.assertEqual(len(received), 0)
+        self.assertEqual(len(spoken), 1)
+
+    def test_repeat_track_emits_repeat_set_with_track_mode_and_speaks(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.repeat.set", lambda m: received.append(m.data))
+        skill.handle_repeat_track(Message("RepeatTrack"))
+        self.assertEqual(received, [{"mode": "track"}])
+        self.assertEqual(len(spoken), 1)
+
+    def test_repeat_track_does_not_claim_success_on_named_session(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.repeat.set", lambda m: received.append(m))
+        m = Message("RepeatTrack")
+        m.context["session"] = Session(session_id="sat-42").serialize()
+        skill.handle_repeat_track(m)
+        self.assertEqual(len(received), 0)
+        self.assertEqual(len(spoken), 1)
+
+
+class TestSeekIntents(unittest.TestCase):
+    def _utterance(self, msg_type, text):
+        m = Message(msg_type, {"utterance": text})
+        return m
+
+    def test_seek_forward_with_explicit_seconds(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
+        skill.handle_seek_forward(self._utterance("SeekForward", "skip forward 30 seconds"))
+        self.assertEqual(received, [{"seconds": 30}])
+
+    def test_seek_forward_with_no_duration_defaults_to_ten_seconds(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
+        skill.handle_seek_forward(self._utterance("SeekForward", "skip forward"))
+        self.assertEqual(received, [{"seconds": 10}])
+
+    def test_seek_backward_emits_negative_seconds(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
+        skill.handle_seek_backward(self._utterance("SeekBackward", "skip back 20 seconds"))
+        self.assertEqual(received, [{"seconds": -20}])
+
+    def test_seek_backward_with_no_duration_defaults_to_negative_ten(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
+        skill.handle_seek_backward(self._utterance("SeekBackward", "rewind"))
+        self.assertEqual(received, [{"seconds": -10}])
+
+    def test_seek_forward_minutes_converted_to_seconds(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
+        skill.handle_seek_forward(self._utterance("SeekForward", "jump forward two minutes"))
+        self.assertEqual(received, [{"seconds": 120}])
+
+    def test_seek_forward_does_not_act_on_named_session(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m))
+        m = self._utterance("SeekForward", "skip forward 30 seconds")
+        m.context["session"] = Session(session_id="sat-42").serialize()
+        skill.handle_seek_forward(m)
+        self.assertEqual(len(received), 0)
+
+    def test_a_minute_is_understood_as_one_minute(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
+        skill.handle_seek_forward(self._utterance("SeekForward", "jump ahead a minute"))
+        self.assertEqual(received, [{"seconds": 60}])
+
+    def test_a_second_is_understood_as_one_second(self):
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
+        skill.handle_seek_backward(self._utterance("SeekBackward", "rewind a second"))
+        self.assertEqual(received, [{"seconds": -1}])
+
+    def test_a_bit_is_not_confused_with_a_minute_or_second(self):
+        # "a bit" carries no amount at all - it must fall back to the plain
+        # 10 second default, not the "a <unit>" -> 1 second idiom, or every
+        # sample containing "a bit"/"a bunch"/etc would seek an inaudible
+        # amount instead of a normal nudge.
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
+        skill.handle_seek_forward(self._utterance("SeekForward", "fast forward a bit"))
+        self.assertEqual(received, [{"seconds": 10}])
+
+    def test_composite_duration_keeps_the_first_number_and_larger_unit(self):
+        # only a single number+unit is supported; "2 minutes 30 seconds"
+        # keeps the leading "2" and resolves to minutes (the larger unit
+        # mentioned), the same as a bare "2 minutes" would - not a NaN/
+        # truncated/garbage result.
+        skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
+        received = []
+        bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
+        skill.handle_seek_forward(
+            self._utterance("SeekForward", "skip forward 2 minutes 30 seconds"))
+        self.assertEqual(received, [{"seconds": 120}])
+
+
+class TestWhatShuffle(unittest.TestCase):
+    def test_speaks_shuffle_on(self):
+        status = dict(PLAYING_STATUS, shuffle=True)
+        skill, bus, spoken = _make_wired_skill(status)
+        skill.handle_what_shuffle(Message("WhatShuffle"))
+        self.assertEqual(len(spoken), 1)
+        self.assertTrue(any(w in spoken[0].lower() for w in ("on", "enabled")))
+
+    def test_speaks_shuffle_off(self):
+        status = dict(PLAYING_STATUS, shuffle=False)
+        skill, bus, spoken = _make_wired_skill(status)
+        skill.handle_what_shuffle(Message("WhatShuffle"))
+        self.assertEqual(len(spoken), 1)
+        self.assertTrue(any(w in spoken[0].lower() for w in ("off", "disabled")))
+
+
+PLAYING_NEXT_BASE = dict(PLAYING_STATUS, player_state=PlayerState.PLAYING)
+
+
+class TestWhatNext(unittest.TestCase):
+    """handle_what_next reads the bounded 'next_track'/'next_track_hint'
+    pair off the status response - never a full queue - see
+    OCPMediaPlayer.next_track_preview for what actually computes them."""
+
+    def test_speaks_next_track_with_artist(self):
+        status = dict(PLAYING_NEXT_BASE,
+                      next_track={"title": "Radio Ga Ga", "artist": "Queen"},
+                      next_track_hint=None)
+        skill, bus, spoken = _make_wired_skill(status)
+        skill.handle_what_next(Message("WhatNext"))
+        self.assertEqual(len(spoken), 1)
+        self.assertIn("Radio Ga Ga", spoken[0])
+        self.assertIn("Queen", spoken[0])
+
+    def test_speaks_next_track_without_artist(self):
+        status = dict(PLAYING_NEXT_BASE,
+                      next_track={"title": "Mystery Track", "artist": ""},
+                      next_track_hint=None)
+        skill, bus, spoken = _make_wired_skill(status)
+        skill.handle_what_next(Message("WhatNext"))
+        self.assertEqual(len(spoken), 1)
+        self.assertIn("Mystery Track", spoken[0])
+
+    def test_speaks_nothing_queued_when_at_end_of_queue(self):
+        status = dict(PLAYING_NEXT_BASE, next_track=None, next_track_hint=None)
+        skill, bus, spoken = _make_wired_skill(status)
+        skill.handle_what_next(Message("WhatNext"))
+        self.assertEqual(len(spoken), 1)
+        self.assertTrue(
+            any(p in spoken[0].lower() for p in ("nothing", "last track")))
+
+    def test_speaks_shuffle_hint_instead_of_a_track(self):
+        status = dict(PLAYING_NEXT_BASE, next_track=None, next_track_hint="shuffle")
+        skill, bus, spoken = _make_wired_skill(status)
+        skill.handle_what_next(Message("WhatNext"))
+        self.assertEqual(len(spoken), 1)
+        self.assertTrue(any(w in spoken[0].lower() for w in ("surprise", "shuffle")))
+
+    def test_speaks_external_hint_for_mpris_or_skill_playback(self):
+        status = dict(PLAYING_NEXT_BASE, next_track=None, next_track_hint="external")
+        skill, bus, spoken = _make_wired_skill(status)
+        skill.handle_what_next(Message("WhatNext"))
+        self.assertEqual(len(spoken), 1)
+        self.assertTrue(any(w in spoken[0].lower() for w in ("connected player",)))
+
+    def test_speaks_nothing_playing_when_stopped(self):
+        # the idle guard must fire before next_track/next_track_hint are
+        # even looked at, mirroring WhatSong/WhatAlbum/WhatArtist
+        status = dict(PLAYING_STATUS, player_state=PlayerState.STOPPED,
+                      next_track={"title": "Should Not Be Spoken", "artist": "X"},
+                      next_track_hint=None)
+        skill, bus, spoken = _make_wired_skill(status)
+        skill.handle_what_next(Message("WhatNext"))
+        self.assertEqual(len(spoken), 1)
+        _assert_nothing_playing(self, spoken[0])
+
+
+def _entry(title, uri=None):
+    return MediaEntry(uri=uri or f"http://x/{title}", title=title, artist="")
+
+
+class TestNextTrackPreview(unittest.TestCase):
+    """OCPMediaPlayer.next_track_preview, driven against a real PlayQueue -
+    not a synthetic status dict - to prove it actually mirrors play_next()'s
+    own selection logic over _merged_queue()."""
+
+    def test_sequential_mid_queue(self):
+        a, b, c = _entry("A"), _entry("B"), _entry("C")
+        p = _make_next_track_player([a, b, c], position=0)
+        entry, hint = p.next_track_preview
+        self.assertIs(entry, b)
+        self.assertIsNone(hint)
+
+    def test_repeat_track_replays_the_current_entry(self):
+        a, b = _entry("A"), _entry("B")
+        p = _make_next_track_player([a, b], position=0,
+                                    loop_state=LoopState.REPEAT_TRACK)
+        entry, hint = p.next_track_preview
+        self.assertIs(entry, a)
+        self.assertIsNone(hint)
+
+    def test_repeat_set_mode_track_then_preview_replays_current_entry(self):
+        # exercises the actual wire path: repeat.set {"mode": "track"} ->
+        # handle_set_repeat -> LoopState.REPEAT_TRACK -> next_track_preview
+        a, b = _entry("A"), _entry("B")
+        p = _make_next_track_player([a, b], position=0)
+        p.handle_set_repeat(Message("ovos.common_play.repeat.set", {"mode": "track"}))
+        entry, hint = p.next_track_preview
+        self.assertIs(entry, a)
+        self.assertIsNone(hint)
+
+    def test_repeat_at_end_wraps_to_the_first_entry(self):
+        a, b = _entry("A"), _entry("B")
+        p = _make_next_track_player([a, b], position=1,
+                                    loop_state=LoopState.REPEAT)
+        entry, hint = p.next_track_preview
+        self.assertIs(entry, a)
+        self.assertIsNone(hint)
+
+    def test_shuffle_reports_a_hint_not_a_prediction(self):
+        a, b, c = _entry("A"), _entry("B"), _entry("C")
+        p = _make_next_track_player([a, b, c], position=0, shuffle=True)
+        entry, hint = p.next_track_preview
+        self.assertIsNone(entry)
+        self.assertEqual(hint, "shuffle")
+
+    def test_last_user_entry_falls_through_to_first_search_result(self):
+        a = _entry("A")
+        s1, s2 = _entry("S1"), _entry("S2")
+        p = _make_next_track_player([a], position=0, search_entries=[s1, s2])
+        entry, hint = p.next_track_preview
+        self.assertIs(entry, s1)
+        self.assertIsNone(hint)
+
+    def test_end_of_queue_with_no_repeat_reports_nothing(self):
+        a = _entry("A")
+        p = _make_next_track_player([a], position=0)
+        entry, hint = p.next_track_preview
+        self.assertIsNone(entry)
+        self.assertIsNone(hint)
+
+    def test_idle_repeat_track_reports_nothing_not_an_empty_entry(self):
+        # nothing has ever loaded: REPEAT_TRACK must not "repeat" an empty
+        # NowPlaying entry (see B3/M2 review round)
+        p = _make_next_track_player([], loop_state=LoopState.REPEAT_TRACK,
+                                    now_playing_uri="")
+        entry, hint = p.next_track_preview
+        self.assertIsNone(entry)
+        self.assertIsNone(hint)
+
+    def test_mpris_playback_reports_external_hint(self):
+        a, b = _entry("A"), _entry("B")
+        p = _make_next_track_player([a, b], position=0,
+                                    playback_type=PlaybackType.MPRIS)
+        entry, hint = p.next_track_preview
+        self.assertIsNone(entry)
+        self.assertEqual(hint, "external")
+
+    def test_skill_playback_reports_external_hint(self):
+        a, b = _entry("A"), _entry("B")
+        p = _make_next_track_player([a, b], position=0,
+                                    playback_type=PlaybackType.SKILL)
+        entry, hint = p.next_track_preview
+        self.assertIsNone(entry)
+        self.assertEqual(hint, "external")
+
+
+class TestNextTrackPreviewIsSilent(unittest.TestCase):
+    """select_next() runs from next_track_preview on every status query now
+    (see M3 review round) - it must never log, or a chatty voice session
+    would spam "Next track: ..." on nearly every utterance. play_next()
+    itself, the one place a selection is actually acted on, keeps the log
+    line at its own call site."""
+
+    def test_a_hundred_previews_log_nothing(self):
+        a, b, c = _entry("A"), _entry("B"), _entry("C")
+        p = _make_next_track_player([a, b, c], position=0)
+        with patch("ovos_media.player.queue.LOG") as mock_log:
+            for _ in range(100):
+                p.next_track_preview
+        mock_log.info.assert_not_called()
+
+    def test_play_next_logs_next_track_exactly_once(self):
+        a, b = _entry("A"), _entry("B")
+        p = _make_next_track_player([a, b], position=0)
+        # isolate the log call site from set_now_playing()'s/play()'s own
+        # side effects (MPRIS props, handle_status, backend startup) - none
+        # of that is what this test is about
+        p.set_now_playing = MagicMock()
+        p.play = MagicMock()
+        with patch("ovos_media.player.LOG") as mock_log:
+            p.play_next()
+        self.assertEqual(mock_log.info.call_count, 1)
+        self.assertIn("Next track", mock_log.info.call_args[0][0])
 
 
 if __name__ == "__main__":
