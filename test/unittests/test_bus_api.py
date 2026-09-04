@@ -347,7 +347,7 @@ class TestSessionGate(unittest.TestCase):
     """A gated topic acts only on the local/"default" session."""
 
     def setUp(self):
-        SessionManager.sessions = {"default": SessionManager.default_session}
+        SessionManager.sessions = {"default": SessionManager.get_default_session()}
 
     def test_named_session_does_not_reach_a_gated_target(self):
         api, target = _make_api(FakeBus(), gated=True)

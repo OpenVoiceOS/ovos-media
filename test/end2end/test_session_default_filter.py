@@ -61,7 +61,7 @@ class TestDefaultSessionFilter(unittest.TestCase):
     def tearDown(self) -> None:
         # Tests register sessions on the global SessionManager; reset so they
         # do not leak into each other.
-        SessionManager.sessions = {"default": SessionManager.default_session}
+        SessionManager.sessions = {"default": SessionManager.get_default_session()}
 
     def test_default_session_play_executes(self) -> None:
         """A play with session_id 'default' must drive the backend and PLAY."""
@@ -135,7 +135,7 @@ class TestValidateSourceDisabled(unittest.TestCase):
     """With validate_source=False, a non-default session also executes."""
 
     def tearDown(self) -> None:
-        SessionManager.sessions = {"default": SessionManager.default_session}
+        SessionManager.sessions = {"default": SessionManager.get_default_session()}
 
     def test_satellite_session_play_executes_when_disabled(self) -> None:
         """A satellite who disables the filter must act on its own session."""
