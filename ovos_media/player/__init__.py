@@ -129,6 +129,10 @@ class OCPMediaPlayer:
         # _failed_uris, ie. whenever a track successfully loads or the
         # player is reset) rather than once per skipped track
         self._track_failed_spoken: bool = False
+        # rate-limit "cannot.seek" the same way, per track — a GUI seekbar
+        # drag emits several seek requests in a row, and a stream that can't
+        # be seeked can't be seeked on the 2nd request either
+        self._cannot_seek_spoken: bool = False
         # True once "no.playback.backend" has been spoken for the lifetime
         # of this player — spoken only at the very first play attempt that
         # finds zero backends loaded, never again
@@ -209,13 +213,21 @@ class OCPMediaPlayer:
         image = message.data.get("image") or message.data.get("thumbnail") or self.now_playing.image
         artist = message.data.get("artist") or self.now_playing.artist
         self.media.likes.like(uri, title=title, artist=artist, image=image)
+        self.media.notify_likes_changed()
         self.bus.emit(message.forward("mycroft.audio.play_sound",
                                       {"uri": "snd/acknowledge.mp3"}))
 
     def handle_unlike(self, message):
         # sent from GUI or intent
         uri = message.data.get("uri") or self.now_playing.original_uri
-        self.media.likes.unlike(uri)
+        if not uri:
+            LOG.warning("Cannot unlike: nothing is playing and no uri was given")
+            self.media.notify_dialog("nothing.playing")
+            return
+        if self.media.likes.unlike(uri):
+            self.media.notify_likes_changed()
+            self.bus.emit(message.forward("mycroft.audio.play_sound",
+                                          {"uri": "snd/acknowledge.mp3"}))
 
     @property
     def active_skill(self) -> str:
@@ -624,6 +636,15 @@ class OCPMediaPlayer:
             except Exception as e:
                 LOG.warning(f"Ignoring play request, track can not be "
                             f"represented as a valid media entry: {e}")
+                # not reachable from the bus: handle_play_request's caller,
+                # OCPBusApi._wrap, already rejects any payload decode_media
+                # refuses before play_media() is ever invoked, and
+                # decode_media mirrors dict2entry's own precedence exactly
+                # (see _is_valid_media). The bus edge is where a rejected
+                # 'ovos.common_play.play' now speaks invalid.request - see
+                # OCPBusApi.reject_dialog. This remains a silent no-op
+                # defensive fallback for any in-process caller that bypasses
+                # the bus and hands play_media() a malformed dict directly.
                 return
             LOG.debug(f"deserialized: {track}")
 
@@ -797,6 +818,7 @@ class OCPMediaPlayer:
                 LOG.warning("Repeat-track requested, but the track has failed "
                             "to load — stopping instead of retrying forever")
                 self.set_player_state(PlayerState.STOPPED)
+                self.media.notify_dialog("playback.failed")
                 return
             LOG.debug("Repeating single track")
             self.play()
@@ -815,6 +837,7 @@ class OCPMediaPlayer:
                             "queue failed to load — stopping instead of "
                             "shuffling forever")
                 self.set_player_state(PlayerState.STOPPED)
+                self.media.notify_dialog("playback.failed")
                 return
             if self.play_shuffle():
                 # play_shuffle only selects the track - actually start it
@@ -843,6 +866,7 @@ class OCPMediaPlayer:
             LOG.warning("End of queue with repeat == True, but every track "
                         "failed to load — stopping instead of looping")
             self.set_player_state(PlayerState.STOPPED)
+            self.media.notify_dialog("playback.failed")
             return
         elif not isinstance(selection, QueueEnd):
             self.set_now_playing(selection)
@@ -936,6 +960,9 @@ class OCPMediaPlayer:
         if not adapters:
             LOG.warning(f"seek() is not supported for playback_type "
                         f"{self.playback_type}, ignoring")
+            if not self._cannot_seek_spoken:
+                self._cannot_seek_spoken = True
+                self.media.notify_dialog("cannot.seek")
         for adapter in adapters:
             adapter.seek(position)
 
@@ -995,6 +1022,7 @@ class OCPMediaPlayer:
         self._current_entry = None
         self._failed_uris.clear()
         self._track_failed_spoken = False
+        self._cannot_seek_spoken = False
         self.dispatcher.bump_epoch()
         self.playlist.clear()
         self.media.clear()
@@ -1126,6 +1154,11 @@ class OCPMediaPlayer:
         LOG.debug("Received OCP playback request")
         media = decode_media(message.data)
         if media is None:
+            # not reachable from the bus: OCPBusApi._wrap already runs this
+            # same decode_media() and drops the message before this handler
+            # is ever called, speaking invalid.request itself (see
+            # OCPBusApi.reject_dialog). Kept as a defensive no-op for any
+            # in-process caller that invokes this handler directly.
             return
 
         repeat = message.data.get("repeat", False)

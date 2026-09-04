@@ -35,6 +35,7 @@ class MediaCatalog:
         self.ocp_skills = {}
         self.featured_skills = {}
         self._dialog_listeners: List[Callable[[str, Optional[dict]], None]] = []
+        self._likes_listeners: List[Callable[[], None]] = []
 
     def add_dialog_listener(self, listener: Callable) -> None:
         """Register a voice front-end to speak notified dialogs."""
@@ -44,6 +45,26 @@ class MediaCatalog:
     def remove_dialog_listener(self, listener: Callable) -> None:
         if listener in self._dialog_listeners:
             self._dialog_listeners.remove(listener)
+
+    def add_likes_listener(self, listener: Callable) -> None:
+        """Register a callback to run whenever the liked-songs store
+        changes, so a voice front-end can refresh its keyword matcher."""
+        if listener not in self._likes_listeners:
+            self._likes_listeners.append(listener)
+
+    def remove_likes_listener(self, listener: Callable) -> None:
+        if listener in self._likes_listeners:
+            self._likes_listeners.remove(listener)
+
+    def notify_likes_changed(self) -> None:
+        """Tell any listener the liked-songs store changed, e.g. after a
+        like/unlike, so keyword registration for song titles can be
+        refreshed without waiting for a restart."""
+        for listener in list(self._likes_listeners):
+            try:
+                listener()
+            except Exception as e:
+                LOG.exception(f"Failed to notify likes-changed listener: {e}")
 
     def notify_dialog(self, dialog: str, data: Optional[dict] = None) -> None:
         """Ask the voice front-end to speak a dialog.
@@ -112,3 +133,4 @@ class MediaCatalog:
 
     def shutdown(self) -> None:
         self._dialog_listeners.clear()
+        self._likes_listeners.clear()
