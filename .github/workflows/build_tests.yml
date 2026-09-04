@@ -8,3 +8,7 @@ jobs:
   build_tests:
     uses: OpenVoiceOS/gh-automations/.github/workflows/build-tests.yml@dev
     secrets: inherit
+    with:
+      # TEMPORARY until ovos-plugin-manager 3.0.0a1 releases: this branch
+      # targets the unreleased MediaBackend v2 template.
+      pre_install_pip: "git+https://github.com/OpenVoiceOS/ovos-plugin-manager@feat/media-backend-v2"

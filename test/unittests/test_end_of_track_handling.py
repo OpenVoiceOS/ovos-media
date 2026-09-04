@@ -64,12 +64,16 @@ def _load(player, entries):
 
 
 class _StubBackend:
-    """Minimal MediaBackend stand-in mirroring the OPM template's stop path.
+    """Minimal v2 MediaBackend stand-in.
 
-    ``ocp_stop()`` emits PlayerState.STOPPED then MediaState.END_OF_MEDIA,
-    exactly as ovos_plugin_manager.templates.media.MediaBackend does — which is
-    what makes an external stop indistinguishable from a track ending.
+    BaseMediaService._perform_stop() emits PlayerState.STOPPED... actually
+    only MediaState.END_OF_MEDIA (player.state STOPPED is emitted by
+    OCPMediaPlayer.stop() itself, see base.py's _perform_stop) once
+    stop()==True — exactly what makes an external stop indistinguishable
+    from a track ending. This stub reports nothing over the bus itself.
     """
+
+    is_remote = False
 
     def __init__(self, bus, name="stub", uris=("http", "https", "file")):
         self.bus = bus
@@ -83,14 +87,15 @@ class _StubBackend:
     def supported_uris(self):
         return self._uris
 
-    def set_track_start_callback(self, cb):
-        self._cb = cb
+    def bind_event_reporter(self, reporter):
+        self._reporter = reporter
 
-    def load_track(self, uri):
+    def load_track(self, uri, metadata=None):
         self.loaded.append(uri)
         self._playing = True
+        return True
 
-    def play(self, repeat=False):
+    def play(self):
         pass
 
     def stop(self):
@@ -98,12 +103,6 @@ class _StubBackend:
         was = self._playing
         self._playing = False
         return was
-
-    def ocp_stop(self):
-        self.bus.emit(Message("ovos.common_play.player.state",
-                              {"state": PlayerState.STOPPED}))
-        self.bus.emit(Message("ovos.common_play.media.state",
-                              {"state": MediaState.END_OF_MEDIA}))
 
     def shutdown(self):
         pass
@@ -430,9 +429,17 @@ class TestLoadOkPlayFailQueue(unittest.TestCase):
         player.loop_state = LoopState.REPEAT
 
         player.play()  # kick off track a; the retry chain cascades itself
+        # Since INVALID_MEDIA now reaches PlayerState.STOPPED on EVERY
+        # failure (v1 parity, see handle_player_media_update), not only
+        # once the whole queue is exhausted, STOPPED is entered and left
+        # transiently on each retry - poll on the actual exhaustion
+        # condition (_all_tracks_failed), not on the first STOPPED sighting.
         deadline = time.monotonic() + 5
-        while player.state != PlayerState.STOPPED and time.monotonic() < deadline:
+        while not player._all_tracks_failed(player._merged_queue()) and \
+                time.monotonic() < deadline:
             time.sleep(0.02)
+        # let the final retry's play_next()->set_player_state(STOPPED) settle
+        time.sleep(0.1)
 
         self.assertEqual(player.state, PlayerState.STOPPED,
                         f"REPEAT over an all-failing queue did not stop "
@@ -458,12 +465,14 @@ def _make_service(bus=None, backends=None):
     # _init_runtime_state(), so this fixture also builds against the
     # pre-fix source when proving these tests fail before the fix
     svc.on_stop = None
+    svc.on_external_event = None
     svc._deferred_stop_timer = None
     svc.bus = bus
     svc.namespace = "audio"
     svc.config = {}
     svc.service_lock = threading.Lock()
     svc.current = None
+    svc._gen = 0
     svc.play_start_time = 0
     svc.volume_is_low = False
     svc.services = backends if backends is not None else [_StubBackend(bus)]

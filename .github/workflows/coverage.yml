@@ -8,5 +8,8 @@ jobs:
   coverage:
     uses: OpenVoiceOS/gh-automations/.github/workflows/coverage.yml@dev
     with:
+      # TEMPORARY until ovos-plugin-manager 3.0.0a1 releases: this branch
+      # targets the unreleased MediaBackend v2 template.
+      pre_install_pip: "git+https://github.com/OpenVoiceOS/ovos-plugin-manager@feat/media-backend-v2"
       test_extras: "test"
     secrets: inherit
