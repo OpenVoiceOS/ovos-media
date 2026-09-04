@@ -139,6 +139,7 @@ class NowPlaying(MediaEntry):
                 # playback — see base.py's handle_media_state_change.
                 self._player._failed_uris.clear()
                 self._player._track_failed_spoken = False
+                self._player._cannot_seek_spoken = False
         elif state in (TrackState.QUEUED_SKILL, TrackState.QUEUED_VIDEO,
                        TrackState.QUEUED_AUDIO, TrackState.QUEUED_AUDIOSERVICE,
                        TrackState.QUEUED_WEBVIEW):

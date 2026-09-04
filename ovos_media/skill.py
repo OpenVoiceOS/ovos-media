@@ -9,7 +9,7 @@ from os.path import dirname
 from typing import Optional
 
 from ovos_bus_client.message import Message
-from ovos_utils.ocp import MediaType, PlaybackType
+from ovos_utils.ocp import MediaType, PlaybackType, PlayerState
 from ovos_workshop.decorators.ocp import ocp_search
 from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 
@@ -41,10 +41,12 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
         self.catalog = catalog
         if catalog is not None:
             catalog.add_dialog_listener(self.handle_dialog_notification)
+            catalog.add_likes_listener(self.handle_likes_changed)
 
-        KeywordRegistrar(self.bus, self.skill_id, self.native_langs,
-                         self.ocp_cache_dir,
-                         self.register_ocp_keyword).register_liked_songs(self.likes)
+        self._keyword_registrar = KeywordRegistrar(
+            self.bus, self.skill_id, self.native_langs,
+            self.ocp_cache_dir, self.register_ocp_keyword)
+        self._keyword_registrar.register_liked_songs(self.likes)
 
         # intents about the currently playing media, see issue #23
         self.register_intent_file("WhatSong.intent", self.handle_what_song)
@@ -53,18 +55,30 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
         self.register_intent_file("ShuffleOn.intent", self.handle_shuffle_on)
         self.register_intent_file("ShuffleOff.intent", self.handle_shuffle_off)
 
+    def handle_likes_changed(self) -> None:
+        """Refresh the song-title keywords after a like/unlike, so a song
+        liked this session is findable by name without a restart.
+
+        Delta registration only (see KeywordRegistrar.register_new_titles):
+        replaying the full store here would grow the unbounded upstream
+        sample list on every single like/unlike."""
+        self._keyword_registrar.register_new_titles(self.likes)
+
     def handle_dialog_notification(self, dialog: str,
                                    data: Optional[dict] = None) -> None:
         """Speak a dialog the player asked the catalog to announce.
 
-        These announcements (track.failed, queue.finished,
-        no.playback.backend, nothing.playing) always land on the default
-        session: they are reached from bus events that carry no session of
-        their own (END_OF_MEDIA, INVALID_MEDIA, the invalid-stream retry
-        timer). A satellite-triggered playback therefore announces
-        locally. Fixing that needs the player to stash the triggering
-        message's session at play time and pass it along; see the issue
-        tracker.
+        speak_dialog() routes over the session it finds by walking the
+        thread's message stack (dig_for_message()), not one this method
+        chooses. A notification fired from inside a handler that is
+        currently processing a session-carrying message (eg. handle_unlike
+        acting on a satellite's request) follows THAT session, so it
+        announces back to the satellite that triggered it. A notification
+        fired from a context with no message on the stack (a bus event with
+        no session of its own — END_OF_MEDIA, INVALID_MEDIA, the delayed
+        invalid-stream retry timer) falls back to the default session and
+        announces locally instead, regardless of which session's playback
+        actually failed.
         """
         self.speak_dialog(dialog, data)
 
@@ -104,7 +118,14 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
         title = status.get("title")
         artist = status.get("artist")
         if not title:
-            self.speak_dialog("nothing.playing")
+            # PAUSED counts as "something is loaded" too, not just PLAYING -
+            # a paused untitled stream is not "nothing playing"; a missing
+            # player_state key (older/incomplete status payloads) defaults
+            # to STOPPED so this stays "nothing playing" as before
+            if status.get("player_state", PlayerState.STOPPED) != PlayerState.STOPPED:
+                self.speak_dialog("no.track.info")
+            else:
+                self.speak_dialog("nothing.playing")
         elif artist:
             self.speak_dialog("now.playing.song", {"title": title, "artist": artist})
         else:
@@ -116,7 +137,10 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
             self.speak_dialog("player.not.responding")
             return
         if not status.get("title"):
-            self.speak_dialog("nothing.playing")
+            if status.get("player_state", PlayerState.STOPPED) != PlayerState.STOPPED:
+                self.speak_dialog("no.track.info")
+            else:
+                self.speak_dialog("nothing.playing")
         else:
             # NowPlaying/MediaEntry does not track album metadata, so this
             # always falls back gracefully instead of guessing or crashing.
@@ -129,12 +153,14 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
             return
         title = status.get("title")
         artist = status.get("artist")
-        if not title:
-            self.speak_dialog("nothing.playing")
-        elif artist:
+        if artist:
             self.speak_dialog("now.playing.artist", {"artist": artist})
-        else:
+        elif title:
             self.speak_dialog("no.artist.info")
+        elif status.get("player_state", PlayerState.STOPPED) != PlayerState.STOPPED:
+            self.speak_dialog("no.track.info")
+        else:
+            self.speak_dialog("nothing.playing")
 
     def _is_default_session(self, message: Message) -> bool:
         """Whether the player will act on a request forwarded from this
@@ -166,7 +192,7 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
         entities = self.ocp_voc_match(phrase)
         base_score += 30 * len(entities)
 
-        if entities.get("playlist_name"):
+        if entities.get("playlist_name") and len(self.likes) > 0:
             if phrase.lower() == entities["playlist_name"]:
                 base_score = 100
             yield {
@@ -180,6 +206,12 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
             }
 
         if entities.get("song_name"):
+            # entities["song_name"] can be a stale NER match - an unliked
+            # title stays in the local matcher until restart (see
+            # KeywordRegistrar.register_new_titles) - but this loop is keyed
+            # by the CURRENT store contents, so a stale match yields nothing
+            # here rather than a wrong result; OCP falls back to other
+            # skills/results the normal way a search handler always might.
             title = entities["song_name"].lower()
             for entry in self.likes.as_entries():
                 if title not in entry.title.lower():
@@ -193,4 +225,5 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
     def default_shutdown(self):
         if self.catalog is not None:
             self.catalog.remove_dialog_listener(self.handle_dialog_notification)
+            self.catalog.remove_likes_listener(self.handle_likes_changed)
         super().default_shutdown()

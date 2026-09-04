@@ -77,9 +77,9 @@ _NOTHING_PLAYING_LINES = {
 }
 
 _NOT_RESPONDING_LINES = {
-    "the media player is not responding",
-    "i can't reach the media player right now",
-    "the media player didn't answer in time",
+    "the media player stopped responding — try restarting playback",
+    "media playback service isn't responding — try again in a moment",
+    "the player process isn't answering — restart playback to fix it",
 }
 
 

@@ -55,12 +55,24 @@ class BusHandler:
         run on its dispatcher. False for queries (answered from the
         published snapshot or read live from a backend) and for the one
         target that blocks on the bus, ``handle_record_end``.
+    reject_dialog: a dialog name to notify (via the player's catalog) when
+        ``decoder`` rejects the payload - the wrapper is the only place
+        that sees a decoder rejection at all, so this is also the only
+        place that can tell the user their request was dropped. None
+        everywhere except the topics explicitly reviewed for it: a wrong
+        default would silently start narrating every malformed message on
+        every gated topic (playlist edits, position seeks that are session-
+        gated drops rather than shape rejections, etc). Never set on a
+        gated topic's session-drop path (api.py's ``entry.gated`` branch) -
+        that is a satellite acting on a session it should not, which is
+        correct silent behavior, not a malformed request.
     """
     topic: str
     target: Callable
     decoder: Optional[Callable] = None
     gated: bool = False
     dispatch: bool = True
+    reject_dialog: Optional[str] = None
 
 
 class _ServiceTopics:
@@ -183,8 +195,13 @@ class OCPBusApi:
             BusHandler("ovos.common_play.media.state",
                        player.handle_player_media_update,
                        decoder=decode_media_state),
+            # only THIS 'ovos.common_play.play' entry carries reject_dialog,
+            # not the NowPlaying one above (_now_playing_table) - both share
+            # the topic and both would otherwise fire their own rejection
+            # notification for the very same malformed message
             BusHandler("ovos.common_play.play", player.handle_play_request,
-                       decoder=decode_media, gated=True),
+                       decoder=decode_media, gated=True,
+                       reject_dialog="invalid.request"),
             BusHandler("ovos.common_play.pause", player.handle_pause_request,
                        gated=True),
             BusHandler("ovos.common_play.play_pause",
@@ -197,6 +214,14 @@ class OCPBusApi:
                        gated=True),
             BusHandler("ovos.common_play.previous", player.handle_prev_request,
                        gated=True),
+            # deliberately no reject_dialog: unlike a rejected play request
+            # (nothing starts, silence is the ONLY signal and it is
+            # indistinguishable from "still thinking"), a rejected seek
+            # leaves the current track audibly still playing right where it
+            # was - that is itself the feedback a garbled "skip forward"
+            # needs, and playback.failed/cannot.seek already cover the
+            # cases where seeking is genuinely broken rather than just
+            # malformed
             BusHandler("ovos.common_play.seek", player.handle_seek_request,
                        decoder=decode_seek, gated=True),
             BusHandler("ovos.common_play.get_track_length",
@@ -325,15 +350,26 @@ class OCPBusApi:
             dispatcher = None
 
         def listener(message):
+            # computed once, up front: a decoder rejection must not notify
+            # for a session this topic would have dropped anyway (a
+            # satellite's own embedded daemon speaking a rejection AND the
+            # server daemon speaking it too is a double-speak in a HiveMind
+            # split), so the gate result is needed BEFORE the decoder
+            # branch decides whether to notify - not just before dispatch
+            gated_out = entry.gated and not is_default_session(
+                message, self.validate_source)
             if entry.decoder is not None:
                 try:
                     if entry.decoder(message.data) is None:
+                        if not gated_out:
+                            self._notify_reject(entry)
                         return
                 except ValueError as e:
                     LOG.warning(f"ignoring '{entry.topic}' message: {e}")
+                    if not gated_out:
+                        self._notify_reject(entry)
                     return
-            if entry.gated and not is_default_session(message,
-                                                      self.validate_source):
+            if gated_out:
                 LOG.debug(f"ignoring '{entry.topic}' message, not from the "
                           f"default/local session")
                 return
@@ -343,6 +379,14 @@ class OCPBusApi:
                 entry.target(message)
 
         return listener
+
+    def _notify_reject(self, entry: BusHandler) -> None:
+        """Speak entry.reject_dialog, if it has one, after its decoder just
+        rejected a message. The wrapper is the only place a decoder
+        rejection is visible at all - the target is never even called - so
+        it is also the only place that can turn it into user feedback."""
+        if entry.reject_dialog and self.player is not None:
+            self.player.media.notify_dialog(entry.reject_dialog)
 
     def register(self) -> None:
         """Subscribe every entry in the table."""
