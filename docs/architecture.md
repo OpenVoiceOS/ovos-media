@@ -188,6 +188,7 @@ calls the handler below.
 | `ovos.common_play.uncork` | `handle_uncork_request` | Resumes playback after recording finishes. |
 | `ovos.common_play.SEI.get` | `handle_get_SEIs` | Replies with the supported stream-extractor identifiers. |
 | `ovos.common_play.like` / `.unlike` | `handle_like` / `handle_unlike` | Add/remove the current track in the liked-songs store. |
+| `ovos.common_play.collection` | `handle_collection_query` | Read-only lookup of a named intrinsic playlist ([OCP-1 §4.4.3](https://github.com/OpenVoiceOS/architecture/blob/dev/ovos-ocp-1.md)). Replies with `{"name": ..., "entries": [...]}`; see [Named collections](#named-collections). |
 | `ovos.common_play.status` | `handle_status` | Replies with full player status (state, media type, position, shuffle, loop). |
 | `ovos.common_play.mpris.now_playing` | `handle_mpris_now_playing` | Reflects an **external** MPRIS player as OCP now-playing, see [MPRIS](#mpris-integration). |
 | `ovos.audio.output.started` / `ovos.audio.output.ended` | `handle_duck_request` / `handle_unduck_request` | ovos-audio emits these unconditionally on every TTS output; bound to the same handlers as `ovos.common_play.duck` / `.unduck`. |
@@ -210,6 +211,25 @@ calls the handler below.
 `handle_status` is also emitted (as a self-addressed `ovos.common_play.status`
 response) on startup and after every `set_player_state` / `set_now_playing`, so
 ovos-core's OCP pipeline always has a current snapshot for the session.
+
+---
+
+### Named collections
+
+`ovos.common_play.collection` answers a read-only lookup of a named intrinsic
+playlist, per [OCP-1 §4.4.3](https://github.com/OpenVoiceOS/architecture/blob/dev/ovos-ocp-1.md).
+A caller sends `{"name": "recently played"}` (or any of the synonyms the keyword
+registration for that playlist is trained on, matched case-insensitively)
+and gets back `{"name": <the name it sent>, "entries": [...]}` via
+`message.response`, the same reply idiom `handle_likes_query` uses for
+`ovos.common_play.likes`. "Recently played" and "most played" resolve against
+the play-history store (`PlayHistoryStore`, `ovos_media/catalog/history.py`);
+"liked songs" is **not** resolved here, it stays reserved to
+`ovos.common_play.likes` so the two queries never alias each other. An
+unrecognised name, a missing/non-string
+name, or a disabled history store all answer with an empty entry list rather
+than an error — a caller never needs to guess whether a collection exists
+before asking for it.
 
 ---
 

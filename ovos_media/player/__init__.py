@@ -6,6 +6,8 @@ from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
 from ovos_media.bus.api import OCPBusApi
 from ovos_media.catalog import LikedSongsStore, MediaCatalog, PlayHistoryStore
+from ovos_media.catalog.keywords import (RECENTLY_PLAYED_KEYWORDS,
+                                         MOST_PLAYED_KEYWORDS)
 from ovos_media.bus.schemas import (decode_media, decode_media_state,
                                     decode_playlist_tracks, decode_seek,
                                     decode_track_position, validated_entries)
@@ -28,6 +30,34 @@ from ovos_utils.ocp import PlayerState, LoopState, PlaybackType, PlaybackMode, T
 # catalog, so the name has to stay both importable and the one the player
 # calls.
 OCPMediaCatalog = MediaCatalog
+
+# OCP-1 §4.4.3: named collections the 'ovos.common_play.collection' query
+# resolves, keyed by canonical name and paired with the same synonyms the
+# NER/keyword registration in ovos_media.catalog.keywords is trained on, so
+# a name coming back from the intent layer resolves here too. "liked songs"
+# is reserved exclusively for 'ovos.common_play.likes' (OCP-1 §4.4.2) and is
+# deliberately absent - this query treats it, like any other unknown name,
+# as an empty result rather than aliasing it to the likes store.
+COLLECTION_ALIASES = {
+    "recently played": RECENTLY_PLAYED_KEYWORDS,
+    "most played": MOST_PLAYED_KEYWORDS,
+}
+
+
+def _resolve_collection_name(name) -> Optional[str]:
+    """Case-insensitive lookup of a requested collection name against the
+    canonical names and their aliases. None when nothing matches -
+    including a missing/empty name or one that is not a string at all
+    (OCP-1 §4.4.3 only requires an empty-entries answer, never an
+    exception, for a name it does not recognise; a query message is
+    otherwise unvalidated payload, same idiom as decode_skill_id)."""
+    if not name or not isinstance(name, str):
+        return None
+    name = name.strip().lower()
+    for canonical, aliases in COLLECTION_ALIASES.items():
+        if name == canonical or name in (a.lower() for a in aliases):
+            return canonical
+    return None
 
 
 class OCPMediaPlayer:
@@ -201,6 +231,31 @@ class OCPMediaPlayer:
         serialized player state 'status'/'disambiguation' snapshot from."""
         entries = [e.as_dict for e in self.media.likes.as_entries()]
         self.bus.emit(message.response({"entries": entries}))
+
+    def handle_collection_query(self, message):
+        """OCP-1 §4.4.3: named collection lookup - "recently played" and
+        "most played" resolve against the play-history store, read live
+        for the same reason 'likes' is. An unrecognised name (including
+        "liked songs", reserved exclusively for 'ovos.common_play.likes')
+        or a disabled history store both answer with an empty list rather
+        than an error, the same idiom an unmatched search uses. Name
+        resolution runs unconditionally so a malformed/unrecognised name
+        is answered identically regardless of whether history is
+        enabled - only the accessor call below is conditional on it."""
+        name = message.data.get("name", "")
+        canonical = _resolve_collection_name(name)
+        history = self.media.history
+        entries = []
+        if history is not None:
+            # recent()/most_played() both cap at DEFAULT_RECENT_LIMIT (50):
+            # a bounded named collection, not the full history, which is
+            # the right size for a voice/GUI listing and keeps this query
+            # cheap regardless of how large the history store has grown.
+            if canonical == "recently played":
+                entries = [e.as_dict for e in history.recent()]
+            elif canonical == "most played":
+                entries = [e.as_dict for e in history.most_played()]
+        self.bus.emit(message.response({"name": name, "entries": entries}))
 
     def handle_like(self, message):
         # sent from GUI or intent

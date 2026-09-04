@@ -25,7 +25,7 @@ from ovos_utils.ocp import MediaEntry, PlaybackType, Playlist
 
 from ovoscope.media import OCPPlayerHarness
 
-from ovos_media.catalog import LikedSongsStore
+from ovos_media.catalog import LikedSongsStore, PlayHistoryStore
 
 
 class _FakeStore(dict):
@@ -135,6 +135,44 @@ class TestLikesQueryE2E(unittest.TestCase):
             data = _query(h, "ovos.common_play.likes")
 
             self.assertEqual(data, {"entries": []})
+
+
+class TestCollectionQueryE2E(unittest.TestCase):
+    """'ovos.common_play.collection' over a real player/bus."""
+
+    def test_recently_played_lookup_through_the_real_store(self):
+        with OCPPlayerHarness() as h:
+            h.player.media.history = PlayHistoryStore(store=_FakeStore())
+            h.player.media.history.record_play(
+                {"uri": "http://example.com/song.mp3", "title": "Song"})
+
+            replies = []
+            h.bus.on("ovos.common_play.collection.response",
+                    lambda m: replies.append(m))
+            h.bus.emit(Message("ovos.common_play.collection",
+                               {"name": "recently played"}))
+            time.sleep(0.05)
+
+            self.assertEqual(len(replies), 1)
+            data = replies[0].data
+            self.assertEqual(data["name"], "recently played")
+            self.assertEqual(len(data["entries"]), 1)
+            self.assertEqual(data["entries"][0]["uri"],
+                             "http://example.com/song.mp3")
+
+    def test_unknown_name_answers_empty_entries(self):
+        with OCPPlayerHarness() as h:
+            h.player.media.history = PlayHistoryStore(store=_FakeStore())
+
+            replies = []
+            h.bus.on("ovos.common_play.collection.response",
+                    lambda m: replies.append(m))
+            h.bus.emit(Message("ovos.common_play.collection",
+                               {"name": "liked songs"}))
+            time.sleep(0.05)
+
+            self.assertEqual(replies[0].data,
+                             {"name": "liked songs", "entries": []})
 
 
 if __name__ == "__main__":
