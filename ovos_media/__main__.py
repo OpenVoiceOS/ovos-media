@@ -10,17 +10,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import argparse
+import sys
+
 from ovos_utils import wait_for_exit_signal
 from ovos_utils.log import init_service_logger, LOG
 from ovos_utils.process_utils import reset_sigint_handler
 
 from ovos_config.locale import setup_locale
 from ovos_media.service import MediaService, on_ready, on_error, on_stopping
+from ovos_media.version import __version__
 
 
 def main(ready_hook=on_ready, error_hook=on_error, stopping_hook=on_stopping,
-         watchdog=lambda: None):
-    """Start the Media Service and connect to the Message Bus"""
+         watchdog=lambda: None, argv=None):
+    """Start the Media Service and connect to the Message Bus
+
+    @param argv: CLI arguments to parse. Defaults to None, which means
+        "parse the real process argv" (sys.argv[1:]) — this is what makes
+        the installed `ovos-media` console script (entry point:
+        ovos_media.__main__:main) actually parse --help/--version/unknown
+        flags instead of silently booting the daemon. Pass an explicit
+        list (e.g. []) to override, e.g. from tests that must not leak the
+        test runner's own argv in here.
+    """
+    parser = argparse.ArgumentParser(prog="ovos-media",
+                                     description="OCP-native audio/video/web "
+                                                 "media service for OpenVoiceOS")
+    parser.add_argument("--version", action="version",
+                        version=f"%(prog)s {__version__}")
+    # parse_args exits the process (SystemExit) on --help/--version/bad args
+    # before any service/socket is touched, matching every other OVOS daemon
+    parser.parse_args(sys.argv[1:] if argv is None else list(argv))
+
     reset_sigint_handler()
     init_service_logger("media")
     LOG.set_level("DEBUG")
@@ -34,4 +56,4 @@ def main(ready_hook=on_ready, error_hook=on_error, stopping_hook=on_stopping,
 
 
 if __name__ == '__main__':
-    main()
+    main(argv=sys.argv[1:])

@@ -1,148 +1,162 @@
-# OVOS media service
+# ovos-media
 
-WIP - nothing to see here yet
+> **Warning:** this is pre-release software. It is under active development, is
+> not yet deployed in OpenVoiceOS, and its APIs may change without notice. It is
+> published in the open for transparency. Do not depend on it in production yet.
 
-## Architecture
+**The OVOS Virtual Media Player** is a standalone daemon. It plays audio, video, and
+web content for OpenVoiceOS. It tracks playback state per session, integrates with
+MPRIS/D-Bus, and uses a pluggable backend architecture.
 
-![imagem](https://github.com/NeonJarbas/ovos-media/assets/59943014/7dc1d635-4340-43db-a38d-294cfedab70f)
+`ovos-media` implements **OCP** (OVOS Common Playback): one logical media player per
+session that every media voice command targets. It handles both OVOS-initiated
+playback ("play jazz") and transport control ("pause", "next", "stop the music"). It
+also bridges to the host OS over MPRIS, so it can control playback OVOS did **not**
+start, such as a browser tab or a desktop player, as long as that player speaks the
+open standard. The concept is specified in
+[OVOS-OCP-1](https://github.com/OpenVoiceOS/architecture/blob/dev/ovos-ocp-1.md).
 
-## MPRIS integration
+`ovos-media` is the modern replacement for the legacy audio service (the
+`ovos-ocp-audio-plugin` bundled inside `ovos-audio`). It splits the monolith into
+small, swappable pieces: **the OCP pipeline finds media, providers supply catalogs,
+backends play streams, extractors resolve URIs.**
 
-Integration with MPRIS allows OCP to control external players
+---
 
-![imagem](https://github.com/NeonJarbas/ovos-media/assets/33701864/856c0228-8fc5-4ee6-a19d-4290f2e07258)
+## How it fits together
 
+```
+ "play jazz on the kitchen speaker"
+              │
+              ▼
+   ovos-core ─ OCP pipeline (ovos-ocp-pipeline-plugin)
+              │   classify media type + parse the request
+              │   query MediaProvider plugins, rank results
+              ▼
+   ovos-media (this daemon)
+              │   pick a playback backend, manage the queue / now-playing,
+              │   broadcast state over the bus / MPRIS
+              ▼
+   playback backend (opm.media.audio | .video | .web)
+              │   hand the URI to vlc / mpv / spotify / chromecast / browser …
+              ▼
+   stream extractor (opm.ocp.extractor) resolves youtube//… , rss//… , file://…
+```
+
+Every arrow is a plugin boundary, so each piece can be replaced independently:
+
+| Concern | Plugin group | Examples |
+|---|---|---|
+| **Find media** (catalogs/search) | `opm.media.provider` | youtube, bandcamp, soundcloud, tunein, somafm, pyradios |
+| **Play audio** | `opm.media.audio` | vlc, mplayer, simple (cli), ffplay, spotify, chromecast, mass, mpris |
+| **Play video** | `opm.media.video` | vlc, mplayer, chromecast |
+| **Render web/webview** | `opm.media.web` | (rendered directly by the backend plugin) |
+| **Resolve a stream URI** | `opm.ocp.extractor` | youtube, m3u, rss, files |
+
+Search results flow as [`mediavocab.Release`](https://github.com/TigreGotico/mediavocab)
+objects: a typed catalog model shared across the whole media ecosystem. A
+provider written once works for both playback and MPRIS metadata.
+
+---
 
 ## Install
 
-`pip install ovos-media` to install this package and the default plugins.
+```bash
+pip install ovos-media
+```
 
-# Configuration
+Install at least one playback backend (audio is the minimum to hear anything):
 
-under mycroft.conf
+```bash
+pip install ovos-media-plugin-vlc        # or -mplayer / -simple / -spotify / -chromecast
+```
 
-```javascript
+### Enable it
+
+`ovos-media` runs alongside `ovos-audio` (which keeps handling TTS). Turn off the
+legacy audio service and run the daemon:
+
+```json
+// mycroft.conf
 {
-  // Configure ovos-media service
-  // similarly to wakewords, configure any number of playback handlers
-  // playback handlers might be local applications or even remote devices
+  "enable_old_audioservice": false
+}
+```
+
+```bash
+ovos-media          # start the daemon
+```
+
+Ask OVOS to play something and the OCP pipeline routes the request here.
+
+---
+
+## Configuration
+
+All configuration lives under the `"media"` key in `mycroft.conf`. The essentials:
+
+```jsonc
+{
   "media": {
+    // MPRIS / D-Bus integration (off by default)
+    "enable_mpris": false,
+    // let MPRIS pause/stop other media players on the system
+    "manage_external_players": false,
 
-    // order of preference to try playback handlers
-    // if unavailable or unable to handle a uri, the next in list is used
-    // NB: users may request specific handlers in the utterance
+    // order of preference per playback type; the first backend that can
+    // handle the URI wins. Users may also name a backend in the utterance.
+    "preferred_audio_services": ["vlc", "mplayer", "cli"],
+    "preferred_video_services": ["vlc"],
 
-    // keys are the strings defined in "audio_players"
-    "preferred_audio_services": ["gui", "vlc", "mplayer", "cli"],
-
-    // keys are the strings defined in "web_players"
-    "preferred_web_services": ["gui", "browser"],
-
-    // keys are the strings defined in "video_players"
-    "preferred_video_services": ["gui", "vlc"],
-
-    // PlaybackType.AUDIO handlers
+    // every installed backend plugin loads automatically; declare an entry
+    // here to customise its name/aliases/config, control its load order, or
+    // disable it with "active": false. "module" is the plugin's entry-point
+    // name; "aliases" are spoken names. a backend that drives remote gear
+    // (casting, Music Assistant) needs an explicit entry here - it is never
+    // autoloaded.
     "audio_players": {
-        // vlc player uses a headless vlc instance to handle uris
-        "vlc": {
-            // the plugin name
-            "module": "ovos-media-audio-plugin-vlc",
-
-            // friendly names a user may use to refer to this playback handler
-            // those will be parsed by OCP and used to initiate
-            // playback in the request playback handler
-            "aliases": ["VLC"],
-
-            // deactivate a plugin by setting to false
-            "active": true
-        },
-        // command line player uses configurable shell commands with file uris as arguments
-        "cli": {
-            // the plugin name
-            "module": "ovos-media-audio-plugin-cli",
-
-            // friendly names a user may use to refer to this playback handler
-            // those will be parsed by OCP and used to initiate
-            // playback in the request playback handler
-            "aliases": ["Command Line"],
-
-            // deactivate a plugin by setting to false
-            "active": true
-        },
-        // gui uses mycroft-gui natively to handle uris
-        "gui": {
-            // the plugin name
-            "module": "ovos-media-audio-plugin-gui",
-
-            // friendly names a user may use to refer to this playback handler
-            // those will be parsed by OCP and used to initiate
-            // playback in the request playback handler
-            "aliases": ["GUI", "Graphical User Interface"],
-
-            // deactivate a plugin by setting to false
-            "active": true
-        }
+      "vlc": { "module": "ovos-media-audio-plugin-vlc", "aliases": ["VLC"], "active": true },
+      "cli": { "module": "ovos-media-audio-plugin-cli", "aliases": ["Command Line"], "active": true }
     },
-
-    // PlaybackType.VIDEO handlers
     "video_players": {
-        // vlc player uses a headless vlc instance to handle uris
-        "vlc": {
-            // the plugin name
-            "module": "ovos-media-video-plugin-vlc",
-
-            // friendly names a user may use to refer to this playback handler
-            // those will be parsed by OCP and used to initiate
-            // playback in the request playback handler
-            "aliases": ["VLC"],
-
-            // deactivate a plugin by setting to false
-            "active": true
-        },
-        // gui uses mycroft-gui natively to handle uris
-        "gui": {
-            // the plugin name
-            "module": "ovos-media-video-plugin-gui",
-
-            // friendly names a user may use to refer to this playback handler
-            // those will be parsed by OCP and used to initiate
-            // playback in the request playback handler
-            "aliases": ["GUI", "Graphical User Interface"],
-
-            // deactivate a plugin by setting to false
-            "active": true
-        }
-    },
-
-    // PlaybackType.WEBVIEW handlers
-    "web_players": {
-        // open url in the native browser
-        "browser": {
-            // the plugin name
-            "module": "ovos-media-web-plugin-browser",
-
-            // friendly names a user may use to refer to this playback handler
-            // those will be parsed by OCP and used to initiate
-            // playback in the request playback handler
-            "aliases": ["Browser", "Local Browser", "Default Browser"],
-
-            // deactivate a plugin by setting to false
-            "active": true
-        },
-        // gui uses mycroft-gui natively to handle uris
-        "gui": {
-            // the plugin name
-            "module": "ovos-media-web-plugin-gui",
-
-            // friendly names a user may use to refer to this playback handler
-            // those will be parsed by OCP and used to initiate
-            // playback in the request playback handler
-            "aliases": ["GUI", "Graphical User Interface"],
-
-            // deactivate a plugin by setting to false
-            "active": true
-        }
+      "vlc": { "module": "ovos-media-video-plugin-vlc", "aliases": ["VLC"], "active": true }
     }
   }
 }
 ```
+
+See **[docs/configuration.md](docs/configuration.md)** for every option (per-backend
+config, `autoload_backends`, MPRIS roles, queue behaviour).
+
+---
+
+## Documentation
+
+Start at **[docs/index.md](docs/index.md)**.
+
+- [Getting started](docs/getting-started.md): install, enable, first playback
+- [Architecture](docs/architecture.md): the daemon, the bus API, the plugin boundaries
+- [Media providers](docs/media-providers.md): write a catalog/search plugin (`opm.media.provider`)
+- [Playback backends](docs/backends.md): audio/video/web backend plugins
+- [Configuration reference](docs/configuration.md)
+- [MPRIS / D-Bus](docs/mpris.md)
+- [Migrating from the legacy audio service](docs/migration-guide.md)
+
+---
+
+## Status
+
+`ovos-media` is the OCP-native playback stack and is opt-in today (enable it by
+turning off the legacy audio service). Catalogs are supplied by
+[`MediaProvider` plugins](docs/media-providers.md) (`opm.media.provider`). The
+legacy OCP *search skills* still work during the transition.
+
+---
+
+## Credits
+
+The original [OCP dataset](https://github.com/NeonGeckoCom/OCP-dataset) used to train
+the media classifiers was sponsored by [@NeonGeckoCom](https://github.com/NeonGeckoCom/)
+as part of [The OCP Sprint](https://github.com/OpenVoiceOS/ovos-ocp-audio-plugin/issues/74).
+More recent media-metadata datasets are maintained by **TigreGotico** and published in
+the [Media Metadata collection on Hugging Face](https://huggingface.co/collections/TigreGotico/media-metadata).
