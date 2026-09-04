@@ -310,7 +310,9 @@ class TestLikeUnlikeRefreshesKeywords(unittest.TestCase):
         construction - a like/unlike refresh must never touch them again,
         or the sample list grows on every single like."""
         from ovos_media.catalog import LikedSongsStore, MediaCatalog
-        from ovos_media.catalog.keywords import PLAYLIST_KEYWORDS
+        from ovos_media.catalog.keywords import (MOST_PLAYED_KEYWORDS,
+                                                 PLAYLIST_KEYWORDS,
+                                                 RECENTLY_PLAYED_KEYWORDS)
 
         bus = FakeBus()
         store = _FakeStore()
@@ -318,15 +320,21 @@ class TestLikeUnlikeRefreshesKeywords(unittest.TestCase):
         catalog = MediaCatalog(bus, likes)
         skill = _make_skill(bus, likes=likes, catalog=catalog)
 
+        # playlist_name also carries the (equally static) recently-played/
+        # most-played synonyms, registered once at construction alongside
+        # PLAYLIST_KEYWORDS - see KeywordRegistrar.register_history_playlists
+        expected_static_count = (len(PLAYLIST_KEYWORDS)
+                                 + len(RECENTLY_PLAYED_KEYWORDS)
+                                 + len(MOST_PLAYED_KEYWORDS))
         before = list(skill._ocp_ents["playlist_name"])
-        self.assertEqual(len(before), len(PLAYLIST_KEYWORDS))
+        self.assertEqual(len(before), expected_static_count)
 
         for i in range(3):
             likes.like(f"http://{i}.mp3", title=f"Song {i}")
             catalog.notify_likes_changed()
 
         after = skill._ocp_ents["playlist_name"]
-        self.assertEqual(len(after), len(PLAYLIST_KEYWORDS))
+        self.assertEqual(len(after), expected_static_count)
         self.assertEqual(after, before)
 
     def test_unliking_leaves_the_title_registered_until_restart(self):

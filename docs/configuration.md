@@ -134,6 +134,36 @@ plugin's own `config` dict. See [backends.md](backends.md) for the backend API.
 
 ---
 
+## Play History
+
+`ovos-media` keeps a small persisted record of what actually played, so a
+user can say "play my recently played" or "play my most played songs" the
+same way they'd say "play my liked songs". The daemon records a play into
+`PlayHistoryStore` (`ovos_media/catalog/history.py`) once a track's stream
+has been validated, so a corpse (a URI that fails to load and gets skipped)
+never pollutes either playlist. Recording is bounded to `max_entries` uris;
+once full, the least-played, oldest entries are evicted first, exempting the
+most recently played tracks so "recently played" cannot be starved by its
+own growth.
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `history.enabled` | bool | `true` | Keep a play-history store and answer "recently played"/"most played" requests. Set `false` to skip the store entirely — no file is created and no keywords are registered. |
+| `history.max_entries` | int | `500` | Maximum number of distinct uris kept in the history store before the oldest, least-played entries are evicted. |
+
+```json
+{
+  "media": {
+    "history": {
+      "enabled": true,
+      "max_entries": 500
+    }
+  }
+}
+```
+
+---
+
 ## MPRIS Integration
 
 MPRIS (Media Player Remote Interfacing Specification) is the standard D-Bus

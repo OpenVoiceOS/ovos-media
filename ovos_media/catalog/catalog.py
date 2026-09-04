@@ -21,16 +21,25 @@ from ovos_utils.log import LOG
 from ovos_utils.ocp import MediaType, Playlist
 
 from ovos_media.bus.schemas import flatten_media_types
+from ovos_media.catalog.history import PlayHistoryStore
 from ovos_media.catalog.likes import LikedSongsStore
 
 
 class MediaCatalog:
 
-    def __init__(self, bus, likes: LikedSongsStore) -> None:
+    def __init__(self, bus, likes: LikedSongsStore,
+                 history: Optional[PlayHistoryStore] = None) -> None:
         self.bus = bus
         # injected, never invented: one store per process, shared with the
         # voice front-end that searches it (see ovos_media.service)
         self.likes = likes
+        # same idiom as likes: one store per process, written by the
+        # player on every play(), searched by the voice front-end. Left
+        # None (not auto-constructed) when the caller has none to give -
+        # the caller (OCPMediaPlayer) is the one that knows whether
+        # media.history.enabled is true, and a disabled feature must not
+        # touch disk just because a catalog got built.
+        self.history = history
         self.search_playlist = Playlist()
         self.ocp_skills = {}
         self.featured_skills = {}
