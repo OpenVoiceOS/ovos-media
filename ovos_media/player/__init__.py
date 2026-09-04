@@ -39,14 +39,32 @@ class OCPMediaPlayer:
     """
 
     def __init__(self, bus: MessageBusClient, config: Optional[dict] = None,
-                 validate_source: bool = True, likes=None) -> None:
+                 validate_source: Optional[bool] = None, likes=None) -> None:
         self.bus = bus
+        # A falsy ``config`` (None, or an explicit ``{}``) means "read the
+        # default, Configuration-backed source"; the same predicate governs
+        # both where the snapshot below comes from and whether ``_cfg()``
+        # re-reads Configuration() on every call. The default source is
+        # re-read on every ``_cfg()`` call so a disk edit to a hot knob
+        # (autoplay, preferred_*_services) propagates without a restart.
+        # Cold knobs (enable_mpris, manage_external_players, playback_mode,
+        # the loaded backend plugin set) are still read once here, off
+        # ``self.ocp_config``, and only take effect on the next construction.
+        self._live_config = not config
         self.ocp_config = config or Configuration().get("media", {})
         # When True, playback-executing handlers act only on the local/"default"
         # session (see ovos_media.utils.is_default_session). A satellite
         # whose sessions are not NAT'd to "default" by hivemind-core should set
         # this False so its embedded ovos-media acts on all sessions.
-        self.validate_source = validate_source
+        # ``validate_source`` resolves like this, in order: an explicit
+        # constructor argument (or a later direct assignment) always wins,
+        # exactly like ``config=`` above -- hivemind-media-player embeds
+        # ``MediaService(validate_source=False)`` in code and a stray
+        # ``media.validate_source: true`` on disk must never override that.
+        # Only when neither was ever given (``None``) does the live
+        # ``media.validate_source`` config value apply, falling back to
+        # ``True`` if that is unset too. See the property below.
+        self._validate_source_override: Optional[bool] = validate_source
 
         self.state: PlayerState = PlayerState.STOPPED
         self.loop_state: LoopState = LoopState.NONE
@@ -89,6 +107,34 @@ class OCPMediaPlayer:
         self.bus_api = OCPBusApi(bus, player=self)
         self.publish_snapshot()
         self._report_to_core()
+
+    def _cfg(self, key, default=None):
+        """Read a "media" config key, live for the default (Configuration-
+        backed) config source, static if an explicit, non-empty ``config``
+        dict was passed to the constructor."""
+        if self._live_config:
+            return Configuration().get("media", {}).get(key, default)
+        return self.ocp_config.get(key, default)
+
+    @property
+    def validate_source(self) -> bool:
+        """Whether gated topics are filtered by session at all.
+
+        An explicit constructor argument (or a later direct assignment to
+        this property) always wins over config, exactly like ``config=``
+        does for other knobs. Only when neither was ever given does the
+        live ``media.validate_source`` apply, hot -- a satellite can flip it
+        without restarting. Falls back to ``True`` if both are unset.
+        Assigning ``None`` clears the override and returns this property to
+        that config-driven mode.
+        """
+        if self._validate_source_override is not None:
+            return self._validate_source_override
+        return self._cfg("validate_source", True)
+
+    @validate_source.setter
+    def validate_source(self, value: bool) -> None:
+        self._validate_source_override = value
 
     def _report_to_core(self) -> None:
         """Broadcast the supported StreamExtractorIds and the initial player
@@ -525,7 +571,7 @@ class OCPMediaPlayer:
             MediaBackend | None
         """
         preferred_names = media_service.get_preferred_players() or \
-                          self.ocp_config.get("preferred_audio_services", [])
+                          self._cfg("preferred_audio_services", [])
         if not preferred_names:
             return None
         for name in preferred_names:
@@ -1094,7 +1140,7 @@ class OCPMediaPlayer:
                                        stop_requested=stop_requested)
         elif invalid:
             self.handle_invalid_media(message)
-            if self.ocp_config.get("autoplay", True):
+            if self._cfg("autoplay", True):
                 # go through the delayed on_invalid_stream() path rather
                 # than calling play_next() inline — an inline call recursed
                 # straight back into play() and, with a permanently failing
@@ -1133,7 +1179,7 @@ class OCPMediaPlayer:
             LOG.debug("Playback ended by an explicit stop request; not advancing")
             return
 
-        if len(self.playlist) and self.ocp_config.get("autoplay", True) and \
+        if len(self.playlist) and self._cfg("autoplay", True) and \
                 playback_type not in [PlaybackType.MPRIS, PlaybackType.UNDEFINED]:
             # PlaybackType.UNDEFINED -> no media loaded, eg stop called explicitly
             # PlaybackType.MPRIS -> can't load media in MPRIS players

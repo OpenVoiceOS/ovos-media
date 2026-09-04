@@ -676,6 +676,7 @@ def _make_base_svc(namespace="audio", config=None, services=None, validate_sourc
     svc.bus = bus
     svc.namespace = namespace
     svc.config = config or {}
+    svc._live_config = False
     svc.plugin_loader = lambda: {}
     svc.default = None
     svc.services = services or []
