@@ -578,6 +578,21 @@ class TestSeekUnsupportedAnnounces(unittest.TestCase):
         p.seek(60000)
         p.media.notify_dialog.assert_not_called()
 
+    def test_seek_skill_type_delegates_when_can_seek_is_declared(self):
+        # OCP-1 §4.3.1: a skill that declared `can_seek: true` gets the
+        # delegated seek instead of the cannot.seek fallback
+        p = make_player(PlaybackType.SKILL)
+        p.media.can_seek.return_value = True
+        emitted = []
+        p.bus.on("message", lambda m: emitted.append(Message.deserialize(m)))
+        p.seek(60000)
+        p.media.notify_dialog.assert_not_called()
+        types = [m.msg_type for m in emitted]
+        self.assertIn("ovos.common_play.test.skill.seek", types)
+        seek_msg = next(m for m in emitted
+                         if m.msg_type == "ovos.common_play.test.skill.seek")
+        self.assertEqual(seek_msg.data, {"seekValue": 60000})
+
 
 if __name__ == "__main__":
     unittest.main()

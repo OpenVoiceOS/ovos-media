@@ -210,7 +210,20 @@ class SkillPlayerAdapter(PlayerAdapter):
         self._emit("previous")
 
     def seek(self, milliseconds: int) -> None:
-        LOG.warning("seek is not supported for skill playback, ignoring")
+        """Delegate the seek to the rendering skill, per OCP-1 §4.3.1.
+
+        A skill that can reposition its own rendering declares
+        `can_seek: true` in its ``ovos.common_play.announce``; only then is
+        the delegated `{skill_id}.seek` verb emitted, carrying the §4.2.2
+        payload. Absent that declaration the skill's rendering is
+        non-seekable and the request is logged and dropped instead - this
+        is the fallback the player's routing already selects for, kept here
+        as a second line of defence for direct adapter callers.
+        """
+        if not self.player.media.can_seek(self.skill_id):
+            LOG.warning("seek is not supported for skill playback, ignoring")
+            return
+        self._emit("seek", {"seekValue": milliseconds})
 
     def position(self) -> Optional[int]:
         return self.now_playing.position
