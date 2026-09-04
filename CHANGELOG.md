@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.5a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.2.5a1) (2026-09-04)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.2.4a1...2.2.5a1)
+
+**Merged pull requests:**
+
+- fix: adapt tests to SessionManager without default\_session [\#205](https://github.com/OpenVoiceOS/ovos-media/pull/205) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.2.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.2.4a1) (2026-09-04)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.2.3a1...2.2.4a1)
@@ -58,19 +66,19 @@
 
 ## [2.1.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.1a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.1a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.1.1a1)
 
 **Merged pull requests:**
 
 - fix: emit the previous-track verb the workshop base class listens on [\#182](https://github.com/OpenVoiceOS/ovos-media/pull/182) ([JarbasAl](https://github.com/JarbasAl))
 
-## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.0.2a1)
-
 ## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.1.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.0a1)
+
+## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.0.2a1)
 
 **Merged pull requests:**
 
