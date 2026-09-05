@@ -5,7 +5,9 @@ from ovos_config import Configuration
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
 from ovos_media.bus.api import OCPBusApi
-from ovos_media.catalog import LikedSongsStore, MediaCatalog
+from ovos_media.catalog import LikedSongsStore, MediaCatalog, PlayHistoryStore
+from ovos_media.catalog.keywords import (RECENTLY_PLAYED_KEYWORDS,
+                                         MOST_PLAYED_KEYWORDS)
 from ovos_media.bus.schemas import (decode_media, decode_media_state,
                                     decode_playlist_tracks, decode_seek,
                                     decode_track_position, validated_entries)
@@ -29,6 +31,34 @@ from ovos_utils.ocp import PlayerState, LoopState, PlaybackType, PlaybackMode, T
 # calls.
 OCPMediaCatalog = MediaCatalog
 
+# OCP-1 §4.4.3: named collections the 'ovos.common_play.collection' query
+# resolves, keyed by canonical name and paired with the same synonyms the
+# NER/keyword registration in ovos_media.catalog.keywords is trained on, so
+# a name coming back from the intent layer resolves here too. "liked songs"
+# is reserved exclusively for 'ovos.common_play.likes' (OCP-1 §4.4.2) and is
+# deliberately absent - this query treats it, like any other unknown name,
+# as an empty result rather than aliasing it to the likes store.
+COLLECTION_ALIASES = {
+    "recently played": RECENTLY_PLAYED_KEYWORDS,
+    "most played": MOST_PLAYED_KEYWORDS,
+}
+
+
+def _resolve_collection_name(name) -> Optional[str]:
+    """Case-insensitive lookup of a requested collection name against the
+    canonical names and their aliases. None when nothing matches -
+    including a missing/empty name or one that is not a string at all
+    (OCP-1 §4.4.3 only requires an empty-entries answer, never an
+    exception, for a name it does not recognise; a query message is
+    otherwise unvalidated payload, same idiom as decode_skill_id)."""
+    if not name or not isinstance(name, str):
+        return None
+    name = name.strip().lower()
+    for canonical, aliases in COLLECTION_ALIASES.items():
+        if name == canonical or name in (a.lower() for a in aliases):
+            return canonical
+    return None
+
 
 class OCPMediaPlayer:
     """OCP Virtual Media Player
@@ -39,7 +69,7 @@ class OCPMediaPlayer:
     """
 
     def __init__(self, bus: MessageBusClient, config: Optional[dict] = None,
-                 validate_source: bool = True, likes=None) -> None:
+                 validate_source: bool = True, likes=None, history=None) -> None:
         self.bus = bus
         self.ocp_config = config or Configuration().get("media", {})
         # When True, playback-executing handlers act only on the local/"default"
@@ -55,9 +85,15 @@ class OCPMediaPlayer:
         self.track_history: dict = {}  # Dict of track URI to play count
         # MediaService injects the store it also gives the voice skill; a
         # player built on its own has no one to share with, so it opens the
-        # store itself.
+        # store itself. The history store is skipped entirely (not just
+        # unused) when media.history.enabled is false, so a disabled
+        # feature never touches disk.
+        history_cfg = self.ocp_config.get("history", {})
+        if history is None and history_cfg.get("enabled", True):
+            history = PlayHistoryStore(max_entries=history_cfg.get("max_entries", 500))
         self.media: MediaCatalog = OCPMediaCatalog(
-            bus=bus, likes=likes if likes is not None else LikedSongsStore())
+            bus=bus, likes=likes if likes is not None else LikedSongsStore(),
+            history=history)
         self._init_runtime_state()
         # the owned queue, also the container the rest of the world reads as
         # "the playlist" (bus status, MPRIS track list)
@@ -195,6 +231,31 @@ class OCPMediaPlayer:
         serialized player state 'status'/'disambiguation' snapshot from."""
         entries = [e.as_dict for e in self.media.likes.as_entries()]
         self.bus.emit(message.response({"entries": entries}))
+
+    def handle_collection_query(self, message):
+        """OCP-1 §4.4.3: named collection lookup - "recently played" and
+        "most played" resolve against the play-history store, read live
+        for the same reason 'likes' is. An unrecognised name (including
+        "liked songs", reserved exclusively for 'ovos.common_play.likes')
+        or a disabled history store both answer with an empty list rather
+        than an error, the same idiom an unmatched search uses. Name
+        resolution runs unconditionally so a malformed/unrecognised name
+        is answered identically regardless of whether history is
+        enabled - only the accessor call below is conditional on it."""
+        name = message.data.get("name", "")
+        canonical = _resolve_collection_name(name)
+        history = self.media.history
+        entries = []
+        if history is not None:
+            # recent()/most_played() both cap at DEFAULT_RECENT_LIMIT (50):
+            # a bounded named collection, not the full history, which is
+            # the right size for a voice/GUI listing and keeps this query
+            # cheap regardless of how large the history store has grown.
+            if canonical == "recently played":
+                entries = [e.as_dict for e in history.recent()]
+            elif canonical == "most played":
+                entries = [e.as_dict for e in history.most_played()]
+        self.bus.emit(message.response({"name": name, "entries": entries}))
 
     def handle_like(self, message):
         # sent from GUI or intent
@@ -730,6 +791,13 @@ class OCPMediaPlayer:
             LOG.warning("Stream Validation Failed")
             self.on_invalid_stream()
             return
+
+        # only a track that actually validated gets recorded - a dead
+        # track's skip chain (on_invalid_stream -> play_next -> play -> ...)
+        # would otherwise record+disk-write every corpse it tries, poisoning
+        # both "recently played" and "most played"
+        if self.ocp_config.get("history", {}).get("enabled", True):
+            self.media.history.record_play(self.now_playing.as_dict)
 
         self.track_history.setdefault(self.now_playing.uri, 0)
         self.track_history[self.now_playing.uri] += 1

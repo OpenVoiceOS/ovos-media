@@ -307,6 +307,10 @@ class OCPBusApi:
                        player.handle_disambiguation_query, dispatch=False),
             BusHandler("ovos.common_play.likes",
                        player.handle_likes_query, dispatch=False),
+            # OCP-1 §4.4.3: read-only named-collection lookup, same idiom
+            # as disambiguation/likes above - not gated, not dispatched.
+            BusHandler("ovos.common_play.collection",
+                       player.handle_collection_query, dispatch=False),
             # external MPRIS player → reflect as OCP now_playing (no local
             # backend)
             BusHandler("ovos.common_play.mpris.now_playing",
