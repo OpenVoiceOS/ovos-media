@@ -227,9 +227,14 @@ class TestDaemonStartup(unittest.TestCase):
         self.assertEqual(service.ocp.playlist.title, "Search Results")
         # validate_source must be plumbed through to the voice front-end
         # (#90), which mirrors the player's session gate on its shuffle
-        # intents
+        # intents. No explicit override was given to MediaService, so it
+        # stores None (unresolved) and lets each collaborator read
+        # media.validate_source live -- the player and the voice skill must
+        # still agree with each other.
+        self.assertIsNone(service.validate_source)
         self.assertIs(service.voice_skill.validate_source,
-                      service.validate_source)
+                      service.ocp.validate_source)
+        self.assertTrue(service.ocp.validate_source)  # unset config -> True
         service.shutdown()
 
 

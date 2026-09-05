@@ -121,9 +121,18 @@ class OCPBusApi:
 
         A satellite whose sessions are not NAT'd to "default" sets
         ``media.validate_source: false`` and acts on every session.
+
+        The owner's own ``validate_source`` can be the raw, unresolved
+        ``None`` -- ``MediaService`` passes its constructor argument straight
+        through unresolved so the player and the voice skill can each
+        resolve it live -- but ``MediaService`` itself is not one of those
+        resolvers, so ``None`` here must fall back to the same ``True``
+        default they'd apply, not be treated as a falsy override that turns
+        the gate silently off.
         """
         owner = self.player if self.player is not None else self.service
-        return getattr(owner, "validate_source", True)
+        value = getattr(owner, "validate_source", True)
+        return True if value is None else value
 
     def _build_table(self) -> List[BusHandler]:
         """Build the registration table for the owners this edge was given.

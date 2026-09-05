@@ -257,6 +257,7 @@ def _make_real_player(bus, title="Bohemian Rhapsody", artist="Queen"):
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
         p._init_runtime_state()
         p.ocp_config = {}
+        p._live_config = False
         p.validate_source = True
         p.state = PlayerState.STOPPED
         p.loop_state = LoopState.NONE

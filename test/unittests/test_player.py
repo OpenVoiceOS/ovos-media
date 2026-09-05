@@ -66,6 +66,7 @@ class TestResolvePreferredService(unittest.TestCase):
         p.audio_service.services = [self._make_backend("vlc")]
         p.audio_service.get_preferred_players.return_value = []
         p.ocp_config = {}
+        p._live_config = False
         result = p._resolve_preferred_service(p.audio_service)
         self.assertIsNone(result)
 

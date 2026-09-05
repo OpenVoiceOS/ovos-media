@@ -54,12 +54,14 @@ class MediaService(Thread):
         # In a HiveMind split the OCP pipeline (on the server) forwards
         # commands stamped with the originating satellite session; a
         # server-side ovos-media must ignore those (the satellite runs its
-        # own embedded ovos-media). The constructor argument wins; otherwise
-        # read `media.validate_source` from config (default True). A satellite
-        # that is not getting default-NAT'd sessions sets this False to act on
-        # all sessions.
-        if validate_source is None:
-            validate_source = self.config.get("validate_source", True)
+        # own embedded ovos-media). The constructor argument wins, always,
+        # over anything in config -- hivemind-media-player embeds
+        # ``MediaService(validate_source=False)`` in code and a stray
+        # ``media.validate_source: true`` on disk must never override that.
+        # ``None`` (the default) is passed through unresolved: OCPMediaPlayer
+        # and OCPVoiceSkill each read `media.validate_source` live from
+        # config themselves, so a satellite that is not getting
+        # default-NAT'd sessions can flip it at runtime without a restart.
         self.validate_source = validate_source
 
         if not bus:

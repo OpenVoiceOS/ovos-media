@@ -9,6 +9,7 @@ from os.path import dirname
 from typing import Optional
 
 from ovos_bus_client.message import Message
+from ovos_config import Configuration
 from ovos_utils.ocp import MediaType, PlaybackType, PlayerState
 from ovos_workshop.decorators.ocp import ocp_search
 from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
@@ -26,14 +27,20 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
 
     def __init__(self, *args, likes: LikedSongsStore,
                  catalog: Optional[MediaCatalog] = None,
-                 validate_source: bool = True, **kwargs):
+                 validate_source: Optional[bool] = None, **kwargs):
         kwargs.setdefault("resources_dir", RESOURCES_DIR)
         super().__init__(*args, **kwargs)
         # mirrors the bus edge's session gate: keeps playback-affecting
         # intent handlers (shuffle on/off) on the local/"default" session,
         # unless the owning service was configured with
-        # media.validate_source: false (satellite acting on everything)
-        self.validate_source = validate_source
+        # media.validate_source: false (satellite acting on everything).
+        # An explicit constructor argument (or a later direct assignment to
+        # ``self.validate_source``) always wins over config, exactly like
+        # OCPMediaPlayer.validate_source; only ``None`` falls through to a
+        # live read of ``media.validate_source``, so this front-end and the
+        # player it fronts for stay in agreement after a runtime flip
+        # instead of one honoring the change and the other refusing it.
+        self._validate_source_override: Optional[bool] = validate_source
         self.skill_icon = f"{RESOURCES_DIR}/qt5/images/liked.svg"
 
         # the same store the player writes likes and play counts into
@@ -161,6 +168,21 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
             self.speak_dialog("no.track.info")
         else:
             self.speak_dialog("nothing.playing")
+
+    @property
+    def validate_source(self) -> bool:
+        """See ``OCPMediaPlayer.validate_source``: an explicit override
+        (constructor argument or direct assignment) always wins; otherwise
+        the live ``media.validate_source`` config value applies, falling
+        back to ``True`` if that is unset too. Assigning ``None`` clears the
+        override and returns this property to that config-driven mode."""
+        if self._validate_source_override is not None:
+            return self._validate_source_override
+        return Configuration().get("media", {}).get("validate_source", True)
+
+    @validate_source.setter
+    def validate_source(self, value: bool) -> None:
+        self._validate_source_override = value
 
     def _is_default_session(self, message: Message) -> bool:
         """Whether the player will act on a request forwarded from this
