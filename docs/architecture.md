@@ -69,8 +69,10 @@ The player package splits along the state it owns: `OCPMediaPlayer` in
 `ovos_media/player/streams.py`. What can be played is a separate package,
 `ovos_media/catalog/`: `MediaCatalog` holds the roster of announced OCP skills
 and the search results, `LikedSongsStore` owns the persisted liked songs and
-the lock serializing them, and `KeywordRegistrar` teaches the OCP pipeline the
-liked-song keywords. `PlayQueue` owns the user queue, the identity
+the lock serializing them, `PlayHistoryStore` owns the persisted play history
+behind "recently played"/"most played" (see [Configuration](configuration.md#play-history)),
+and `KeywordRegistrar` teaches the OCP pipeline the
+liked-song and history-playlist keywords. `PlayQueue` owns the user queue, the identity
 of the selected entry and the uris that failed to load, and answers which
 track comes next; what to do with that answer — repeat, autoplay, stop —
 stays with the player.

@@ -39,6 +39,38 @@ class TestMediaServiceLifecycle(unittest.TestCase):
         svc.ocp.shutdown.assert_called_once()
 
 
+class TestMediaServiceHistoryConstruction(unittest.TestCase):
+    """The play-history store must not be constructed (no disk write) when
+    media.history.enabled is false."""
+
+    def test_history_store_not_constructed_when_disabled(self):
+        from ovos_media.service import MediaService
+        with patch("ovos_media.service.MessageBusClient"), \
+             patch("ovos_media.service.OCPMediaPlayer"), \
+             patch("ovos_media.service.ProcessStatus") as MockStatus, \
+             patch("ovos_media.service.Configuration",
+                  return_value={"media": {"history": {"enabled": False}}}), \
+             patch("ovos_media.service.PlayHistoryStore") as MockHistory:
+            MockStatus.return_value = MagicMock()
+            svc = MediaService(bus=MagicMock())
+
+        MockHistory.assert_not_called()
+        self.assertIsNone(svc.history)
+
+    def test_history_store_constructed_when_enabled(self):
+        from ovos_media.service import MediaService
+        with patch("ovos_media.service.MessageBusClient"), \
+             patch("ovos_media.service.OCPMediaPlayer"), \
+             patch("ovos_media.service.ProcessStatus") as MockStatus, \
+             patch("ovos_media.service.Configuration", return_value={"media": {}}), \
+             patch("ovos_media.service.PlayHistoryStore") as MockHistory:
+            MockStatus.return_value = MagicMock()
+            svc = MediaService(bus=MagicMock())
+
+        MockHistory.assert_called_once()
+        self.assertIs(svc.history, MockHistory.return_value)
+
+
 class TestMediaServiceHandlers(unittest.TestCase):
     """Bus message handler methods."""
 
