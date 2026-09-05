@@ -77,7 +77,10 @@ class OCPMediaPlayer:
 
         # MPRIS settings
         manage_players = self.ocp_config.get("manage_external_players", False)
-        if self.ocp_config.get("enable_mpris", False) is False:
+        # ovos-media is a desktop MPRIS player (Role A) unless configured
+        # off: headless deployments degrade to one warning when there is no
+        # session bus to talk to (DbusLoop.connect); no D-Bus is never fatal.
+        if self.ocp_config.get("enable_mpris", True) is False:
             LOG.info("MPRIS integration is disabled")
         else:
             self.mpris = OcpMprisExporter(self, config=self.ocp_config,

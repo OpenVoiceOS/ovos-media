@@ -277,6 +277,7 @@ class TestExport(unittest.IsolatedAsyncioTestCase):
         exporter = MprisExporter.__new__(MprisExporter)
         exporter.mediaPlayer2Interface = MagicMock()
         exporter.mediaPlayer2PlayerInterface = MagicMock()
+        exporter.playlistsInterface = MagicMock()
         return exporter
 
     async def test_export_requests_name(self):
@@ -287,12 +288,21 @@ class TestExport(unittest.IsolatedAsyncioTestCase):
         mock_dbus.request_name.assert_awaited_once_with(
             "org.mpris.MediaPlayer2.OCP")
 
-    async def test_export_exports_both_interfaces(self):
+    async def test_export_exports_all_interfaces(self):
         exporter = self._make_exporter()
         mock_dbus = MagicMock()
         mock_dbus.request_name = AsyncMock()
         await exporter.export(mock_dbus)
-        self.assertEqual(mock_dbus.export.call_count, 2)
+        self.assertEqual(mock_dbus.export.call_count, 3)
+
+    async def test_export_logs_the_bus_name(self):
+        exporter = self._make_exporter()
+        mock_dbus = MagicMock()
+        mock_dbus.request_name = AsyncMock()
+        with patch("ovos_media.mpris.exporter.LOG") as mock_log:
+            await exporter.export(mock_dbus)
+        self.assertTrue(any("org.mpris.MediaPlayer2.OCP" in str(call)
+                             for call in mock_log.info.call_args_list))
 
 
 class TestUpdateProps(unittest.TestCase):
@@ -335,9 +345,12 @@ class TestMediaPlayer2InterfaceProperties(unittest.TestCase):
         iface, _ = _make_mp2_interface()
         self.assertIn("http", iface.SupportedUriSchemes)
 
-    def test_has_track_list_always_true(self):
+    def test_has_track_list_always_false(self):
+        # no org.mpris.MediaPlayer2.TrackList interface is exported; True
+        # here would be exactly the "advertises an interface that isn't
+        # there" defect the Playlists stub exists to fix.
         iface, _ = _make_mp2_interface()
-        self.assertTrue(iface.HasTrackList)
+        self.assertFalse(iface.HasTrackList)
 
     def test_can_quit_false_by_default(self):
         iface, _ = _make_mp2_interface()
@@ -759,6 +772,94 @@ class TestSubmitToPlayer(unittest.TestCase):
         seen = []
         submit_to_player(object(), lambda: seen.append(1))
         self.assertEqual(seen, [1])
+
+
+class TestPlaylistsInterface(unittest.TestCase):
+    """The org.mpris.MediaPlayer2.Playlists stub reserves the surface
+    without claiming any playlists exist yet.
+
+    Every property is round-tripped through :class:`dbus_next.signature.
+    Variant` against the property's own declared signature — not just
+    compared at the Python level — because dbus_next's STRUCT marshaller
+    requires ``list``, not ``tuple``, and a plain equality/unpacking check
+    on the raw Python value passes green over a value that crashes the
+    moment it actually reaches the wire (SignatureBodyMismatchError on
+    Properties.GetAll / ObjectManager.InterfacesAdded).
+    """
+
+    def _make_interface(self):
+        from ovos_media.mpris import _MediaPlayer2PlaylistsInterface
+        return _MediaPlayer2PlaylistsInterface(MagicMock())
+
+    def _variant(self, iface, prop_name):
+        from dbus_next.signature import Variant
+        sig = next(p.signature for p in
+                   type(iface)._get_properties(iface) if p.name == prop_name)
+        return Variant(sig, getattr(iface, prop_name))
+
+    def test_playlist_count_is_zero(self):
+        iface = self._make_interface()
+        variant = self._variant(iface, "PlaylistCount")
+        self.assertEqual(variant.value, 0)
+
+    def test_orderings_is_alphabetical(self):
+        iface = self._make_interface()
+        variant = self._variant(iface, "Orderings")
+        self.assertEqual(variant.value, ["Alphabetical"])
+
+    def test_active_playlist_marshals_and_is_none(self):
+        iface = self._make_interface()
+        variant = self._variant(iface, "ActivePlaylist")
+        valid, playlist = variant.value
+        self.assertFalse(valid)
+
+    def test_activate_playlist_is_a_noop(self):
+        # dbus_next's @method() wrapper discards the return value of calling
+        # the decorated method directly; the real return travels through the
+        # underlying function it stashes on __DBUS_METHOD for dispatch.
+        iface = self._make_interface()
+        fn = iface.ActivatePlaylist.__dict__['__DBUS_METHOD'].fn
+        self.assertIsNone(fn(iface, "/some/playlist"))
+
+    def test_get_playlists_returns_empty(self):
+        iface = self._make_interface()
+        fn = iface.GetPlaylists.__dict__['__DBUS_METHOD'].fn
+        result = fn(iface, 0, 10, "Alphabetical", False)
+        self.assertEqual(result, [])
+        # the method's own return signature must accept an empty list
+        Variant = __import__("dbus_next.signature", fromlist=["Variant"]).Variant
+        Variant('a(oss)', result)
+
+    def test_playlists_interface_is_exported(self):
+        from ovos_media.mpris import MprisExporter
+        exporter = MprisExporter.__new__(MprisExporter)
+        exporter._ocp_player = MagicMock()
+        from ovos_media.mpris.exporter import (_MediaPlayer2Interface,
+                                               _MediaPlayer2PlayerInterface,
+                                               _MediaPlayer2PlaylistsInterface)
+        player = MagicMock()
+        player.playlist = []
+        exporter.mediaPlayer2Interface = _MediaPlayer2Interface(player)
+        exporter.mediaPlayer2PlayerInterface = _MediaPlayer2PlayerInterface(
+            player, 'org.mpris.MediaPlayer2.Player')
+        exporter.playlistsInterface = _MediaPlayer2PlaylistsInterface(player)
+        self.assertIsInstance(exporter.playlistsInterface,
+                              _MediaPlayer2PlaylistsInterface)
+
+
+class TestPlaylistsInterfaceRealBus(unittest.IsolatedAsyncioTestCase):
+    """Export the stub on a real message bus object and call GetAll through
+    dbus_next's own property machinery, the path a tuple return cannot
+    survive."""
+
+    async def test_get_all_marshals_every_property(self):
+        from ovos_media.mpris import _MediaPlayer2PlaylistsInterface
+        from dbus_next.service import ServiceInterface
+        player = MagicMock()
+        iface = _MediaPlayer2PlaylistsInterface(player)
+        for prop in ServiceInterface._get_properties(iface):
+            from dbus_next.signature import Variant
+            Variant(prop.signature, getattr(iface, prop.name))
 
 
 if __name__ == "__main__":
