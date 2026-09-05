@@ -93,13 +93,58 @@ answers, not everything this process has bound.
 
 `MediaService` also builds one real skill, `OCPVoiceSkill`
 (`ovos_media/skill.py`), and it is the only part of the daemon that speaks.
-It owns the five media intents ("what song is this", shuffle on/off), the
-liked-songs search results the OCP pipeline asks for, and every dialog.
-Playback code never calls `speak_dialog`: when a track fails, a queue ends or
-no backend is installed, the player asks its catalog to announce a dialog and
-the skill, registered as a listener on that catalog, decides what to say. A
-player running without a voice front-end therefore stays silent instead of
-reaching into a skill it does not own.
+It owns the media intents ("what song is this", shuffle on/off, like/unlike,
+repeat, seek, "is shuffle on", "what's next"; see
+[Voice intents](#voice-intents) below), the liked-songs search results the
+OCP pipeline asks for, and every dialog. Playback code never calls
+`speak_dialog`: when a track fails, a queue ends or no backend is installed,
+the player asks its catalog to announce a dialog and the skill, registered as
+a listener on that catalog, decides what to say. A player running without a
+voice front-end therefore stays silent instead of reaching into a skill it
+does not own.
+
+#### Voice intents
+
+Every intent that changes player state mirrors the session gate of the bus
+handler it targets, using the same `is_default_session()` check the handlers
+themselves use (see [Sessions](sessions.md)): on a non-default session it
+answers "cannot.control.device" instead of forwarding the command. The
+read-only queries below stay ungated, like the existing "what song is this"
+family.
+
+- **Like / Unlike** ("like this song", "add this to my favourites" /
+  "unlike this track", "remove this from my favourites") forward to
+  `ovos.common_play.like` / `.unlike`. These are the player-owned
+  counterparts of the like/favourite intents the OCP pipeline plugin
+  deliberately leaves disabled in favour of `ovos-media`.
+- **Repeat** has two distinct scopes, and the intents are honest about
+  which one each affects. "Turn on repeat"/"put it on repeat" forwards
+  `ovos.common_play.repeat.set` with no mode — this repeats the **queue**,
+  the same behaviour repeat has always had. "Repeat this song"/"loop this
+  track" is its own intent, `RepeatTrack`, and forwards `repeat.set` with
+  `{"mode": "track"}` — this repeats only the **current track**. "Stop
+  repeating"/"turn off repeat" clears either scope back to no repeat.
+- **Seek forward / backward** ("skip forward 30 seconds", "jump ahead a
+  minute" / "skip back 20 seconds", "rewind") parse a duration out of the
+  utterance and forward `ovos.common_play.seek` with a positive or negative
+  `seconds` value. A bare "a minute"/"a second" counts as 1; anything with
+  no amount at all ("skip forward", "fast forward") falls back to a plain
+  10 second nudge rather than an inaudible near-zero seek.
+- **"Is shuffle on?"** is a read query answered from `handle_status`'s
+  `shuffle` flag; it never touches the shuffle state.
+- **"What's next?"** answers from `OCPMediaPlayer.next_track_preview`, a
+  read-only property exposed on the `ovos.common_play.status` response as
+  `next_track`/`next_track_hint`. It mirrors `play_next()`'s own
+  precedence without drawing a shuffle pick or mutating anything: a
+  track-repeat loop reports the current track again; shuffle reports the
+  `"shuffle"` hint and the answer is "a surprise", since the real pick is
+  only drawn at play time; a track playing via MPRIS or an OCP skill
+  reports the `"external"` hint and the answer defers to "the connected
+  player", since this player does not control that queue; a stopped
+  player answers "nothing is playing" rather than reading a stale
+  next-track preview; otherwise it announces the next entry in the merged
+  queue, including the wrap to the first entry when queue-repeat is on
+  and the current track is last.
 
 Payload validation for all layers lives in `ovos_media/bus/schemas.py`.
 Every rule an incoming bus payload must satisfy — numeric fields that must be

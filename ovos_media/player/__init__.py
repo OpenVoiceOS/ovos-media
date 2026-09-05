@@ -5,7 +5,7 @@ from ovos_config import Configuration
 from ovos_media.media_backends import AudioService, VideoService, WebService
 from ovos_media.mpris import OcpMprisExporter
 from ovos_media.bus.api import OCPBusApi
-from ovos_media.catalog import LikedSongsStore, MediaCatalog
+from ovos_media.catalog import LikedSongsStore, MediaCatalog, PlayHistoryStore
 from ovos_media.bus.schemas import (decode_media, decode_media_state,
                                     decode_playlist_tracks, decode_seek,
                                     decode_track_position, validated_entries)
@@ -39,7 +39,7 @@ class OCPMediaPlayer:
     """
 
     def __init__(self, bus: MessageBusClient, config: Optional[dict] = None,
-                 validate_source: bool = True, likes=None) -> None:
+                 validate_source: bool = True, likes=None, history=None) -> None:
         self.bus = bus
         self.ocp_config = config or Configuration().get("media", {})
         # When True, playback-executing handlers act only on the local/"default"
@@ -55,9 +55,15 @@ class OCPMediaPlayer:
         self.track_history: dict = {}  # Dict of track URI to play count
         # MediaService injects the store it also gives the voice skill; a
         # player built on its own has no one to share with, so it opens the
-        # store itself.
+        # store itself. The history store is skipped entirely (not just
+        # unused) when media.history.enabled is false, so a disabled
+        # feature never touches disk.
+        history_cfg = self.ocp_config.get("history", {})
+        if history is None and history_cfg.get("enabled", True):
+            history = PlayHistoryStore(max_entries=history_cfg.get("max_entries", 500))
         self.media: MediaCatalog = OCPMediaCatalog(
-            bus=bus, likes=likes if likes is not None else LikedSongsStore())
+            bus=bus, likes=likes if likes is not None else LikedSongsStore(),
+            history=history)
         self._init_runtime_state()
         # the owned queue, also the container the rest of the world reads as
         # "the playlist" (bus status, MPRIS track list)
@@ -282,6 +288,54 @@ class OCPMediaPlayer:
         return self._queue.merged(self.search_results,
                                   self.ocp_config.get("merge_search", True),
                                   user_entries=self.tracks)
+
+    @property
+    def next_track_preview(self):
+        """Read-only preview of what :meth:`play_next` would select right
+        now, without mutating queue state or drawing a shuffle pick.
+
+        Mirrors play_next()'s own precedence, in the same order:
+
+        - ``PlaybackType.MPRIS``/``PlaybackType.SKILL`` defer entirely to
+          the external player/skill (see below).
+        - nothing has ever loaded: there is no "next" to preview.
+        - ``LoopState.REPEAT_TRACK`` replays the current track, so that is
+          what's "next".
+        - shuffle draws its candidate at play time via ``random.choice`` —
+          predicting it here would just be a guess with no bearing on what
+          actually plays next, so this reports the ``"shuffle"`` hint
+          instead of a track.
+        - otherwise the next entry in ``_merged_queue()``, the same one
+          ``select_next`` would hand play_next(), including its wrap to the
+          first entry when ``LoopState.REPEAT`` is on and the current track
+          is last.
+
+        play_next() itself defers entirely to MPRIS/an OCP skill for
+        ``PlaybackType.MPRIS``/``PlaybackType.SKILL`` before it ever looks
+        at the queue - this mirrors that precedence and reports the
+        ``"external"`` hint instead of guessing at a queue this player
+        does not control.
+
+        Returns a ``(MediaEntry | None, hint: str | None)`` pair.
+        """
+        if self.playback_type in (PlaybackType.MPRIS, PlaybackType.SKILL):
+            return None, "external"
+        if not self._current_entry and not self.now_playing.uri:
+            # nothing has ever loaded - same idle check WhatSong/WhatAlbum/
+            # WhatArtist make via player_state/title, applied here so
+            # REPEAT_TRACK never "repeats" an empty NowPlaying entry
+            return None, None
+        if self.loop_state == LoopState.REPEAT_TRACK:
+            return (self._current_entry or self.now_playing.as_entry()), None
+        if self.shuffle:
+            return None, "shuffle"
+        queue = self._merged_queue()
+        selection = self._queue.select_next(
+            queue, uri=self._locator_uri(), position=self._locator_position(),
+            repeat=self.loop_state == LoopState.REPEAT)
+        if isinstance(selection, (QueueEnd, AllFailed)):
+            return None, None
+        return selection, None
 
     def _mark_stop_requested(self):
         """Flag that the current playback is ending because it was stopped.
@@ -731,6 +785,13 @@ class OCPMediaPlayer:
             self.on_invalid_stream()
             return
 
+        # only a track that actually validated gets recorded - a dead
+        # track's skip chain (on_invalid_stream -> play_next -> play -> ...)
+        # would otherwise record+disk-write every corpse it tries, poisoning
+        # both "recently played" and "most played"
+        if self.ocp_config.get("history", {}).get("enabled", True):
+            self.media.history.record_play(self.now_playing.as_dict)
+
         self.track_history.setdefault(self.now_playing.uri, 0)
         self.track_history[self.now_playing.uri] += 1
 
@@ -869,6 +930,12 @@ class OCPMediaPlayer:
             self.media.notify_dialog("playback.failed")
             return
         elif not isinstance(selection, QueueEnd):
+            idx = self._queue_index(queue, uri=finished_uri)
+            if idx >= 0 and idx + 1 < len(queue):
+                LOG.info(f"Next track: {selection.title!r} "
+                         f"(queue index {idx + 1}/{len(queue) - 1})")
+            else:
+                LOG.info("End of queue, repeat == True — restarting from beginning")
             self.set_now_playing(selection)
         else:
             LOG.info("Requested next, but there are no more tracks in the queue")
@@ -1213,7 +1280,15 @@ class OCPMediaPlayer:
         self.shuffle = False
 
     def handle_set_repeat(self, message):
-        self.loop_state = LoopState.REPEAT
+        # OCP-1 §4.4.1: an absent "mode" preserves the shipped wire
+        # behaviour (queue repeat); an unrecognized one is treated the same
+        # as absent rather than raising - only "track" opts into repeating
+        # the current track instead of the queue.
+        mode = message.data.get("mode")
+        if mode == "track":
+            self.loop_state = LoopState.REPEAT_TRACK
+        else:
+            self.loop_state = LoopState.REPEAT
 
     def handle_unset_repeat(self, message):
         self.loop_state = LoopState.NONE

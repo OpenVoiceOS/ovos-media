@@ -294,6 +294,8 @@ class PlayerSnapshot:
     track_info: dict = field(default_factory=dict)
     queue: Tuple[dict, ...] = ()
     candidates: Tuple[dict, ...] = ()
+    next_track: Optional[dict] = None
+    next_track_hint: Optional[str] = None
 
     @property
     def as_status_dict(self) -> dict:
@@ -310,6 +312,13 @@ class PlayerSnapshot:
             "title": self.title,
             "artist": self.artist,
             "image": self.image,
+            # one bounded preview entry (or None), never the whole queue -
+            # a "what's next" query must not ship every remaining track
+            # over the wire on every status broadcast (see
+            # OCPMediaPlayer.next_track_preview). Part of the OCP-1 §4.4.1
+            # status shape.
+            "next_track": self.next_track,
+            "next_track_hint": self.next_track_hint,
         }
 
     @property
@@ -324,6 +333,7 @@ class PlayerSnapshot:
         """Take a snapshot of *player*'s current state."""
         now_playing = player.now_playing
         playlist = player.playlist
+        next_entry, next_hint = player.next_track_preview
         return cls(
             player_state=player.state,
             media_state=player.media_state,
@@ -339,4 +349,6 @@ class PlayerSnapshot:
             track_info=dict(now_playing.as_dict),
             queue=tuple(e.as_dict for e in playlist.entries),
             candidates=tuple(e.as_dict for e in player.media.search_playlist.entries),
+            next_track=next_entry.as_dict if next_entry is not None else None,
+            next_track_hint=next_hint,
         )

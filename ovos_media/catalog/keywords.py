@@ -24,6 +24,17 @@ PLAYLIST_KEYWORDS = ["favorite", "liked", "favorites",
                      "liked songs", "liked tracks", "liked music",
                      "my liked songs", "my liked tracks", "my liked music"]
 
+# Deliberately excludes "favorites"-style wording (already claimed by
+# PLAYLIST_KEYWORDS/liked songs) so the two intrinsic playlists stay
+# disambiguated.
+RECENTLY_PLAYED_KEYWORDS = ["recently played", "play history",
+                            "last played", "played recently",
+                            "recent songs", "recent tracks", "recent music"]
+
+MOST_PLAYED_KEYWORDS = ["most played", "most played songs",
+                        "most played tracks", "most played music",
+                        "top played", "my top songs", "my top tracks"]
+
 
 def normalize_title(title: str) -> str:
     """Strip the parenthesised/bracketed decoration song titles carry
@@ -106,6 +117,36 @@ class KeywordRegistrar:
         except ImportError:
             self.emit(MediaType.MUSIC, "song_name", new_titles)
         self._registered_titles |= set(new_titles)
+
+    def register_history_playlists(self) -> None:
+        """Register the "recently played"/"most played" playlist synonyms.
+
+        Deliberately does NOT register per-title NER keywords the way
+        ``register_liked_songs`` does for the liked-songs titles: play
+        history churns constantly (every play() call), while keyword
+        registration on both the local NER matcher and the OCP pipeline
+        classifier is effectively append-only (there is no
+        unregister/replace call). Registering a title per play would leak
+        an ever-growing, never-cleaned set of stale keywords into both. The
+        playlist-name synonyms below are static and safe to register once.
+        """
+        try:
+            if self.ner_register is None:
+                raise ImportError("no NER-backed registration available")
+            self.ner_register(MediaType.MUSIC, "playlist_name",
+                              RECENTLY_PLAYED_KEYWORDS)
+            self.ner_register(MediaType.MUSIC, "playlist_name",
+                              MOST_PLAYED_KEYWORDS)
+        except ImportError:
+            LOG.warning("ahocorasick_ner not installed - OCP local keyword "
+                        "NER matching disabled, and 'search_db' (eg. 'play "
+                        "my recently played') will find nothing until it is "
+                        "installed. Install the 'ner' extra to fix this. "
+                        "The classifier is still informed of the keywords "
+                        "via the bus so media-type disambiguation still "
+                        "works.")
+            self.emit(MediaType.MUSIC, "playlist_name", RECENTLY_PLAYED_KEYWORDS)
+            self.emit(MediaType.MUSIC, "playlist_name", MOST_PLAYED_KEYWORDS)
 
     def emit(self, media_type: MediaType, label: str,
              samples: List[str]) -> None:
