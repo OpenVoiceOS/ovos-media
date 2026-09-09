@@ -261,7 +261,7 @@ and `ovos.common_play.list_backends`.
 | `ovos-config` | Configuration loader (`mycroft.conf` / `ovos.conf`) |
 | `ovos-plugin-manager` | Backend and media-provider plugin discovery via entry points |
 | `ovos-workshop` | `OVOSCommonPlaybackSkill` base used by the built-in liked-songs catalog, plus OCP decorators |
-| `json-database` | Persistent liked-songs storage (`JsonStorageXDG`) |
+| `json-database` | Persistent liked-songs and play-history storage (`JsonStorageXDG`) |
 | `dbus-next` | Async D-Bus implementation used by the MPRIS exporter |
 
 The `extras` install (`pip install ovos-media[extras]`) adds stream-extractor

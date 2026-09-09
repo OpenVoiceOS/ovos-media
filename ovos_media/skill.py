@@ -9,11 +9,15 @@ from os.path import dirname
 from typing import Optional
 
 from ovos_bus_client.message import Message
+from ovos_config import Configuration
 from ovos_utils.ocp import MediaType, PlaybackType, PlayerState
 from ovos_workshop.decorators.ocp import ocp_search
 from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 
 from ovos_media.catalog import KeywordRegistrar, LikedSongsStore, MediaCatalog
+from ovos_media.catalog.keywords import (MOST_PLAYED_KEYWORDS,
+                                         PLAYLIST_KEYWORDS,
+                                         RECENTLY_PLAYED_KEYWORDS)
 from ovos_media.utils import is_default_session
 
 # locale/ and qt5/ live in the ovos_media package, next to this module;
@@ -43,10 +47,19 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
             catalog.add_dialog_listener(self.handle_dialog_notification)
             catalog.add_likes_listener(self.handle_likes_changed)
 
+        # read the same way the player reads its sibling history knobs
+        # (see OCPMediaPlayer.play/__init__)
+        self.history_enabled = Configuration().get("media", {}) \
+            .get("history", {}).get("enabled", True)
+
         self._keyword_registrar = KeywordRegistrar(
             self.bus, self.skill_id, self.native_langs,
             self.ocp_cache_dir, self.register_ocp_keyword)
         self._keyword_registrar.register_liked_songs(self.likes)
+        # history-gated: no point advertising "recently played"/"most
+        # played" if the feature itself is disabled
+        if self.history_enabled:
+            self._keyword_registrar.register_history_playlists()
 
         # intents about the currently playing media, see issue #23
         self.register_intent_file("WhatSong.intent", self.handle_what_song)
@@ -192,8 +205,21 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
         entities = self.ocp_voc_match(phrase)
         base_score += 30 * len(entities)
 
-        if entities.get("playlist_name") and len(self.likes) > 0:
-            if phrase.lower() == entities["playlist_name"]:
+        matched_playlist = entities.get("playlist_name")
+        # ocp_voc_match returns the ORIGINAL-cased span from the utterance
+        # (whisper-family STT capitalizes), while every *_KEYWORDS list is
+        # lowercase - comparisons against those lists, and against `phrase`,
+        # must lower() both sides or a capitalized utterance ("Liked
+        # songs") matches nothing.
+        matched_playlist_lower = matched_playlist.lower() if matched_playlist else None
+        # PLAYLIST_KEYWORDS, RECENTLY_PLAYED_KEYWORDS and MOST_PLAYED_KEYWORDS
+        # all register under the same "playlist_name" label, so the matched
+        # keyword itself decides which intrinsic playlist is meant - a bare
+        # `entities.get("playlist_name")` check would fire the wrong
+        # playlist (e.g. "recently played" would also yield Liked Songs).
+        if matched_playlist_lower and matched_playlist_lower in PLAYLIST_KEYWORDS \
+                and len(self.likes) > 0:
+            if phrase.lower() == matched_playlist_lower:
                 base_score = 100
             yield {
                 "match_confidence": min(base_score + 35, 100),
@@ -204,6 +230,34 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
                 "title": "Liked Songs",
                 "skill_id": self.skill_id
             }
+
+        history = self.catalog.history if self.catalog is not None else None
+        if self.history_enabled and history is not None and matched_playlist_lower:
+            phrase_matches_playlist = phrase.lower() == matched_playlist_lower
+            if matched_playlist_lower in RECENTLY_PLAYED_KEYWORDS:
+                recent = history.recent()
+                if recent:
+                    yield {
+                        "match_confidence": 100 if phrase_matches_playlist else min(base_score + 35, 100),
+                        "media_type": MediaType.MUSIC,
+                        "playback": PlaybackType.AUDIO,
+                        "playlist": [e.as_dict for e in recent],
+                        "skill_icon": self.skill_icon,
+                        "title": "Recently Played",
+                        "skill_id": self.skill_id
+                    }
+            elif matched_playlist_lower in MOST_PLAYED_KEYWORDS:
+                most_played = history.most_played()
+                if most_played:
+                    yield {
+                        "match_confidence": 100 if phrase_matches_playlist else min(base_score + 35, 100),
+                        "media_type": MediaType.MUSIC,
+                        "playback": PlaybackType.AUDIO,
+                        "playlist": [e.as_dict for e in most_played],
+                        "skill_icon": self.skill_icon,
+                        "title": "Most Played",
+                        "skill_id": self.skill_id
+                    }
 
         if entities.get("song_name"):
             # entities["song_name"] can be a stale NER match - an unliked
