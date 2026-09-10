@@ -17,7 +17,6 @@ from ovos_utils import wait_for_exit_signal
 from ovos_utils.log import init_service_logger, LOG
 from ovos_utils.process_utils import reset_sigint_handler
 
-from ovos_config.locale import setup_locale
 from ovos_media.service import MediaService, on_ready, on_error, on_stopping
 from ovos_media.version import __version__
 
@@ -46,7 +45,6 @@ def main(ready_hook=on_ready, error_hook=on_error, stopping_hook=on_stopping,
     reset_sigint_handler()
     init_service_logger("media")
     LOG.set_level("DEBUG")
-    setup_locale()
     service = MediaService(ready_hook=ready_hook, error_hook=error_hook,
                            stopping_hook=stopping_hook, watchdog=watchdog)
     service.daemon = True
