@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.3.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.3.0a2) (2026-09-10)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.3.0a1...2.3.0a2)
+
+**Merged pull requests:**
+
+- chore: drop the no-op setup\_locale call [\#217](https://github.com/OpenVoiceOS/ovos-media/pull/217) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+- translate\(da-dk\): add full da-dk locale, full parity with en-us [\#216](https://github.com/OpenVoiceOS/ovos-media/pull/216) ([andlo](https://github.com/andlo))
+
 ## [2.3.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.3.0a1) (2026-09-09)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.2.5a1...2.3.0a1)
@@ -385,17 +394,9 @@
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.4a1...0.4.5a1)
 
-**Merged pull requests:**
-
-- fix: playback state machine, autoplay, GUI seekbar payload, session-gated search [\#101](https://github.com/OpenVoiceOS/ovos-media/pull/101) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.4a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.3a2...0.4.4a1)
-
-**Merged pull requests:**
-
-- fix: mpris Position unit \(ms-\>us\) and honest \_stop\_player failure handling [\#99](https://github.com/OpenVoiceOS/ovos-media/pull/99) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.3a2) (2026-08-13)
 
@@ -411,15 +412,15 @@
 
 ## [0.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.0a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.4.0a1)
-
-## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.3.3a5)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.4.0a1)
 
 ## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.4a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.3.4a1)
+
+## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
 
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
