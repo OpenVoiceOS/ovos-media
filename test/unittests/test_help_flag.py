@@ -67,7 +67,6 @@ class TestHelpFlagInProcess(unittest.TestCase):
         with patch("ovos_media.__main__.reset_sigint_handler"), \
              patch("ovos_media.__main__.init_service_logger"), \
              patch("ovos_media.__main__.LOG"), \
-             patch("ovos_media.__main__.setup_locale"), \
              patch("ovos_media.__main__.wait_for_exit_signal"), \
              patch("ovos_media.__main__.MediaService") as mock_svc_cls, \
              patch.object(sys, "argv", ["ovos-media"]):
