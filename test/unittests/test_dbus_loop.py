@@ -2,6 +2,7 @@
 
 All DBus I/O is mocked; these run without a D-Bus session.
 """
+import asyncio
 import unittest
 from unittest.mock import MagicMock, patch, AsyncMock
 
@@ -37,17 +38,75 @@ class TestConnect(unittest.IsolatedAsyncioTestCase):
         loop = _make_loop()
         hook = AsyncMock()
         loop.on_connect = hook
+        mock_bus = MagicMock()
+        mock_bus.wait_for_disconnect = MagicMock(return_value=asyncio.Future())
         with patch("ovos_media.mpris.loop.DbusMessageBus") as mock_bus_cls:
-            mock_bus_cls.return_value.connect = AsyncMock(return_value="bus")
+            mock_bus_cls.return_value.connect = AsyncMock(return_value=mock_bus)
             self.assertTrue(await loop.connect())
-        hook.assert_awaited_once_with("bus")
-        self.assertEqual(loop.dbus, "bus")
+        hook.assert_awaited_once_with(mock_bus)
+        self.assertEqual(loop.dbus, mock_bus)
 
     async def test_connect_without_hook_still_succeeds(self):
         loop = _make_loop()
+        mock_bus = MagicMock()
+        mock_bus.wait_for_disconnect = MagicMock(return_value=asyncio.Future())
         with patch("ovos_media.mpris.loop.DbusMessageBus") as mock_bus_cls:
-            mock_bus_cls.return_value.connect = AsyncMock(return_value="bus")
+            mock_bus_cls.return_value.connect = AsyncMock(return_value=mock_bus)
             self.assertTrue(await loop.connect())
+
+    async def test_connect_hooks_disconnect_callback(self):
+        """The connection's disconnect future must get a done-callback that
+        logs, so a bus dying mid-session is not silent."""
+        loop = _make_loop()
+        mock_bus = MagicMock()
+        disconnect_future = asyncio.Future()
+        mock_bus.wait_for_disconnect = MagicMock(return_value=disconnect_future)
+        with patch("ovos_media.mpris.loop.DbusMessageBus") as mock_bus_cls:
+            mock_bus_cls.return_value.connect = AsyncMock(return_value=mock_bus)
+            await loop.connect()
+        self.assertTrue(disconnect_future._callbacks)
+
+    def _finished_future(self, exc=None):
+        future = asyncio.Future()
+        if exc is None:
+            future.set_result(None)
+        else:
+            future.set_exception(exc)
+        return future
+
+    async def test_disconnect_logs_warning(self):
+        loop = _make_loop()
+        future = self._finished_future()
+        with patch("ovos_media.mpris.loop.LOG") as mock_log:
+            loop._on_disconnect(future)
+        mock_log.warning.assert_called_once()
+        self.assertIn("connection lost", mock_log.warning.call_args[0][0])
+
+    async def test_disconnect_after_shutdown_does_not_log(self):
+        loop = _make_loop()
+        loop.shutdown_event.set()
+        future = self._finished_future()
+        with patch("ovos_media.mpris.loop.LOG") as mock_log:
+            loop._on_disconnect(future)
+        mock_log.warning.assert_not_called()
+
+    async def test_disconnect_retrieves_exception_even_on_shutdown(self):
+        # a future whose exception is never retrieved makes asyncio log its
+        # own warning on top of ours; the retrieval must happen regardless
+        # of whether the shutdown path decides to log.
+        loop = _make_loop()
+        loop.shutdown_event.set()
+        future = self._finished_future(exc=ConnectionError("boom"))
+        loop._on_disconnect(future)  # must not raise, must not warn twice
+        self.assertTrue(future.exception() is not None)  # retrieval is idempotent
+
+    async def test_disconnect_cancelled_future_is_not_queried_for_exception(self):
+        loop = _make_loop()
+        future = asyncio.Future()
+        future.cancel()
+        with patch("ovos_media.mpris.loop.LOG") as mock_log:
+            loop._on_disconnect(future)  # must not raise CancelledError
+        mock_log.warning.assert_called_once()
 
 
 class TestDbusGracefulDegradation(unittest.IsolatedAsyncioTestCase):
@@ -196,6 +255,29 @@ class TestShutdown(unittest.TestCase):
             dbus_loop.shutdown()
 
         mock_loop.close.assert_not_called()
+
+    def test_shutdown_cancels_the_pending_disconnect_task(self):
+        # a live loop with a real still-pending disconnect watcher: shutdown
+        # must cancel and await it rather than leave it pending for the loop
+        # to destroy later ("Task was destroyed but it is pending!").
+        import threading
+        dbus_loop = _make_loop()
+        thread = threading.Thread(target=dbus_loop.loop.run_forever, daemon=True)
+        thread.start()
+
+        async def _never_resolves():
+            await asyncio.Future()
+
+        async def _install_task():
+            dbus_loop._disconnect_task = asyncio.ensure_future(_never_resolves())
+
+        asyncio.run_coroutine_threadsafe(_install_task(), dbus_loop.loop).result(timeout=2)
+        task = dbus_loop._disconnect_task
+        with patch.object(dbus_loop, "join"):  # the Thread itself never started
+            dbus_loop.shutdown()
+        thread.join(timeout=2)
+        self.assertTrue(task.done())
+        self.assertTrue(task.cancelled())
 
 
 class TestPatchDbusNext(unittest.TestCase):

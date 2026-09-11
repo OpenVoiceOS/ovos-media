@@ -165,7 +165,7 @@ All options live under the `"media"` section of the OVOS configuration.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `enable_mpris` | `bool` | `false` | Enable Role A: register OCP on D-Bus |
+| `enable_mpris` | `bool` | `true` | Enable Role A: register OCP on D-Bus. A machine with no session bus logs one warning and keeps running. |
 | `manage_external_players` | `bool` | `false` | Enable Role B: observe and manage external MPRIS players |
 | `mpris_poll_interval` | `int` | `1` | Seconds between each D-Bus scan cycle |
 | `dbus_type` | `str` | `"session"` | `"session"` or `"system"` |
