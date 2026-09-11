@@ -181,10 +181,18 @@ class TestSignalPrecedesTheSnapshot(unittest.TestCase):
             self.mpris = MagicMock()
             self.handle_status = MagicMock()
             self._snapshot = PlayerSnapshot(player_state=self.state)
+            self.playback_type = PlaybackType.AUDIO
+            self.media = MagicMock()
+            self.roster = MagicMock()
+            self.now_playing = MagicMock()
 
         def publish_snapshot(self):
             self._snapshot = PlayerSnapshot(player_state=self.state)
             return self._snapshot
+
+        def _resolve_can_seek(self, playback_type):
+            from ovos_media.player import OCPMediaPlayer
+            return OCPMediaPlayer._resolve_can_seek(self, playback_type)
 
         @property
         def snapshot(self):
@@ -547,11 +555,20 @@ class TestCanProperties(unittest.TestCase):
         player.roster = _roster()
         self.assertTrue(iface.CanSeek)
 
-    def test_can_seek_false_for_skill_playback(self):
-        # a skill drives its own playback and has no seek passthrough
+    def test_can_seek_false_for_skill_playback_undeclared(self):
+        # a skill drives its own playback and did not declare can_seek
+        # (OCP-1 §4.3.1 fallback: non-seekable)
         iface, player = _make_interface(playback_type=PlaybackType.SKILL)
         player.roster = _roster()
+        player.media.can_seek.return_value = False
         self.assertFalse(iface.CanSeek)
+
+    def test_can_seek_true_for_skill_playback_declared(self):
+        # a skill that declared `can_seek: true` on announce is seekable
+        iface, player = _make_interface(playback_type=PlaybackType.SKILL)
+        player.roster = _roster()
+        player.media.can_seek.return_value = True
+        self.assertTrue(iface.CanSeek)
 
     def test_can_seek_false_for_external_mpris_player(self):
         iface, player = _make_interface(playback_type=PlaybackType.MPRIS)
@@ -691,13 +708,25 @@ class TestSeekPassthrough(unittest.TestCase):
         player.seek.assert_not_called()
 
     def test_seek_on_skill_playback_is_ignored(self):
+        # no can_seek declaration on the skill: OCP-1 §4.3.1 fallback
         iface, player = _make_interface(playback_type=PlaybackType.SKILL)
         player.roster = _roster()
+        player.media.can_seek.return_value = False
         player.now_playing = MagicMock()
         player.now_playing.position = 0
         iface.Seeked = MagicMock()
         iface.Seek(5_000_000)
         player.seek.assert_not_called()
+
+    def test_seek_on_skill_playback_reaches_the_skill_when_declared(self):
+        iface, player = _make_interface(playback_type=PlaybackType.SKILL)
+        player.roster = _roster()
+        player.media.can_seek.return_value = True
+        player.now_playing = MagicMock()
+        player.now_playing.position = 0
+        iface.Seeked = MagicMock()
+        iface.Seek(5_000_000)
+        player.seek.assert_called_once_with(5_000)
 
     def test_seek_from_a_malformed_position_starts_from_zero(self):
         iface, player = self._seekable_iface()

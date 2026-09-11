@@ -204,6 +204,35 @@ class TestHandleSeekRequest(unittest.TestCase):
         p.handle_seek_request(msg)
         p.seek.assert_called_once_with(30000)
 
+    def test_seek_with_negative_relative_offset_floors_to_zero(self):
+        """A backward seek past the start of the track must not send a
+        negative absolute position downstream (decode_seek only refuses
+        non-numeric values, not negative ones)."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 5000
+        p.audio_service.get_track_position.return_value = 5000
+        msg = Message("ovos.common_play.seek", {"seconds": -60})
+        p.handle_seek_request(msg)
+        p.seek.assert_called_once_with(0)
+
+    def test_seek_with_float_seek_value_is_rounded_to_int(self):
+        """A float seekValue (eg. a GUI computing fractional milliseconds)
+        must reach seek() as an int, matching the milliseconds contract."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        msg = Message("ovos.common_play.seek", {"seekValue": 1234.7})
+        p.handle_seek_request(msg)
+        p.seek.assert_called_once_with(1234)
+        self.assertIsInstance(p.seek.call_args.args[0], int)
+
+    def test_seek_with_negative_seek_value_floors_to_zero(self):
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        msg = Message("ovos.common_play.seek", {"seekValue": -59000})
+        p.handle_seek_request(msg)
+        p.seek.assert_called_once_with(0)
+
     def test_seek_audio_calls_audio_service(self):
         """seek() with AUDIO type calls audio_service.set_track_position
         with the position in milliseconds, unconverted (matching the

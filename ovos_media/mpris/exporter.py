@@ -203,12 +203,21 @@ class _MediaPlayer2PlayerInterface(ServiceInterface):
         The routing table in :mod:`ovos_media.player.roster` already records
         which verbs reach which players per playback type; the Can* properties
         read it instead of keeping a second, drifting record of the same thing.
+
+        For a `seek` on skill-rendered playback the routing decision is not
+        static (OCP-1 §4.3.1): it depends on whether the current skill
+        declared `can_seek: true` on its announcement, so that is looked up
+        here before asking the roster.
         """
         roster = getattr(self._ocp_player, "roster", None)
         if roster is None:
             return []
+        kwargs = {}
+        if verb == "seek" and self._snapshot.playback_type == PlaybackType.SKILL:
+            skill_id = getattr(self._ocp_player.now_playing, "skill_id", None)
+            kwargs["can_seek"] = self._ocp_player.media.can_seek(skill_id)
         try:
-            return roster.route(verb, self._snapshot.playback_type)
+            return roster.route(verb, self._snapshot.playback_type, **kwargs)
         except Exception as e:
             LOG.warning(f"failed to resolve mpris route for {verb}: {e}")
             return []

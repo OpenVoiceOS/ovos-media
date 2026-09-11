@@ -51,6 +51,12 @@ def _audio(uri: str, title: str = "Test Track") -> MediaEntry:
     return MediaEntry(uri=uri, playback=PlaybackType.AUDIO, title=title)
 
 
+def _skill_track(skill_id: str, title: str = "Skill Track") -> MediaEntry:
+    """Return a minimal SKILL-rendered ``MediaEntry``."""
+    return MediaEntry(uri=f"ovos-skill://{skill_id}", playback=PlaybackType.SKILL,
+                       title=title, skill_id=skill_id)
+
+
 # ---------------------------------------------------------------------------
 # TestTransportLifecycle
 # ---------------------------------------------------------------------------
@@ -305,6 +311,83 @@ class TestSeekAndPosition(unittest.TestCase):
             h.bus.emit(Message("ovos.common_play.seek", {"seekValue": 8000}))
             time.sleep(0.05)
             h.player.audio_service.set_track_position.assert_called_with(8000)
+
+    def test_declared_can_seek_skill_gets_delegated_seek_not_cannot_seek(self) -> None:
+        """OCP-1 §4.3.1: a skill that declared `can_seek: true` on its
+        announcement gets the delegated `ovos.common_play.{skill_id}.seek`
+        verb through the real bus, and the player's cannot.seek fallback is
+        NOT notified.
+
+        ``OCPPlayerHarness`` mocks ``OCPMediaCatalog`` the same way it mocks
+        the OPM backend services (see the class docstring); the announce
+        ingestion itself (only a literal `can_seek: true` opts in) is
+        covered directly in test_catalog.py, this exercises the routing and
+        delegation that consult the declaration.
+        """
+        with OCPPlayerHarness() as h:
+            h.player.media.can_seek.return_value = True
+            h.play(_skill_track("seekable.skill"))
+
+            delegated = []
+            h.bus.on("ovos.common_play.seekable.skill.seek",
+                     lambda m: delegated.append(m))
+
+            h.bus.emit(Message("ovos.common_play.seek", {"seekValue": 8000}))
+            time.sleep(0.05)
+
+            h.player.media.notify_dialog.assert_not_called()
+            self.assertEqual(len(delegated), 1)
+            self.assertEqual(delegated[0].data, {"seekValue": 8000})
+
+    def test_real_announce_through_the_bus_enables_delegated_seek(self) -> None:
+        """A real `ovos.common_play.announce` with `can_seek: true`, through
+        the real bus and a real (unstubbed) MediaCatalog, must reach the
+        seek delegation - no catalog stubbing in this cell, unlike the two
+        tests above which lean on the harness's mocked catalog the same way
+        it mocks the OPM backend services.
+        """
+        from ovos_media.catalog import LikedSongsStore, MediaCatalog
+
+        with OCPPlayerHarness() as h:
+            real_catalog = MediaCatalog(h.bus, LikedSongsStore())
+            h.player.media = real_catalog
+            h.bus.on("ovos.common_play.announce",
+                     real_catalog.handle_skill_announce)
+
+            h.bus.emit(Message("ovos.common_play.announce",
+                               {"skill_id": "real.seekable.skill",
+                                "can_seek": True}))
+            time.sleep(0.05)
+            self.assertTrue(real_catalog.can_seek("real.seekable.skill"))
+
+            h.play(_skill_track("real.seekable.skill"))
+
+            delegated = []
+            h.bus.on("ovos.common_play.real.seekable.skill.seek",
+                     lambda m: delegated.append(m))
+
+            h.bus.emit(Message("ovos.common_play.seek", {"seekValue": 8000}))
+            time.sleep(0.05)
+
+            self.assertEqual(len(delegated), 1)
+            self.assertEqual(delegated[0].data, {"seekValue": 8000})
+
+    def test_undeclared_skill_seek_keeps_the_cannot_seek_fallback(self) -> None:
+        """Without a `can_seek: true` declaration the skill's rendering
+        stays non-seekable, unchanged from before OCP-1 §4.3.1 support."""
+        with OCPPlayerHarness() as h:
+            h.player.media.can_seek.return_value = False
+            h.play(_skill_track("static.skill"))
+
+            delegated = []
+            h.bus.on("ovos.common_play.static.skill.seek",
+                     lambda m: delegated.append(m))
+
+            h.bus.emit(Message("ovos.common_play.seek", {"seekValue": 8000}))
+            time.sleep(0.05)
+
+            h.player.media.notify_dialog.assert_called_once_with("cannot.seek")
+            self.assertEqual(delegated, [])
 
     def test_get_track_position_returns_backend_position(self) -> None:
         """get_track_position must reply with the audio backend's position."""
