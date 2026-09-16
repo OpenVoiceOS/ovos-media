@@ -80,6 +80,9 @@ class DbusLoop(Thread):
         self.on_connect = None
         # awaited once per iteration; supplies the pacing
         self.tick = None
+        # the task watching for disconnect; kept so shutdown() can cancel
+        # and await it instead of leaving it pending when the loop closes
+        self._disconnect_task = None
 
     @property
     def dbus_type(self):
@@ -114,7 +117,30 @@ class DbusLoop(Thread):
         except Exception as e:
             LOG.warning(f"MPRIS unavailable: could not connect to D-Bus session bus: {e}")
             return False
+        self._disconnect_task = asyncio.ensure_future(self.dbus.wait_for_disconnect())
+        self._disconnect_task.add_done_callback(self._on_disconnect)
         return True
+
+    def _on_disconnect(self, future) -> None:
+        """Notice the bus going away mid-session.
+
+        The daemon already survives this silently (the tick loop just keeps
+        failing to talk to a dead connection until it reconnects); this only
+        adds the log line so "why did my desktop widget stop responding"
+        has something to grep for.
+        """
+        # the future's exception must be retrieved even when a deliberate
+        # shutdown is why we are here, or asyncio logs its own "exception
+        # was never retrieved" warning on top of this one
+        exc = None
+        if not future.cancelled():
+            exc = future.exception()
+        if self.shutdown_event.is_set():
+            return
+        if exc is not None:
+            LOG.debug(f"MPRIS disconnect watcher ended with: {exc}")
+        LOG.warning("MPRIS session bus connection lost; desktop controls "
+                    "inactive until restart")
 
     async def event_loop(self):
         self.shutdown_event.clear()
@@ -144,9 +170,30 @@ class DbusLoop(Thread):
                 LOG.error("MPRIS exited")
                 return
 
+    @staticmethod
+    async def _cancel_and_wait(task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            LOG.debug(f"MPRIS disconnect watcher raised while shutting down: {e}")
+
     def shutdown(self) -> None:
         """Stop the loop and release the thread."""
         self.shutdown_event.set()
+        # cancel the disconnect watcher and wait for it to actually finish
+        # on the loop it runs on; otherwise it is still pending when the
+        # loop closes and asyncio logs "Task was destroyed but it is
+        # pending!" on every shutdown, headless embeds included
+        if self._disconnect_task is not None and self.loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(
+                self._cancel_and_wait(self._disconnect_task), self.loop)
+            try:
+                future.result(timeout=2)
+            except Exception as e:
+                LOG.debug(f"MPRIS disconnect watcher did not stop cleanly: {e}")
         self.loop.call_soon_threadsafe(self.loop.stop)
         # wait for the loop to finish from the outside (this runs on a
         # different thread)

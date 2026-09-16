@@ -98,8 +98,9 @@ All configuration lives under the `"media"` key in `mycroft.conf`. The essential
 ```jsonc
 {
   "media": {
-    // MPRIS / D-Bus integration (off by default)
-    "enable_mpris": false,
+    // MPRIS / D-Bus integration; OCP is a desktop MPRIS player by default,
+    // a machine with no session bus logs one warning and keeps running
+    "enable_mpris": true,
     // let MPRIS pause/stop other media players on the system
     "manage_external_players": false,
 
