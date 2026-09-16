@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.0a2) (2026-09-16)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.0a1...2.4.0a2)
+
+**Merged pull requests:**
+
+- docs: point manual links at OpenVoiceOS/beta-technical-manual [\#211](https://github.com/OpenVoiceOS/ovos-media/pull/211) ([JarbasAl](https://github.com/JarbasAl))
+- feat: MPRIS on by default with a Playlists stub and lifecycle logging [\#210](https://github.com/OpenVoiceOS/ovos-media/pull/210) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.0a1) (2026-09-16)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.3.0a2...2.4.0a1)
@@ -377,10 +386,6 @@
 ## [0.4.7a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.7a2) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.7a1...0.4.7a2)
-
-**Merged pull requests:**
-
-- docs: first-playback payload, status reply convention, backend system deps [\#106](https://github.com/OpenVoiceOS/ovos-media/pull/106) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.7a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.7a1) (2026-08-13)
 
