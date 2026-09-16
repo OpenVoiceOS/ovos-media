@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.0a1) (2026-09-16)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.3.0a2...2.4.0a1)
+
+**Merged pull requests:**
+
+- feat: PlayTree model layer for the recursive queue \(\#201\) [\#202](https://github.com/OpenVoiceOS/ovos-media/pull/202) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.3.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.3.0a2) (2026-09-10)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.3.0a1...2.3.0a2)
@@ -83,19 +91,19 @@
 
 ## [2.1.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.1a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.1a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.1.1a1)
 
 **Merged pull requests:**
 
 - fix: emit the previous-track verb the workshop base class listens on [\#182](https://github.com/OpenVoiceOS/ovos-media/pull/182) ([JarbasAl](https://github.com/JarbasAl))
 
-## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.0.2a1)
-
 ## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.1.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.0a1)
+
+## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.0.2a1)
 
 **Merged pull requests:**
 
@@ -378,17 +386,9 @@
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.6a1...0.4.7a1)
 
-**Merged pull requests:**
-
-- fix: scope stop signalling to the active service and cancel the invalid retry on stop [\#105](https://github.com/OpenVoiceOS/ovos-media/pull/105) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.6a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.6a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.5a1...0.4.6a1)
-
-**Merged pull requests:**
-
-- fix: single-writer end-of-track path, stop semantics, bounded retries [\#103](https://github.com/OpenVoiceOS/ovos-media/pull/103) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.5a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.5a1) (2026-08-13)
 
@@ -424,15 +424,15 @@
 
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a4)
-
-## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a3)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a4)
 
 ## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a2)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a2)
+
+## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a3)
 
 ## [0.3.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a1) (2026-08-02)
 
