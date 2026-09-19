@@ -13,7 +13,7 @@ requires-python = ">=3.10"
 dependencies = [
     "ovos-utils~=0.0, >=0.13.14a1",
     "ovos-bus-client~=2.0, >=2.0.0a1",
-    "ovos-config~=2.1,>=2.1.1",
+    "ovos-config>=2.1.1,<4.0.0",
     "ovos-plugin-manager~=2.1, >=2.2.0a1",
     "ovos-workshop>=0.0.15",
     "json-database>=0.9.0",
