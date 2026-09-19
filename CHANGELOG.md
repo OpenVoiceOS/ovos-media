@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.1a1) (2026-09-19)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.0a2...2.4.1a1)
+
+**Merged pull requests:**
+
+- fix: lift the ovos-config ~=2.1 cap [\#224](https://github.com/OpenVoiceOS/ovos-media/pull/224) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
 ## [2.4.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.0a2) (2026-09-16)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.0a1...2.4.0a2)
@@ -371,17 +379,9 @@
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.8a1...0.4.9a1)
 
-**Merged pull requests:**
-
-- fix: lifecycle hygiene — full teardown, store tolerance, guarded like, late query binding [\#111](https://github.com/OpenVoiceOS/ovos-media/pull/111) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.8a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.8a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.7a2...0.4.8a1)
-
-**Merged pull requests:**
-
-- fix: a new play request cancels the pending invalid-stream retry [\#109](https://github.com/OpenVoiceOS/ovos-media/pull/109) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.7a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.7a2) (2026-08-13)
 
