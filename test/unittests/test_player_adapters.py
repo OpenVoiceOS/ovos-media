@@ -27,6 +27,8 @@ class _FakePlayer:
         self.now_playing.infocard = {"uri": "file://track.mp3"}
         self.now_playing.position = 1000
         self.now_playing.length = 180000
+        self.media = MagicMock()
+        self.media.can_seek.return_value = False
         self._preferred = preferred
         self.preferred_calls = []
 
@@ -195,9 +197,18 @@ class TestSkillPlayerAdapter(unittest.TestCase):
         self.adapter.stop()
         self.assertEqual(self._types(), ["ovos.common_play.other.skill.stop"])
 
-    def test_seek_is_dropped_rather_than_emitted(self):
+    def test_seek_is_dropped_rather_than_emitted_when_undeclared(self):
+        self.player.media.can_seek.return_value = False
         self.adapter.seek(1000)
         self.assertEqual(self._types(), [])
+
+    def test_seek_is_delegated_when_can_seek_is_declared(self):
+        # OCP-1 §4.3.1: a skill that declared `can_seek: true` gets the
+        # delegated verb, carrying the §4.2.2 payload
+        self.player.media.can_seek.return_value = True
+        self.adapter.seek(1000)
+        self.assertEqual(self._types(), ["ovos.common_play.skill.test.seek"])
+        self.assertEqual(self.emitted[0].data, {"seekValue": 1000})
 
     def test_can_play_always_claims_the_track(self):
         self.assertTrue(self.adapter.can_play("anything://at.all"))

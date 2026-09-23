@@ -64,6 +64,9 @@ def make_player(playback_type: PlaybackType = PlaybackType.AUDIO):
         p.playlist.__len__ = lambda self: 0
         p.media = MagicMock()
         p.media.search_playlist.entries = []
+        # OCP-1 §4.3.1 default: no skill has declared can_seek unless a test
+        # opts in explicitly
+        p.media.can_seek.return_value = False
         p.audio_service = MagicMock()
         p.audio_service.current = None
         p.video_service = MagicMock()
