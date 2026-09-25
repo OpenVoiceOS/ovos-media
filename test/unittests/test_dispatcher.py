@@ -193,15 +193,44 @@ class TestDelayedWorkUnderLoad(unittest.TestCase):
         for t in threads:
             t.join(timeout=30)
 
-        deadline = time.monotonic() + 10
+        # 60 s bounds a stall, not the machine. The old bound was 10 s, and
+        # a runner slow enough to still be working at that point failed the
+        # assertion below with a message that named data loss.
+        deadline = time.monotonic() + 60
         while time.monotonic() < deadline and len(ran) < 1200:
             time.sleep(0.02)
         d.call(lambda: None, timeout=10)
 
         self.assertEqual(errors, [])
+
+        # Accounting first, and this is the only assertion allowed to say a
+        # command was dropped. A late command is still an armed timer, so it
+        # is counted in `pending`; a lost one is in neither place. That is
+        # what separates a slow box from the regression this test exists for.
+        #
+        # `_fire` discards its timer before it submits the command, so a
+        # timer that fires in that instant is in neither count for as long as
+        # the queue takes to reach it. The sum is re-read rather than trusted
+        # once: a command that is merely in flight arrives, and a lost one
+        # never does.
+        accounted = 0
+        settle = time.monotonic() + 5
+        while time.monotonic() < settle:
+            accounted = len(ran) + d.pending
+            if accounted == 1200:
+                break
+            time.sleep(0.05)
+        self.assertEqual(accounted, 1200,
+                         f"{1200 - accounted} delayed commands were dropped "
+                         f"under concurrent scheduling "
+                         f"(ran={len(ran)}, pending={d.pending})")
+
+        # Then the timing claim, with a message that blames the clock rather
+        # than the code, because nothing was lost if the line above passed.
         self.assertEqual(len(ran), 1200,
-                         "delayed commands were dropped under concurrent "
-                         "scheduling")
+                         f"only {len(ran)} of 1200 delayed commands had run "
+                         f"after 60 s, and none were lost: this is a slow or "
+                         f"stalled runner, not a dropped command")
         self.assertEqual(d.pending, 0)
         d.shutdown()
 
