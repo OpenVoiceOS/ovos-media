@@ -8,3 +8,11 @@ jobs:
   build_tests:
     uses: OpenVoiceOS/gh-automations/.github/workflows/build-tests.yml@dev
     secrets: inherit
+    with:
+      # test_path is empty by default in the shared workflow, which skips
+      # test execution and verifies the build and install only. The unit
+      # tree runs here so it is measured on every supported Python, not
+      # only on the single version coverage.yml uses. end2end stays out:
+      # ovoscope.yml owns it and it needs the media harness.
+      install_extras: 'test'
+      test_path: 'test/unittests'
