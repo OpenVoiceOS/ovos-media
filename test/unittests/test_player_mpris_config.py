@@ -84,7 +84,12 @@ class TestMprisConfigForwarded(unittest.TestCase):
         media_config = {"manage_external_players": False}
         p, mock_exporter = self._make_player(media_config)
         mock_exporter.assert_not_called()
-        self.assertFalse(p.ocp_config.get("enable_mpris"))
+        # assertIs rather than assertFalse with .get(): a missing key is also
+        # falsy, so the weaker form passed whether the fixture set the key to
+        # False or never set it at all. The exporter line above is what
+        # catches the fixture going away, so this one is free to assert the
+        # value itself.
+        self.assertIs(p.ocp_config["enable_mpris"], False)
 
 
 if __name__ == "__main__":
