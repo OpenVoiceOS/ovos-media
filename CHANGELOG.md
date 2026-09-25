@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.2a1) (2026-09-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.1a2...2.4.2a1)
+
+**Merged pull requests:**
+
+- fix\(test\): forward the constructor arguments in the mpris opt-out shim [\#226](https://github.com/OpenVoiceOS/ovos-media/pull/226) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
 ## [2.4.1a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.1a2) (2026-09-25)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.1a1...2.4.1a2)
@@ -116,19 +124,19 @@
 
 ## [2.1.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.1a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.1a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.1.1a1)
 
 **Merged pull requests:**
 
 - fix: emit the previous-track verb the workshop base class listens on [\#182](https://github.com/OpenVoiceOS/ovos-media/pull/182) ([JarbasAl](https://github.com/JarbasAl))
 
-## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.0.2a1)
-
 ## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.1.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.0a1)
+
+## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.0.2a1)
 
 **Merged pull requests:**
 
@@ -362,10 +370,6 @@
 ## [0.4.12a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.12a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.11a1...0.4.12a1)
-
-**Merged pull requests:**
-
-- fix: shuffled playback actually plays, mpris reflection always constructs, playlist.set validates first [\#117](https://github.com/OpenVoiceOS/ovos-media/pull/117) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.11a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.11a1) (2026-08-13)
 
