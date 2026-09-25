@@ -44,10 +44,15 @@ def mpris_off_by_default(monkeypatch):
     opts back in by setting enable_mpris explicitly in its own config, or by
     calling OCPMediaPlayer._unpatched_init directly.
     """
-    def patched(self, bus, config=None, validate_source=True, likes=None):
+    # Everything after `config` is forwarded untouched. The fixture cares
+    # about one key and must not restate the constructor's parameter list:
+    # a copy of the signature goes stale the next time a parameter is added
+    # to OCPMediaPlayer.__init__, and the failure is a TypeError raised
+    # before any assertion runs. Forwarding keeps the real constructor as
+    # the only signature, so it still rejects a bad argument.
+    def patched(self, bus, config=None, *args, **kwargs):
         config = dict(config or {})
         config.setdefault("enable_mpris", False)
-        _original_player_init(self, bus=bus, config=config,
-                              validate_source=validate_source, likes=likes)
+        _original_player_init(self, bus, config, *args, **kwargs)
 
     monkeypatch.setattr(OCPMediaPlayer, "__init__", patched)
