@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.1a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.1a2) (2026-09-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.1a1...2.4.1a2)
+
+**Merged pull requests:**
+
+- chore: drop the vestigial requirements directory [\#214](https://github.com/OpenVoiceOS/ovos-media/pull/214) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.4.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.1a1) (2026-09-19)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.0a2...2.4.1a1)
@@ -108,19 +116,19 @@
 
 ## [2.1.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.1a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.1.1a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.1a1)
 
 **Merged pull requests:**
 
 - fix: emit the previous-track verb the workshop base class listens on [\#182](https://github.com/OpenVoiceOS/ovos-media/pull/182) ([JarbasAl](https://github.com/JarbasAl))
 
-## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.0a1)
-
 ## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.0.2a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.0.2a1)
+
+## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.1.0a1)
 
 **Merged pull requests:**
 
@@ -363,17 +371,9 @@
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.10a1...0.4.11a1)
 
-**Merged pull requests:**
-
-- fix: certification round — console script argv, honest queue.finished, playback-evidence resets, gui teardown [\#115](https://github.com/OpenVoiceOS/ovos-media/pull/115) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.10a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.10a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.9a1...0.4.10a1)
-
-**Merged pull requests:**
-
-- fix: UX quick wins — help flag, spoken failures, honest error messages, provider docs [\#113](https://github.com/OpenVoiceOS/ovos-media/pull/113) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.9a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.9a1) (2026-08-13)
 
@@ -417,15 +417,15 @@
 
 ## [0.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.0a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.4.0a1)
-
-## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.3.4a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.4.0a1)
 
 ## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.3.3a5)
+
+## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.4a1)
 
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
