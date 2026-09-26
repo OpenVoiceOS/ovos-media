@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.3a1) (2026-09-26)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.2a2...2.4.3a1)
+
+**Merged pull requests:**
+
+- fix: a track state that arrives after a stop no longer resumes the player [\#231](https://github.com/OpenVoiceOS/ovos-media/pull/231) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
 ## [2.4.2a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.2a2) (2026-09-25)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.2a1...2.4.2a2)
@@ -347,10 +355,6 @@
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.15a1...0.4.15a2)
 
-**Merged pull requests:**
-
-- chore: state invariants in comments, descriptive test file names [\#121](https://github.com/OpenVoiceOS/ovos-media/pull/121) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.15a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.15a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.14a1...0.4.15a1)
@@ -362,10 +366,6 @@
 ## [0.4.14a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.14a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.13a1...0.4.14a1)
-
-**Merged pull requests:**
-
-- fix: resume corked playback when the utterance is handled [\#122](https://github.com/OpenVoiceOS/ovos-media/pull/122) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.13a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.13a1) (2026-08-14)
 
