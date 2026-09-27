@@ -1202,6 +1202,28 @@ class OCPMediaPlayer:
         else:
             self.handle_pause_request(message)
 
+    def _live_read(self, route: str, getter: str,
+                   fallback: Optional[int]) -> Optional[int]:
+        """The first usable millisecond value the routed backends report.
+
+        The plugin contract is Optional[int]: a backend that does not know the
+        value returns None. Test for None explicitly. 0 is a real value, the
+        start of a track, and must survive; a negative value is not a position
+        or a length, so it is read as "unknown" and the fallback stands. The
+        first backend with a usable value wins, so an idle backend later in the
+        roster cannot overwrite it.
+        """
+        for adapter in self.roster.route(route, self.playback_type):
+            value = getattr(adapter, getter)()
+            if value is None:
+                continue
+            if value < 0:
+                LOG.debug(f"{adapter.id}.{getter}() returned {value}, "
+                          f"reading it as unknown")
+                continue
+            return value
+        return fallback
+
     def handle_seek_request(self, message):
         seek = decode_seek(message.data)
         if seek is None:
@@ -1211,9 +1233,11 @@ class OCPMediaPlayer:
             self.seek(seek["seekValue"])
             return
         # relative offset, from the bus api
-        position = self.now_playing.position or 0
-        for adapter in self.roster.route("position_offset", self.playback_type):
-            position = adapter.position() or position
+        position = self._live_read("position_offset", "position",
+                                   self.now_playing.position)
+        if position is None:
+            LOG.debug("no known playback position, ignoring the relative seek")
+            return
         self.seek(position + seek["seconds"] * 1000)
 
     def handle_next_request(self, message):
@@ -1379,18 +1403,18 @@ class OCPMediaPlayer:
         # sanctioned off-thread read: only the plugin knows the live
         # length/position, and a queued round-trip would return a value
         # already stale by the time it was emitted.
-        l = self.snapshot.track_info.get("length") or self.now_playing.length
-        for adapter in self.roster.route("position", self.playback_type):
-            l = adapter.length() or l
-        data = {"length": l}
+        l = self.snapshot.track_info.get("length")
+        if l is None:
+            l = self.now_playing.length
+        data = {"length": self._live_read("position", "length", l)}
         self.bus.emit(message.response(data))
 
     def handle_track_position_request(self, message):
         # live read, see handle_track_length_request
-        pos = self.snapshot.track_info.get("position") or self.now_playing.position
-        for adapter in self.roster.route("position", self.playback_type):
-            pos = adapter.position() or pos
-        data = {"position": pos}
+        pos = self.snapshot.track_info.get("position")
+        if pos is None:
+            pos = self.now_playing.position
+        data = {"position": self._live_read("position", "position", pos)}
         self.bus.emit(message.response(data))
 
     def handle_set_track_position_request(self, message):

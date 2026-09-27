@@ -196,6 +196,50 @@ class TestHandleSeekRequest(unittest.TestCase):
         # position = 5000 (from audio_service) + 10*1000
         p.seek.assert_called_once_with(15000)
 
+    def test_seek_from_a_genuine_zero_position(self):
+        """A backend that reports 0 means the start of the track, not unknown.
+
+        The stale now_playing position must not become the base of the
+        relative seek.
+        """
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 30000
+        p.audio_service.get_track_position.return_value = 0
+        msg = Message("ovos.common_play.seek", {"seconds": 5})
+        p.handle_seek_request(msg)
+        p.seek.assert_called_once_with(5000)
+
+    def test_seek_ignores_a_negative_sentinel_position(self):
+        """A negative value is not a position, so the fallback stands."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 30000
+        p.audio_service.get_track_position.return_value = -1
+        msg = Message("ovos.common_play.seek", {"seconds": 5})
+        p.handle_seek_request(msg)
+        p.seek.assert_called_once_with(35000)
+
+    def test_seek_falls_back_when_the_backend_knows_nothing(self):
+        """None from the backend leaves the now_playing position as the base."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 30000
+        p.audio_service.get_track_position.return_value = None
+        msg = Message("ovos.common_play.seek", {"seconds": 5})
+        p.handle_seek_request(msg)
+        p.seek.assert_called_once_with(35000)
+
+    def test_seek_is_ignored_with_no_known_position(self):
+        """With no position anywhere there is no base, so no seek happens."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = None
+        p.audio_service.get_track_position.return_value = None
+        msg = Message("ovos.common_play.seek", {"seconds": 5})
+        p.handle_seek_request(msg)
+        p.seek.assert_not_called()
+
     def test_seek_with_seek_value_param(self):
         """'seekValue' is used directly, ignoring 'seconds'."""
         p = make_player(PlaybackType.AUDIO)
