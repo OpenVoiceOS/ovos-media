@@ -109,9 +109,22 @@ class PlayerRoster:
         """The player that starts tracks of *playback_type*, or None."""
         return self.get(_PLAYBACK_OWNER.get(playback_type, ""))
 
-    def route(self, verb: str, playback_type: PlaybackType) -> List[object]:
-        """The players *verb* reaches for *playback_type*, in call order."""
-        ids = _ROUTES.get(verb, {}).get(playback_type, ())
+    def route(self, verb: str, playback_type: PlaybackType,
+              can_seek: bool = True) -> List[object]:
+        """The players *verb* reaches for *playback_type*, in call order.
+
+        ``can_seek`` only matters for ``verb == "seek"`` against
+        ``PlaybackType.SKILL``: the routing table has no static row for it
+        because whether a skill's rendering is reachable depends on its
+        OCP-1 §4.3.1 announcement, not on the playback type alone. Callers
+        that already know the current skill did not declare ``can_seek``
+        pass ``False`` so the verb is reported as unsupported, matching
+        every other unroutable (verb, playback_type) pair.
+        """
+        if verb == "seek" and playback_type == PlaybackType.SKILL:
+            ids = (SKILL,) if can_seek else ()
+        else:
+            ids = _ROUTES.get(verb, {}).get(playback_type, ())
         return [self._by_id[i] for i in ids if i in self._by_id]
 
     def select(self, playback_type: PlaybackType, uri: str):
