@@ -1,3 +1,4 @@
+import math
 from typing import List, Optional, Union
 
 from ovos_bus_client import MessageBusClient
@@ -960,6 +961,78 @@ class OCPMediaPlayer:
 
         self.set_player_state(PlayerState.PLAYING)
 
+    @staticmethod
+    def _milliseconds(value, source: str,
+                      zero_is_unknown: bool = False) -> Optional[int]:
+        """*value* as milliseconds, or None when it says nothing.
+
+        `adapter.position()` and `adapter.length()` are documented as
+        milliseconds or None when the player does not know. The reader must
+        test for None and not for truth: `bool(0)` is False, and 0 is a real
+        position - the start of a track - so the `or` idiom this replaces
+        could not represent it and fell back to a stale base instead. The same
+        idiom accepted anything truthy, so a player returning a sentinel such
+        as -1 replaced the fallback with it and a relative seek became an
+        absolute jump backwards.
+
+        A reading is a real number, not an `int`. The shipped mpv and mplayer
+        plugins both compute `seconds * 1000`, which is a float, and nothing
+        between the plugin and this reader rounds it. A float is accepted and
+        truncated here; `bool`, a non-number, an infinity, a NaN and a
+        negative value are outside the contract and are dropped, once, rather
+        than in every plugin.
+
+        A length of 0 is not a length. This repository spells an unknown
+        duration as 0 itself - `MediaEntry.length` defaults to 0, and the
+        shipped mpv and cli plugins return 0 when they have no duration - so
+        for a length 0 means "not known" and must not replace a duration that
+        is known. For a position 0 means the start of the track and is real.
+        *zero_is_unknown* is what separates the two.
+
+        @param value: the reported value, from a player or from a fallback
+        @param source: what reported it, named in the warning
+        @param zero_is_unknown: True for a length, False for a position
+        @return: milliseconds, or None when the value says nothing
+        """
+        if value is None:
+            # the source knows it does not know
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                or not math.isfinite(value) or value < 0:
+            LOG.warning(f"{source} reported {value!r}, which is not "
+                        f"milliseconds; ignoring it")
+            return None
+        if zero_is_unknown and value == 0:
+            # 0 is this project's own spelling of "no duration known"
+            return None
+        return int(value)
+
+    def _roster_milliseconds(self, verb: str, reading: str,
+                             fallback: Optional[int],
+                             zero_is_unknown: bool = False) -> Optional[int]:
+        """The milliseconds every player routed for *verb* reports, or
+        *fallback*.
+
+        Every reading is read by `_milliseconds`, and so is the *fallback* the
+        caller seeds: one rule, applied everywhere a player or a snapshot
+        states a time.
+
+        @param verb: the routing table verb naming which players to ask
+        @param reading: the adapter method to call, "position" or "length"
+        @param fallback: the value to keep when no player reports a usable one
+        @param zero_is_unknown: True for a length, False for a position
+        @return: milliseconds, or None when nothing usable was found
+        """
+        value = fallback
+        for adapter in self.roster.route(verb, self.playback_type):
+            reported = self._milliseconds(getattr(adapter, reading)(),
+                                          f"{adapter.id}.{reading}()",
+                                          zero_is_unknown)
+            if reported is None:
+                continue
+            value = reported
+        return value
+
     def seek(self, position: int):
         """
         Request playback to go to a specific position in the current media.
@@ -1211,10 +1284,18 @@ class OCPMediaPlayer:
             self.seek(seek["seekValue"])
             return
         # relative offset, from the bus api
-        position = self.now_playing.position or 0
-        for adapter in self.roster.route("position_offset", self.playback_type):
-            position = adapter.position() or position
-        self.seek(position + seek["seconds"] * 1000)
+        position = self._roster_milliseconds(
+            "position_offset", "position",
+            self._milliseconds(self.now_playing.position,
+                               "now_playing.position"))
+        if position is None:
+            # no player and no now_playing reading: there is no base to offset
+            # from, and guessing one seeks somewhere the user did not ask for
+            LOG.debug("no track position is known, ignoring the relative seek")
+            return
+        # a rewind past the start is the start; adapters take a position, and
+        # a negative one is not one
+        self.seek(max(0, position + seek["seconds"] * 1000))
 
     def handle_next_request(self, message):
         self.play_next()
@@ -1379,18 +1460,28 @@ class OCPMediaPlayer:
         # sanctioned off-thread read: only the plugin knows the live
         # length/position, and a queued round-trip would return a value
         # already stale by the time it was emitted.
-        l = self.snapshot.track_info.get("length") or self.now_playing.length
-        for adapter in self.roster.route("position", self.playback_type):
-            l = adapter.length() or l
-        data = {"length": l}
+        length = self._milliseconds(self.snapshot.track_info.get("length"),
+                                    "snapshot length", zero_is_unknown=True)
+        if length is None:
+            length = self._milliseconds(self.now_playing.length,
+                                        "now_playing.length",
+                                        zero_is_unknown=True)
+        length = self._roster_milliseconds("position", "length", length,
+                                           zero_is_unknown=True)
+        # the wire keeps this repository's own spelling of an unknown
+        # duration, which is 0, rather than a None no GUI client expects
+        data = {"length": length if length is not None else 0}
         self.bus.emit(message.response(data))
 
     def handle_track_position_request(self, message):
         # live read, see handle_track_length_request
-        pos = self.snapshot.track_info.get("position") or self.now_playing.position
-        for adapter in self.roster.route("position", self.playback_type):
-            pos = adapter.position() or pos
-        data = {"position": pos}
+        pos = self._milliseconds(self.snapshot.track_info.get("position"),
+                                 "snapshot position")
+        if pos is None:
+            pos = self._milliseconds(self.now_playing.position,
+                                     "now_playing.position")
+        data = {"position": self._roster_milliseconds("position", "position",
+                                                      pos)}
         self.bus.emit(message.response(data))
 
     def handle_set_track_position_request(self, message):
