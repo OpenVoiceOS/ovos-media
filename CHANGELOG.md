@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.4a1) (2026-09-28)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.3a1...2.4.4a1)
+
+**Merged pull requests:**
+
+- fix\(seek\): read a track time with None, not with truth [\#233](https://github.com/OpenVoiceOS/ovos-media/pull/233) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
 ## [2.4.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.3a1) (2026-09-26)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.2a2...2.4.3a1)
@@ -358,10 +366,6 @@
 ## [0.4.15a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.15a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.14a1...0.4.15a1)
-
-**Merged pull requests:**
-
-- fix: invoke backend pause/resume exactly once per request [\#124](https://github.com/OpenVoiceOS/ovos-media/pull/124) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.14a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.14a1) (2026-08-14)
 
