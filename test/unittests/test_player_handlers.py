@@ -22,6 +22,7 @@ The player is constructed the same way as the existing test fixtures:
   - All external service classes are patched to MagicMock instances
   - A real FakeBus is used so that bus.emit() calls can be captured
 """
+import dataclasses
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -238,6 +239,81 @@ class TestHandleSeekRequest(unittest.TestCase):
         p.audio_service.set_track_position.assert_not_called()
         p.video_service.set_track_position.assert_not_called()
 
+    def test_a_genuine_position_of_zero_is_the_base(self):
+        """The start of a track is position 0, a real reading. `bool(0)` is
+        False, so the `or` idiom this replaced fell back to the last known
+        position and computed the offset from the wrong base."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 30000
+        p.audio_service.get_track_position.return_value = 0
+        p.handle_seek_request(Message("ovos.common_play.seek",
+                                     {"seconds": 5}))
+        p.seek.assert_called_once_with(5000)
+
+    def test_a_player_that_does_not_know_keeps_the_fallback(self):
+        """None is the contract's "I do not know", and now_playing stays the
+        base."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 30000
+        p.audio_service.get_track_position.return_value = None
+        p.handle_seek_request(Message("ovos.common_play.seek",
+                                     {"seconds": 5}))
+        p.seek.assert_called_once_with(35000)
+
+    def test_a_sentinel_position_is_rejected_not_used(self):
+        """A player returning -1 instead of None is outside the
+        `Optional[int]` contract. The `or` idiom accepted it, because -1 is
+        truthy, and turned a 5 second skip into a jump to 4999ms. This is why
+        ovos-media-plugin-mplayer#29 was blocked: the reader is fixed here
+        once, not in every plugin."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 30000
+        p.audio_service.get_track_position.return_value = -1
+        with patch("ovos_media.player.LOG") as mock_log:
+            p.handle_seek_request(Message("ovos.common_play.seek",
+                                          {"seconds": 5}))
+            mock_log.warning.assert_called_once()
+        p.seek.assert_called_once_with(35000)
+
+    def test_a_non_integer_position_is_rejected(self):
+        """Milliseconds are a real number. A string or a bool is not one, and
+        reaching `position + seconds * 1000` with one raises."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 30000
+        for reported in ("20000", True, float("nan"), float("inf")):
+            with self.subTest(reported=reported):
+                p.seek.reset_mock()
+                p.audio_service.get_track_position.return_value = reported
+                p.handle_seek_request(Message("ovos.common_play.seek",
+                                              {"seconds": 5}))
+                p.seek.assert_called_once_with(35000)
+
+    def test_a_rewind_past_the_start_seeks_to_the_start(self):
+        """An adapter takes a position, and a negative one is not one."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 2000
+        p.audio_service.get_track_position.return_value = 2000
+        p.handle_seek_request(Message("ovos.common_play.seek",
+                                     {"seconds": -30}))
+        p.seek.assert_called_once_with(0)
+
+    def test_no_known_position_at_all_does_not_seek(self):
+        """With no base there is nothing to offset from, and guessing one
+        seeks somewhere the user did not ask for. This is the shape
+        ovos-plugin-manager's own `seek_forward` already has."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = None
+        p.audio_service.get_track_position.return_value = None
+        p.handle_seek_request(Message("ovos.common_play.seek",
+                                     {"seconds": 5}))
+        p.seek.assert_not_called()
+
     def test_seek_with_non_numeric_seconds_is_ignored(self):
         """A non-numeric 'seconds' payload must not raise TypeError from the
         `* 1000` multiplication — it should be logged and ignored instead."""
@@ -251,6 +327,169 @@ class TestHandleSeekRequest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # handle_shuffle_toggle_request / handle_set_shuffle / handle_unset_shuffle
 # ---------------------------------------------------------------------------
+
+
+class TestARealNumberIsAPosition(unittest.TestCase):
+    """mpv and mplayer both compute `seconds * 1000`, which is a float.
+    Every reading they make is one, and dropping it strands the seekbar on
+    a stale base."""
+
+    def test_an_mpv_float_position_reaches_the_seekbar(self):
+        """212.34 s in, reported as 212340.0. The answer is the reading,
+        truncated to milliseconds, not the stale 30000 fallback."""
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.position = 30000
+        p.audio_service.get_track_position.return_value = 212340.0
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_position_request(
+            Message("ovos.common_play.get_track_position"))
+        self.assertEqual(emitted[0].data["position"], 212340)
+        self.assertIsInstance(emitted[0].data["position"], int)
+
+    def test_a_relative_seek_from_an_mpv_float_position(self):
+        """"skip forward 5 seconds" from 212.34 s lands at 217340, not three
+        minutes backwards at 35000."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = 30000
+        p.audio_service.get_track_position.return_value = 212340.0
+        p.handle_seek_request(Message("ovos.common_play.seek",
+                                      {"seconds": 5}))
+        p.seek.assert_called_once_with(217340)
+
+    def test_an_mpv_float_length_reaches_the_seekbar(self):
+        """The length reading is a float for the same reason."""
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.length = 30000
+        p.audio_service.get_track_length.return_value = 212340.0
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_length_request(
+            Message("ovos.common_play.get_track_length"))
+        self.assertEqual(emitted[0].data["length"], 212340)
+
+
+class TestALengthOfZeroIsNotALength(unittest.TestCase):
+    """0 is this project's own spelling of an unknown duration:
+    `MediaEntry.length` defaults to 0, and the shipped mpv and cli plugins
+    return 0 when they do not know. For a position 0 is the start of the
+    track and is real."""
+
+    def test_a_length_of_zero_does_not_replace_a_known_duration(self):
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.length = 150000
+        p.audio_service.get_track_length.return_value = 0
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_length_request(
+            Message("ovos.common_play.get_track_length"))
+        self.assertEqual(emitted[0].data["length"], 150000)
+
+    def test_a_length_nothing_knows_is_reported_as_zero(self):
+        """With no duration anywhere the wire keeps this repository's own
+        spelling of unknown, which is 0, and not a None no client expects."""
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.length = 0
+        p.audio_service.get_track_length.return_value = 0
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_length_request(
+            Message("ovos.common_play.get_track_length"))
+        self.assertEqual(emitted[0].data["length"], 0)
+
+    def test_a_position_of_zero_stays_real(self):
+        """The same reader, the opposite rule: a reported position of 0 is
+        the start of the track and answers the query."""
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.position = 5000
+        p.audio_service.get_track_position.return_value = 0
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_position_request(
+            Message("ovos.common_play.get_track_position"))
+        self.assertEqual(emitted[0].data["position"], 0)
+
+
+class TestTheFallbackSeedsAreReadTheSameWay(unittest.TestCase):
+    """The `or` idiom the change removes survived at the two seeds the
+    handlers start from. One rule reads every time a player or a snapshot
+    states."""
+
+    def _snapshot_with(self, p, **track_info):
+        """State *track_info* on the snapshot the handlers read.
+
+        `PlayerSnapshot.of` builds `track_info` from `now_playing.as_dict`,
+        so the published snapshot and the live one both have to carry it:
+        the unit suite runs the dispatcher in immediate mode, which answers
+        from the live one.
+        """
+        p.now_playing.as_dict = {**p.now_playing.as_dict, **track_info}
+        p._snapshot = dataclasses.replace(p._snapshot,
+                                          track_info=dict(p.now_playing.as_dict))
+
+    def test_a_snapshot_position_of_zero_is_a_position(self):
+        """A snapshot that took its position from a backend states 0 for the
+        start of a track. `or` loses it and answers the stale now_playing."""
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.position = 5000
+        p.audio_service.get_track_position.return_value = None
+        self._snapshot_with(p, position=0)
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_position_request(
+            Message("ovos.common_play.get_track_position"))
+        self.assertEqual(emitted[0].data["position"], 0)
+
+    def test_a_snapshot_position_sentinel_is_dropped_by_the_seed(self):
+        """-1 is not a position wherever it is stated."""
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.position = 5000
+        p.audio_service.get_track_position.return_value = None
+        self._snapshot_with(p, position=-1)
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_position_request(
+            Message("ovos.common_play.get_track_position"))
+        self.assertEqual(emitted[0].data["position"], 5000)
+
+    def test_a_snapshot_length_of_zero_keeps_the_known_duration(self):
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.length = 150000
+        p.audio_service.get_track_length.return_value = None
+        self._snapshot_with(p, length=0)
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_length_request(
+            Message("ovos.common_play.get_track_length"))
+        self.assertEqual(emitted[0].data["length"], 150000)
+
+    def test_a_snapshot_float_length_is_a_length(self):
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.length = 30000
+        p.audio_service.get_track_length.return_value = None
+        self._snapshot_with(p, length=212340.0)
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_length_request(
+            Message("ovos.common_play.get_track_length"))
+        self.assertEqual(emitted[0].data["length"], 212340)
+        # the seed is read by the same rule as a reading, so it is
+        # milliseconds on the wire and not the float it arrived as
+        self.assertIsInstance(emitted[0].data["length"], int)
+
+    def test_a_garbage_seed_leaves_no_base_and_does_not_seek(self):
+        """The seek seed is read by the same rule, so a now_playing carrying
+        a sentinel leaves no base at all. Offsetting from one seeks somewhere
+        the user did not ask for; the guard makes the seek do nothing."""
+        p = make_player(PlaybackType.AUDIO)
+        p.seek = MagicMock()
+        p.now_playing.position = -1
+        p.audio_service.get_track_position.return_value = None
+        p.handle_seek_request(Message("ovos.common_play.seek",
+                                      {"seconds": 5}))
+        p.seek.assert_not_called()
+
 
 class TestHandleShuffleRequests(unittest.TestCase):
     """Shuffle toggle and set/unset handlers update self.shuffle."""
@@ -424,6 +663,40 @@ class TestHandleTrackLengthPositionRequests(unittest.TestCase):
         p.handle_track_position_request(msg)
         resp = emitted[0]
         self.assertEqual(resp.data["position"], 8000)
+
+    def test_track_position_zero_is_reported_as_zero(self):
+        """A track at its start reads 0, and the answer on the bus must be 0,
+        not the stale fallback the `or` idiom returned."""
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.position = 5000
+        p.audio_service.get_track_position.return_value = 0
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_position_request(
+            Message("ovos.common_play.get_track_position"))
+        self.assertEqual(emitted[0].data["position"], 0)
+
+    def test_track_position_sentinel_is_dropped(self):
+        """-1 is not a position. The fallback answers instead."""
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.position = 5000
+        p.audio_service.get_track_position.return_value = -1
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_position_request(
+            Message("ovos.common_play.get_track_position"))
+        self.assertEqual(emitted[0].data["position"], 5000)
+
+    def test_track_length_sentinel_is_dropped(self):
+        """The same reader answers the length query."""
+        p = make_player(PlaybackType.AUDIO)
+        p.now_playing.length = 150000
+        p.audio_service.get_track_length.return_value = -1
+        emitted = []
+        p.bus.emit = lambda m: emitted.append(m)
+        p.handle_track_length_request(
+            Message("ovos.common_play.get_track_length"))
+        self.assertEqual(emitted[0].data["length"], 150000)
 
     def test_set_track_position_calls_seek(self):
         p = make_player(PlaybackType.AUDIO)
