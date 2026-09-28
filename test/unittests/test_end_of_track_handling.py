@@ -415,7 +415,7 @@ class TestLoadOkPlayFailQueue(unittest.TestCase):
             time.sleep(0.02)
 
         speak_calls = [c for c in player.media.notify_dialog.call_args_list
-                      if c.args and c.args[0] == "track.failed"]
+                      if c.args and c.args[0] == "track_failed"]
         self.assertEqual(len(speak_calls), 1,
                         "track.failed must be spoken once per queue, not "
                         "once per failing track")

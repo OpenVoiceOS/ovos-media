@@ -201,7 +201,7 @@ class OCPBusApi:
             # notification for the very same malformed message
             BusHandler("ovos.common_play.play", player.handle_play_request,
                        decoder=decode_media, gated=True,
-                       reject_dialog="invalid.request"),
+                       reject_dialog="invalid_request"),
             BusHandler("ovos.common_play.pause", player.handle_pause_request,
                        gated=True),
             BusHandler("ovos.common_play.play_pause",

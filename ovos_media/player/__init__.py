@@ -135,15 +135,15 @@ class OCPMediaPlayer:
         self._queue: PlayQueue = PlayQueue(title="Search Results")
         # retry delay after an invalid stream, seconds (overridable in tests)
         self.invalid_stream_delay: float = 3.0
-        # rate-limit "track.failed" to once per queue (cleared alongside
+        # rate-limit "track_failed" to once per queue (cleared alongside
         # _failed_uris, ie. whenever a track successfully loads or the
         # player is reset) rather than once per skipped track
         self._track_failed_spoken: bool = False
-        # rate-limit "cannot.seek" the same way, per track — a GUI seekbar
+        # rate-limit "cannot_seek" the same way, per track — a GUI seekbar
         # drag emits several seek requests in a row, and a stream that can't
         # be seeked can't be seeked on the 2nd request either
         self._cannot_seek_spoken: bool = False
-        # True once "no.playback.backend" has been spoken for the lifetime
+        # True once "no_playback_backend" has been spoken for the lifetime
         # of this player — spoken only at the very first play attempt that
         # finds zero backends loaded, never again
         self._no_backend_dialog_spoken: bool = False
@@ -217,7 +217,7 @@ class OCPMediaPlayer:
             # liked-songs playlist, and broadcast an empty-string keyword
             # sample to the NER matcher on the next boot.
             LOG.warning("Cannot like: nothing is playing and no uri was given")
-            self.media.notify_dialog("nothing.playing")
+            self.media.notify_dialog("nothing_playing")
             return
         title = message.data.get("title") or self.now_playing.title
         image = message.data.get("image") or message.data.get("thumbnail") or self.now_playing.image
@@ -232,7 +232,7 @@ class OCPMediaPlayer:
         uri = message.data.get("uri") or self.now_playing.original_uri
         if not uri:
             LOG.warning("Cannot unlike: nothing is playing and no uri was given")
-            self.media.notify_dialog("nothing.playing")
+            self.media.notify_dialog("nothing_playing")
             return
         if self.media.likes.unlike(uri):
             self.media.notify_likes_changed()
@@ -683,7 +683,7 @@ class OCPMediaPlayer:
                 self.audio_service.services or self.video_service.services or
                 self.web_service.services):
             self._no_backend_dialog_spoken = True
-            self.media.notify_dialog("no.playback.backend")
+            self.media.notify_dialog("no_playback_backend")
 
         if disambiguation:
             valid_disambiguation = validated_entries(disambiguation)
@@ -835,7 +835,7 @@ class OCPMediaPlayer:
                 LOG.warning("Repeat-track requested, but the track has failed "
                             "to load — stopping instead of retrying forever")
                 self.set_player_state(PlayerState.STOPPED)
-                self.media.notify_dialog("playback.failed")
+                self.media.notify_dialog("playback_failed")
                 return
             LOG.debug("Repeating single track")
             self.play()
@@ -854,7 +854,7 @@ class OCPMediaPlayer:
                             "queue failed to load — stopping instead of "
                             "shuffling forever")
                 self.set_player_state(PlayerState.STOPPED)
-                self.media.notify_dialog("playback.failed")
+                self.media.notify_dialog("playback_failed")
                 return
             if self.play_shuffle():
                 # play_shuffle only selects the track - actually start it
@@ -867,7 +867,7 @@ class OCPMediaPlayer:
                 LOG.info("Requested next (shuffle), but there are no more "
                          "tracks in the queue")
                 self.set_player_state(PlayerState.STOPPED)
-                self.media.notify_dialog("queue.finished")
+                self.media.notify_dialog("queue_finished")
             return
 
         queue = self._merged_queue()
@@ -883,7 +883,7 @@ class OCPMediaPlayer:
             LOG.warning("End of queue with repeat == True, but every track "
                         "failed to load — stopping instead of looping")
             self.set_player_state(PlayerState.STOPPED)
-            self.media.notify_dialog("playback.failed")
+            self.media.notify_dialog("playback_failed")
             return
         elif not isinstance(selection, QueueEnd):
             self.set_now_playing(selection)
@@ -898,7 +898,7 @@ class OCPMediaPlayer:
             # here, not in handle_playback_ended — that call site fires on
             # every autoplay-off track end and on MPRIS-external track
             # ends too, neither of which is really "the queue finished".
-            self.media.notify_dialog("queue.finished")
+            self.media.notify_dialog("queue_finished")
             return
         self.play()
 
@@ -1051,7 +1051,7 @@ class OCPMediaPlayer:
                         f"{self.playback_type}, ignoring")
             if not self._cannot_seek_spoken:
                 self._cannot_seek_spoken = True
-                self.media.notify_dialog("cannot.seek")
+                self.media.notify_dialog("cannot_seek")
         for adapter in adapters:
             adapter.seek(position)
 
@@ -1196,7 +1196,7 @@ class OCPMediaPlayer:
         # does not talk over itself
         if not self._track_failed_spoken:
             self._track_failed_spoken = True
-            self.media.notify_dialog("track.failed")
+            self.media.notify_dialog("track_failed")
 
     def handle_playback_ended(self, message, playback_type: PlaybackType = None,
                               playback_uri: str = None,

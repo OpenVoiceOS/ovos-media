@@ -28,7 +28,7 @@ class TestVoiceSkillWiring(unittest.TestCase):
         with patch.object(self.service.voice_skill, "speak_dialog") as speak:
             self.service.ocp.handle_invalid_media()
 
-        speak.assert_called_once_with("track.failed", None)
+        speak.assert_called_once_with("track_failed", None)
 
     def test_skill_speaks_on_the_bus_end_to_end(self):
         """The same path with nothing stubbed: a real dialog reaches a real
