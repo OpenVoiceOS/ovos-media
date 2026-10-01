@@ -62,11 +62,11 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
             self._keyword_registrar.register_history_playlists()
 
         # intents about the currently playing media, see issue #23
-        self.register_intent_file("WhatSong.intent", self.handle_what_song)
-        self.register_intent_file("WhatAlbum.intent", self.handle_what_album)
-        self.register_intent_file("WhatArtist.intent", self.handle_what_artist)
-        self.register_intent_file("ShuffleOn.intent", self.handle_shuffle_on)
-        self.register_intent_file("ShuffleOff.intent", self.handle_shuffle_off)
+        self.register_intent_file("what_song.intent", self.handle_what_song)
+        self.register_intent_file("what_album.intent", self.handle_what_album)
+        self.register_intent_file("what_artist.intent", self.handle_what_artist)
+        self.register_intent_file("shuffle_on.intent", self.handle_shuffle_on)
+        self.register_intent_file("shuffle_off.intent", self.handle_shuffle_off)
 
     def handle_likes_changed(self) -> None:
         """Refresh the song-title keywords after a like/unlike, so a song
@@ -126,7 +126,7 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
     def handle_what_song(self, message):
         status = self._get_status(message)
         if status is None:
-            self.speak_dialog("player.not.responding")
+            self.speak_dialog("player_not_responding")
             return
         title = status.get("title")
         artist = status.get("artist")
@@ -136,44 +136,44 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
             # player_state key (older/incomplete status payloads) defaults
             # to STOPPED so this stays "nothing playing" as before
             if status.get("player_state", PlayerState.STOPPED) != PlayerState.STOPPED:
-                self.speak_dialog("no.track.info")
+                self.speak_dialog("no_track_info")
             else:
-                self.speak_dialog("nothing.playing")
+                self.speak_dialog("nothing_playing")
         elif artist:
-            self.speak_dialog("now.playing.song", {"title": title, "artist": artist})
+            self.speak_dialog("now_playing_song", {"title": title, "artist": artist})
         else:
-            self.speak_dialog("now.playing.song.no.artist", {"title": title})
+            self.speak_dialog("now_playing_song_no_artist", {"title": title})
 
     def handle_what_album(self, message):
         status = self._get_status(message)
         if status is None:
-            self.speak_dialog("player.not.responding")
+            self.speak_dialog("player_not_responding")
             return
         if not status.get("title"):
             if status.get("player_state", PlayerState.STOPPED) != PlayerState.STOPPED:
-                self.speak_dialog("no.track.info")
+                self.speak_dialog("no_track_info")
             else:
-                self.speak_dialog("nothing.playing")
+                self.speak_dialog("nothing_playing")
         else:
             # NowPlaying/MediaEntry does not track album metadata, so this
             # always falls back gracefully instead of guessing or crashing.
-            self.speak_dialog("no.album.info")
+            self.speak_dialog("no_album_info")
 
     def handle_what_artist(self, message):
         status = self._get_status(message)
         if status is None:
-            self.speak_dialog("player.not.responding")
+            self.speak_dialog("player_not_responding")
             return
         title = status.get("title")
         artist = status.get("artist")
         if artist:
-            self.speak_dialog("now.playing.artist", {"artist": artist})
+            self.speak_dialog("now_playing_artist", {"artist": artist})
         elif title:
-            self.speak_dialog("no.artist.info")
+            self.speak_dialog("no_artist_info")
         elif status.get("player_state", PlayerState.STOPPED) != PlayerState.STOPPED:
-            self.speak_dialog("no.track.info")
+            self.speak_dialog("no_track_info")
         else:
-            self.speak_dialog("nothing.playing")
+            self.speak_dialog("nothing_playing")
 
     def _is_default_session(self, message: Message) -> bool:
         """Whether the player will act on a request forwarded from this
@@ -187,17 +187,17 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
 
     def handle_shuffle_on(self, message):
         if not self._is_default_session(message):
-            self.speak_dialog("cannot.control.device")
+            self.speak_dialog("cannot_control_device")
             return
         self.bus.emit(message.forward("ovos.common_play.shuffle.set"))
-        self.speak_dialog("shuffle.on")
+        self.speak_dialog("shuffle_on")
 
     def handle_shuffle_off(self, message):
         if not self._is_default_session(message):
-            self.speak_dialog("cannot.control.device")
+            self.speak_dialog("cannot_control_device")
             return
         self.bus.emit(message.forward("ovos.common_play.shuffle.unset"))
-        self.speak_dialog("shuffle.off")
+        self.speak_dialog("shuffle_off")
 
     @ocp_search()
     def search_db(self, phrase, media_type):

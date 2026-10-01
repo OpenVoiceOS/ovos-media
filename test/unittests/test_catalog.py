@@ -132,9 +132,9 @@ class TestDialogNotifications(unittest.TestCase):
         listener = MagicMock()
         catalog.add_dialog_listener(listener)
 
-        catalog.notify_dialog("queue.finished", {"title": "X"})
+        catalog.notify_dialog("queue_finished", {"title": "X"})
 
-        listener.assert_called_once_with("queue.finished", {"title": "X"})
+        listener.assert_called_once_with("queue_finished", {"title": "X"})
 
     def test_listener_is_registered_once(self):
         catalog = MediaCatalog(FakeBus(), _likes())
@@ -142,7 +142,7 @@ class TestDialogNotifications(unittest.TestCase):
         catalog.add_dialog_listener(listener)
         catalog.add_dialog_listener(listener)
 
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(listener.call_count, 1)
 
@@ -152,7 +152,7 @@ class TestDialogNotifications(unittest.TestCase):
         catalog.add_dialog_listener(listener)
         catalog.remove_dialog_listener(listener)
 
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         listener.assert_not_called()
 
@@ -164,7 +164,7 @@ class TestDialogNotifications(unittest.TestCase):
         survivor = MagicMock()
         catalog.add_dialog_listener(survivor)
 
-        catalog.notify_dialog("track.failed")  # must not raise
+        catalog.notify_dialog("track_failed")  # must not raise
 
         survivor.assert_called_once()
 
@@ -174,7 +174,7 @@ class TestDialogNotifications(unittest.TestCase):
         catalog.add_dialog_listener(listener)
 
         catalog.shutdown()
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         listener.assert_not_called()
 

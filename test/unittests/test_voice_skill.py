@@ -321,13 +321,16 @@ class TestFiveIntentsRegistered(unittest.TestCase):
 
         _make_skill(bus)
 
-        # ovos-workshop registers under the authoring name ("WhatSong.intent")
-        # on older versions and the canonical name ("WhatSong") after the
+        # ovos-workshop registers under the authoring name ("what_song.intent")
+        # on older versions and the canonical name ("what_song") after the
         # canonical-topic switch — accept either spelling, reject absence.
+        # The base names moved to underscores under OVOS-INTENT-2 §2, so the
+        # dispatch topic moved with them: ovos-media:WhatSong is now
+        # ovos-media:what_song.
         names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
                  for r in registrations}
-        for expected in ("WhatSong", "WhatAlbum", "WhatArtist",
-                         "ShuffleOn", "ShuffleOff"):
+        for expected in ("what_song", "what_album", "what_artist",
+                         "shuffle_on", "shuffle_off"):
             self.assertIn(expected, names,
                           f"expected {expected} to be registered; got {names}")
         self.assertGreaterEqual(len(registrations), 5)
@@ -337,7 +340,7 @@ class TestShuffleSessionGate(unittest.TestCase):
     """OCPMediaPlayer.handle_set_shuffle/handle_unset_shuffle are gated by
     session at the bus edge and silently drop the action on a non-default
     (e.g. HiveMind satellite) session. The shuffle intent handlers must not
-    claim success (speak "shuffle.on"/"shuffle.off") when that's about to
+    claim success (speak "shuffle_on"/"shuffle_off") when that's about to
     happen - they must mirror the gate themselves."""
 
     def _named_session_message(self, msg_type):
@@ -408,7 +411,7 @@ class TestDialogNotifications(unittest.TestCase):
         spoken = []
         bus.on("speak", lambda m: spoken.append(m.data["utterance"]))
 
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(len(spoken), 1)
         self.assertTrue(spoken[0])
@@ -419,7 +422,7 @@ class TestDialogNotifications(unittest.TestCase):
         spoken = []
         bus.on("speak", lambda m: spoken.append(m.data["utterance"]))
 
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(spoken, [])
 
@@ -431,7 +434,7 @@ class TestDialogNotifications(unittest.TestCase):
         bus.on("speak", lambda m: spoken.append(m.data["utterance"]))
 
         skill.default_shutdown()
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(spoken, [])
 
@@ -462,12 +465,12 @@ class TestConstructsWithoutAhocorasickNer(unittest.TestCase):
             skill = _make_skill(bus)
 
             self.assertIsNotNone(skill)
-            # accept both the authoring ("WhatSong.intent") and canonical
-            # ("WhatSong") registration spellings across workshop versions
+            # accept both the authoring ("what_song.intent") and canonical
+            # ("what_song") registration spellings across workshop versions
             names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
                      for r in registrations}
-            self.assertIn("WhatSong", names)
-            self.assertIn("ShuffleOn", names)
+            self.assertIn("what_song", names)
+            self.assertIn("shuffle_on", names)
 
     def test_search_db_finds_nothing_without_ner(self):
         """search_db depends on the local NER matcher; without ahocorasick
