@@ -16,3 +16,6 @@ jobs:
       # ovoscope.yml owns it and it needs the media harness.
       install_extras: 'test'
       test_path: 'test/unittests'
+      # TEMPORARY until ovos-plugin-manager 3.0.0a1 releases: this branch
+      # targets the unreleased MediaBackend v2 template.
+      pre_install_pip: "git+https://github.com/OpenVoiceOS/ovos-plugin-manager@feat/media-backend-v2"
