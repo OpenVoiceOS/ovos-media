@@ -1,0 +1,17 @@
+name: Stable Release
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  publish_stable:
+    if: github.actor != 'github-actions[bot]'
+    uses: OpenVoiceOS/gh-automations/.github/workflows/publish-stable.yml@dev
+    secrets: inherit
+    with:
+      branch: 'master'
+      version_file: 'ovos_media/version.py'
+      publish_release: true
+      publish_pypi: true
+      sync_dev: true

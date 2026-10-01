@@ -19,3 +19,8 @@ dist
 # Created by unit tests
 .pytest_cache/
 /.gtm/
+
+# agent scratch
+AGENTS.md
+TODO.md
+.claude/
