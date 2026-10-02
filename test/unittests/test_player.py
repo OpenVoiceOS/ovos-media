@@ -1,12 +1,37 @@
 """Tests for OCPMediaPlayer preferred service resolution and NowPlaying."""
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from ovos_utils.ocp import PlayerState, LoopState, PlaybackType
 
+from ovos_media.player import OCPMediaPlayer
 from player_fixture import make_player
 
 
+class TestMillisecondsMinusOne(unittest.TestCase):
+    """opm's MediaBackend.get_track_length contract spells "no finite
+    duration" as -1 for a length; a position has no such sentinel."""
+
+    def test_length_minus_one_is_the_no_finite_duration_sentinel(self):
+        with patch("ovos_media.player.LOG") as mock_log:
+            result = OCPMediaPlayer._milliseconds(-1, "test length",
+                                                   zero_is_unknown=True)
+        self.assertEqual(result, -1)
+        mock_log.warning.assert_not_called()
+
+    def test_position_minus_one_stays_refused(self):
+        with patch("ovos_media.player.LOG") as mock_log:
+            result = OCPMediaPlayer._milliseconds(-1, "test position",
+                                                   zero_is_unknown=False)
+        self.assertIsNone(result)
+        mock_log.warning.assert_called_once()
+
+    def test_other_negative_length_stays_refused(self):
+        with patch("ovos_media.player.LOG") as mock_log:
+            result = OCPMediaPlayer._milliseconds(-2, "test length",
+                                                   zero_is_unknown=True)
+        self.assertIsNone(result)
+        mock_log.warning.assert_called_once()
 
 
 class TestPlayerStateTransitions(unittest.TestCase):

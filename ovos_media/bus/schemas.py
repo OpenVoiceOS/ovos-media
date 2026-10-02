@@ -79,12 +79,20 @@ def decode_playback_time(data: dict) -> dict:
     Only real numbers survive: a ``str`` would otherwise silently coerce
     (``int("5000" * 1000)`` overflows the MPRIS int64 wire type) and
     ``NaN``/``inf`` would raise out of ``int()``. Negative values are
-    refused; ``0`` is valid. Rejected fields are absent from the result.
+    refused; ``0`` is valid. ``length`` alone also allows ``-1``, the opm
+    ``MediaBackend.get_track_length`` contract's sentinel for a track
+    playing with no finite duration, such as a live stream. ``position``
+    has no such sentinel, so a ``-1`` there is refused like any other
+    negative value. Rejected fields are absent from the result.
     """
     decoded = {}
     for field in _NUMERIC_TRACK_FIELDS:
         value = data.get(field)
-        if not is_real_number(value) or value < 0:
+        if not is_real_number(value):
+            LOG.debug(f"ignoring invalid '{field}' in playback_time "
+                      f"message: {value!r}")
+            continue
+        if value < 0 and not (field == "length" and value == -1):
             LOG.debug(f"ignoring invalid '{field}' in playback_time "
                       f"message: {value!r}")
             continue

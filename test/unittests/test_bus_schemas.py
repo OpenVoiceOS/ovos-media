@@ -103,12 +103,26 @@ class TestDecodePlaybackTime(unittest.TestCase):
                          {"length": 100})
 
     def test_rejected_values(self):
-        for value in (NAN, INF, -INF, -1, -0.5, True, False, None, "5",
+        for value in (NAN, INF, -INF, -0.5, -2, True, False, None, "5",
                       [1], {"a": 1}):
             with self.subTest(value=value):
                 self.assertEqual(
                     decode_playback_time({"length": value, "position": value}),
                     {})
+
+    def test_length_minus_one_is_the_no_finite_duration_sentinel(self):
+        # opm's MediaBackend.get_track_length contract: -1 is a length
+        # with no finite duration, a live stream being the case it names
+        self.assertEqual(
+            decode_playback_time({"length": -1, "position": 5}),
+            {"length": -1, "position": 5})
+
+    def test_position_minus_one_stays_rejected(self):
+        # the contract gives -1 a meaning for a length only; a position
+        # has none, so -1 there is refused like any other negative value
+        self.assertEqual(
+            decode_playback_time({"length": 1000, "position": -1}),
+            {"length": 1000})
 
 
 class TestFlattenMediaTypes(unittest.TestCase):

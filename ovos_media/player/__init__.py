@@ -989,16 +989,30 @@ class OCPMediaPlayer:
         is known. For a position 0 means the start of the track and is real.
         *zero_is_unknown* is what separates the two.
 
+        A length of -1 is a length, not a rejected reading: the opm
+        `MediaBackend.get_track_length` contract spells "something is
+        playing but it has no finite duration" as -1, a live stream being
+        the case this names. A position has no such sentinel - `-1` there
+        is outside the contract and is dropped like any other negative
+        value.
+
         @param value: the reported value, from a player or from a fallback
         @param source: what reported it, named in the warning
         @param zero_is_unknown: True for a length, False for a position
-        @return: milliseconds, or None when the value says nothing
+        @return: milliseconds, or None when the value says nothing, or -1
+            for a length with no finite duration
         """
         if value is None:
             # the source knows it does not know
             return None
         if isinstance(value, bool) or not isinstance(value, (int, float)) \
-                or not math.isfinite(value) or value < 0:
+                or not math.isfinite(value):
+            LOG.warning(f"{source} reported {value!r}, which is not "
+                        f"milliseconds; ignoring it")
+            return None
+        if value < 0:
+            if zero_is_unknown and value == -1:
+                return -1
             LOG.warning(f"{source} reported {value!r}, which is not "
                         f"milliseconds; ignoring it")
             return None

@@ -687,8 +687,11 @@ class TestHandleTrackLengthPositionRequests(unittest.TestCase):
             Message("ovos.common_play.get_track_position"))
         self.assertEqual(emitted[0].data["position"], 5000)
 
-    def test_track_length_sentinel_is_dropped(self):
-        """The same reader answers the length query."""
+    def test_track_length_sentinel_is_passed_through(self):
+        """-1 is a length, not a rejected reading: the opm
+        MediaBackend.get_track_length contract spells "no finite duration"
+        this way, a live stream being the case it names. The fallback is
+        not used, unlike the position sentinel above."""
         p = make_player(PlaybackType.AUDIO)
         p.now_playing.length = 150000
         p.audio_service.get_track_length.return_value = -1
@@ -696,7 +699,7 @@ class TestHandleTrackLengthPositionRequests(unittest.TestCase):
         p.bus.emit = lambda m: emitted.append(m)
         p.handle_track_length_request(
             Message("ovos.common_play.get_track_length"))
-        self.assertEqual(emitted[0].data["length"], 150000)
+        self.assertEqual(emitted[0].data["length"], -1)
 
     def test_set_track_position_calls_seek(self):
         p = make_player(PlaybackType.AUDIO)
