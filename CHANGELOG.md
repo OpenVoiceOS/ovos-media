@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.5a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.5a2) (2026-10-28)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.5a1...2.4.5a2)
+
+**Merged pull requests:**
+
+- test: the test extra hard-requires ahocorasick\_ner [\#236](https://github.com/OpenVoiceOS/ovos-media/pull/236) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
 ## [2.4.5a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.5a1) (2026-10-01)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.4a1...2.4.5a1)
@@ -156,19 +164,19 @@
 
 ## [2.1.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.1a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.1.1a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.1a1)
 
 **Merged pull requests:**
 
 - fix: emit the previous-track verb the workshop base class listens on [\#182](https://github.com/OpenVoiceOS/ovos-media/pull/182) ([JarbasAl](https://github.com/JarbasAl))
 
-## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.0a1)
-
 ## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.0.2a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.0.2a1)
+
+## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.1.0a1)
 
 **Merged pull requests:**
 
@@ -362,10 +370,6 @@
 ## [0.4.16a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.16a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.15a2...0.4.16a1)
-
-**Merged pull requests:**
-
-- fix: MPRIS Position wire type and stop/pause-all iteration race [\#127](https://github.com/OpenVoiceOS/ovos-media/pull/127) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.15a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.15a2) (2026-08-14)
 
