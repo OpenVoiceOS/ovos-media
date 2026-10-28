@@ -43,6 +43,12 @@ test = [
     "pytest-cov",
     "orjson",
     "ovoscope[media]>=1.6.11a1",
+    # TestHistorySearchDb drives search_db through the real NER matcher, so
+    # the test environment hard-requires the "ner" extra. Without it
+    # ocp_voc_match returns {} for every phrase and those tests measure
+    # nothing. The degraded no-NER path is proved by patching the symbol, in
+    # TestConstructsWithoutAhocorasickNer, not by leaving it uninstalled.
+    "ahocorasick_ner",
 ]
 
 [project.scripts]

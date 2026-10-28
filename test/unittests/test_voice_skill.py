@@ -49,6 +49,16 @@ def _likes(entries=None):
 
 def _history(entries=None):
     return PlayHistoryStore(_FakeStore(entries or {}))
+# TestHistorySearchDb drives search_db through the real NER matcher that
+# ovos_workshop builds from ahocorasick_ner. Without it ocp_voc_match returns
+# {} for every phrase and those tests measure nothing, so this import is a
+# hard requirement of the suite and the "test" extra in pyproject.toml names
+# it. A test gated on a missing dependency is a test that silently stops
+# running, so the import is plain and the suite fails loudly when it is
+# absent. TestConstructsWithoutAhocorasickNer proves the degraded no-NER path
+# by patching the symbol, which needs no uninstalled package.
+import ahocorasick_ner  # noqa: F401
+
 from ovos_media.player import OCPMediaPlayer
 from ovos_media.skill import OCPVoiceSkill
 
