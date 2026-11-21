@@ -1231,6 +1231,7 @@ class TestPlayNext(unittest.TestCase):
         p.playlist.entries = [track_a, track_b]
         p.media.search_playlist.entries = []
         p.now_playing.uri = track_a.uri
+        p.now_playing.original_uri = ""  # set_now_playing() reset it; nothing extracted
         p.loop_state = LoopState.NONE
         p.shuffle = False
         p.ocp_config = {"merge_search": False}
@@ -1277,6 +1278,7 @@ class TestPlayPrev(unittest.TestCase):
         p.playlist.entries = [track_a, track_b]
         p.media.search_playlist.entries = []
         p.now_playing.uri = track_b.uri  # currently on second track
+        p.now_playing.original_uri = ""  # set_now_playing() reset it; nothing extracted
         p.shuffle = False
         p.ocp_config = {"merge_search": False}
         p.play = MagicMock()
