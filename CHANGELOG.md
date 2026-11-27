@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/4.1.0a1) (2026-11-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/4.0.0a1...4.1.0a1)
+
+**Merged pull requests:**
+
+- feat: run the player queue on PlayTree [\#254](https://github.com/OpenVoiceOS/ovos-media/pull/254) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
 ## [4.0.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/4.0.0a1) (2026-11-27)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/3.4.0a1...4.0.0a1)
@@ -357,10 +365,6 @@
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.23a1...0.4.24a1)
 
-**Merged pull requests:**
-
-- fix: guard preferred-backend matching and validate play\_media payloads before mutation [\#143](https://github.com/OpenVoiceOS/ovos-media/pull/143) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.23a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.23a1) (2026-08-15)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.22a1...0.4.23a1)
@@ -463,27 +467,27 @@
 
 ## [0.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.0a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.4.0a1)
-
-## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.3.3a5)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.4.0a1)
 
 ## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.4a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.3.4a1)
+
+## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
 
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a4)
-
-## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a3)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a4)
 
 ## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a2)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a2)
+
+## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a3)
 
 ## [0.3.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a1) (2026-08-02)
 
