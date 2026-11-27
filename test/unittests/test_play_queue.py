@@ -132,9 +132,8 @@ class TestNestedPlaylistMembers(unittest.TestCase):
     """A ``playlist.set`` payload may carry a track that is itself a playlist.
 
     ``validated_entries`` accepts those, so they reach the queue as nested
-    Playlist objects. They are kept in the backing list — sanitization walks
-    them there — but they have no uri, so every uri-based consumer reads the
-    filtered ``entries`` view instead.
+    Playlist objects. The queue holds each one as a node of its tree and its
+    tracks join the flat leaf view, in the node's own order.
     """
 
     def _queue_with_nested(self):
@@ -149,26 +148,30 @@ class TestNestedPlaylistMembers(unittest.TestCase):
             q.add_entry(entry)
         return q
 
-    def test_the_nested_playlist_stays_in_the_backing_list(self):
+    def test_the_nested_playlist_becomes_a_node(self):
         q = self._queue_with_nested()
         self.assertEqual(len(q), 2)
-        self.assertIsInstance(q[1], Playlist)
+        self.assertFalse(q.root.children[1].is_leaf)
+        self.assertEqual(q[1].uri, "http://b.mp3")
 
-    def test_entries_offers_only_playable_members(self):
+    def test_entries_offers_the_nested_tracks(self):
         q = self._queue_with_nested()
-        self.assertEqual([e.uri for e in q.entries], ["http://a.mp3"])
+        self.assertEqual([e.uri for e in q.entries],
+                         ["http://a.mp3", "http://b.mp3"])
 
-    def test_merging_search_results_survives_a_nested_playlist(self):
+    def test_merging_search_results_follows_the_nested_tracks(self):
         q = self._queue_with_nested()
         merged = q.merged([MediaEntry(uri="http://c.mp3")])
         self.assertEqual([e.uri for e in merged],
-                         ["http://a.mp3", "http://c.mp3"])
+                         ["http://a.mp3", "http://b.mp3", "http://c.mp3"])
 
-    def test_advancing_survives_a_nested_playlist(self):
+    def test_advancing_enters_and_leaves_the_nested_playlist(self):
         q = self._queue_with_nested()
         merged = q.merged([MediaEntry(uri="http://c.mp3")])
         self.assertTrue(q.has_next(merged, uri="http://a.mp3"))
         self.assertEqual(q.select_next(merged, uri="http://a.mp3").uri,
+                         "http://b.mp3")
+        self.assertEqual(q.select_next(merged, uri="http://b.mp3").uri,
                          "http://c.mp3")
 
     def test_length_ignores_a_nested_playlist(self):
@@ -204,14 +207,16 @@ class TestPlayerWithNestedPlaylistPayload(unittest.TestCase):
         self.assertEqual(len(player.playlist), 3)
         player.shutdown()
 
-    def test_next_and_prev_still_work(self):
+    def test_next_and_prev_move_by_leaf_through_the_nested_playlist(self):
         player = self._player()
         player.now_playing.uri = "http://a.mp3"
         with patch.object(player, "play"):
             player.play_next()
+            self.assertEqual(player.now_playing.uri, "http://b.mp3")
+            player.play_next()
             self.assertEqual(player.now_playing.uri, "http://c.mp3")
             player.play_prev()
-            self.assertEqual(player.now_playing.uri, "http://a.mp3")
+            self.assertEqual(player.now_playing.uri, "http://b.mp3")
         player.shutdown()
 
     def test_can_next_still_answers(self):
