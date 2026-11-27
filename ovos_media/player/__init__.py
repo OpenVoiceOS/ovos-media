@@ -210,6 +210,9 @@ class OCPMediaPlayer:
         # originating session (OCP-1 §4/§4.4), instead of landing on the
         # default one. Cleared by reset().
         self._play_message: Optional[Message] = None
+        # False when the play request set "announce_end": false: its sender
+        # speaks the end of the queue itself.
+        self._announce_end: bool = True
         # Every command that mutates this player runs here, one at a time,
         # in submission order: the bus edge, the MPRIS thread and the
         # delayed invalid-stream retry all submit instead of calling in
@@ -900,6 +903,8 @@ class OCPMediaPlayer:
             media_backends.base.BaseMediaService's play_message_provider).
         """
         self._play_message = message
+        self._announce_end = message is None or \
+            message.data.get("announce_end", True) is not False
         if isinstance(track, dict):
             # dict2entry, not MediaEntry.from_dict - the edge decoder
             # accepts playlist-/extractor_id-shaped 'media' dicts too, and
@@ -1143,12 +1148,14 @@ class OCPMediaPlayer:
                 LOG.info("Requested next (shuffle), but there are no more "
                          "tracks in the queue")
                 self.set_player_state(PlayerState.STOPPED)
-                self._notify_dialog("queue_finished")
+                if self._announce_end:
+                    self._notify_dialog("queue_finished")
                 # the queue this playback drove is exhausted — clear the
                 # stash AFTER the notify above so it still carries this
                 # playback's session; a later, unrelated emission (eg. an
                 # external MPRIS player taking over) must not inherit it.
                 self._play_message = None
+                self._announce_end = True
             return
 
         queue = self._merged_queue()
@@ -1184,11 +1191,13 @@ class OCPMediaPlayer:
             # here, not in handle_playback_ended — that call site fires on
             # every autoplay-off track end and on MPRIS-external track
             # ends too, neither of which is really "the queue finished".
-            self._notify_dialog("queue_finished")
+            if self._announce_end:
+                self._notify_dialog("queue_finished")
             # see the shuffle-path branch above: clear AFTER the notify so
             # it still carries this playback's session, so a later,
             # unrelated emission does not inherit it.
             self._play_message = None
+            self._announce_end = True
             return
         self.play()
 
@@ -1437,6 +1446,7 @@ class OCPMediaPlayer:
         # playback just reset and must carry ITS session; only a later,
         # unrelated emission must not leak it.
         self._play_message = None
+        self._announce_end = True
 
     def shutdown(self):
         """
