@@ -1,8 +1,8 @@
 # Changelog
 
-## [3.2.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/3.2.0a1) (2026-11-27)
+## [3.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/3.4.0a1) (2026-11-27)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/3.1.0a1...3.2.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/3.1.0a1...3.4.0a1)
 
 **Merged pull requests:**
 
