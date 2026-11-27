@@ -278,6 +278,15 @@ name, or a disabled history store all answer with an empty entry list rather
 than an error — a caller never needs to guess whether a collection exists
 before asking for it.
 
+### OCP-1 extensions
+
+`ovos.common_play.play` accepts an optional `announce_end` field, which is not
+in [OCP-1 §4.5](https://github.com/OpenVoiceOS/architecture/blob/dev/ovos-ocp-1.md).
+With `"announce_end": false`, the player does not speak `queue_finished` when
+the queue from that request ends, and the sender speaks its own end. The
+default is `true`. Each play request sets the value again, so a later request
+without the field speaks the dialog.
+
 ---
 
 ## Execution model

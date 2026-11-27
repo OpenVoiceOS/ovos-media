@@ -199,6 +199,11 @@ one track to work with. To play a track as part of a larger playlist, include
 the full track list under `playlist` in the same `ovos.common_play.play`
 message.
 
+Set `"announce_end": false` when your skill speaks its own end of the queue,
+for example a story reader that names the source of the text. Then
+`ovos-media` does not say "that's the end of the queue" when that playlist
+ends. The default is `true`, and each play request sets the value again.
+
 To confirm the daemon is live, ping it:
 
 ```python
