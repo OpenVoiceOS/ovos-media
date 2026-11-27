@@ -124,6 +124,25 @@ class NowPlaying(MediaEntry):
                      TrackState.PLAYING_AUDIOSERVICE, TrackState.PLAYING_MPRIS):
             # backend confirmed playback started — mark player as PLAYING
             if hasattr(self, '_player') and self._player is not None:
+                if getattr(self._player, "_stop_requested", False) is True:
+                    # A stop has already settled this player. This message was
+                    # emitted by a backend before the stop reached it and
+                    # arrived after, so it is evidence about playback that has
+                    # since stopped, not about playback now. Acting on it puts
+                    # the player back into PLAYING with NO_MEDIA and an empty
+                    # title, which is then what ovos.common_play.status
+                    # answers. play() clears the flag before the next track,
+                    # so real playback is unaffected.
+                    #
+                    # `is True` rather than a truth test: _player is a
+                    # MagicMock in much of the suite, and every attribute of
+                    # one is truthy, so a plain test would read "stopped" for
+                    # every mocked player. The real flag is a bool and is only
+                    # ever set to True or False.
+                    LOG.debug(f"ignoring {repr(state)}: it arrived after a "
+                              f"stop, so the player stays "
+                              f"{repr(self._player.state)}")
+                    return
                 self._player.set_player_state(PlayerState.PLAYING)
                 # reset the per-queue failure guards on evidence of PLAYBACK,
                 # not on LOADED_MEDIA. base.py's handle_media_state_change

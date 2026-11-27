@@ -128,6 +128,23 @@ class TestLikesQueryE2E(unittest.TestCase):
                              "http://example.com/fav.mp3")
             self.assertEqual(data["entries"][0]["title"], "Favourite")
 
+    def test_unliked_track_is_removed_from_the_query(self):
+        with OCPPlayerHarness() as h:
+            h.player.media.likes = LikedSongsStore(store=_FakeStore())
+
+            h.bus.emit(Message("ovos.common_play.like",
+                               {"uri": "http://example.com/fav.mp3",
+                                "title": "Favourite", "artist": "Someone"}))
+            time.sleep(0.05)
+            self.assertEqual(len(_query(h, "ovos.common_play.likes")["entries"]), 1)
+
+            h.bus.emit(Message("ovos.common_play.unlike",
+                               {"uri": "http://example.com/fav.mp3"}))
+            time.sleep(0.05)
+
+            data = _query(h, "ovos.common_play.likes")
+            self.assertEqual(data, {"entries": []})
+
     def test_empty_when_nothing_liked(self):
         with OCPPlayerHarness() as h:
             h.player.media.likes = LikedSongsStore(store=_FakeStore())

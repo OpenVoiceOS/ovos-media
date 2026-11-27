@@ -147,14 +147,22 @@ class OPMBackendAdapter(PlayerAdapter):
 
     def deactivate(self) -> None:
         # a leftover `current` is enough for a later, unrelated LOADED_MEDIA
-        # event to revive this backend and leave two backends playing at once
-        if self.service.current is None:
+        # event to revive this backend and leave two backends playing at once.
+        # Currency is cleared under service_lock *before* stop() is called, so
+        # any report the dying backend makes - synchronous or from its own
+        # watcher thread - fails the currency check in
+        # _handle_backend_event instead of masquerading as the event of the
+        # track that has since taken over.
+        with self.service.service_lock:
+            current = self.service.current
+            self.service.current = None
+            self.service._current_uri = None
+        if current is None:
             return
         try:
-            self.service.current.stop()
+            current.stop()
         except Exception as e:
             LOG.exception(f"Failed to stop inactive {self.namespace} backend: {e}")
-        self.service.current = None
 
 
 class SkillPlayerAdapter(PlayerAdapter):

@@ -86,6 +86,24 @@ class TestEviction(unittest.TestCase):
         self.assertIn("http://newer.mp3", store)
         self.assertIn("http://newest.mp3", store)
 
+    def test_small_bound_still_evicts_by_play_count(self):
+        # the recency exemption scales with the bound: on a small store a
+        # flat window would exempt nearly every row and evict a many-play
+        # favourite while one-play tracks survive
+        rows = {f"http://t{i}.mp3": {"title": f"T{i}", "play_count": 1,
+                                     "last_played": 10 + i}
+                for i in range(19)}
+        rows["http://favourite.mp3"] = {"title": "Fav", "play_count": 50,
+                                        "last_played": 1}
+        store = _FakeStore(rows)
+        history = PlayHistoryStore(store, max_entries=20)
+
+        history.record_play({"uri": "http://new.mp3", "title": "New"})
+
+        self.assertIn("http://favourite.mp3", store)
+        self.assertIn("http://new.mp3", store)
+        self.assertEqual(len(store), 20)
+
     def test_replaying_an_existing_uri_at_capacity_does_not_evict(self):
         store = _FakeStore({
             "http://a.mp3": {"title": "A", "play_count": 1, "last_played": 1},
@@ -280,12 +298,28 @@ class TestPlayerPlayRecordsHistory(unittest.TestCase):
 
 
 class TestEvictionExemptsRecentWindow(unittest.TestCase):
-    """A brand-new track (play_count 1) must not be evicted by its own
-    successor once the store saturates - that would make "recently
-    played" degenerate to one fresh entry plus a wall of old high-count
-    tracks."""
+    """The recency exemption scales with the bound: the freshest plays
+    are safe from their own successors, while high-play favourites still
+    outlive a stream of one-play tracks — neither recency nor counts may
+    wholly own eviction."""
 
-    def test_new_tracks_all_survive_after_saturation(self):
+    def test_default_bound_keeps_a_full_stream_of_new_tracks(self):
+        store = _FakeStore({
+            f"http://old{i}.mp3": {"title": f"Old{i}", "play_count": 50,
+                                   "last_played": i}
+            for i in range(500)
+        })
+        history = PlayHistoryStore(store)
+
+        for i in range(5):
+            history.record_play({"uri": f"http://new{i}.mp3",
+                                 "title": f"New{i}"})
+
+        recent_uris = {e.uri for e in history.recent(limit=10)}
+        for i in range(5):
+            self.assertIn(f"http://new{i}.mp3", recent_uris)
+
+    def test_small_bound_keeps_the_freshest_and_the_favourites(self):
         store = _FakeStore({
             f"http://old{i}.mp3": {"title": f"Old{i}", "play_count": 50,
                                    "last_played": i}
@@ -297,9 +331,11 @@ class TestEvictionExemptsRecentWindow(unittest.TestCase):
             history.record_play({"uri": f"http://new{i}.mp3",
                                  "title": f"New{i}"})
 
-        recent_uris = {e.uri for e in history.recent(limit=10)}
-        for i in range(5):
-            self.assertIn(f"http://new{i}.mp3", recent_uris)
+        recent_uris = [e.uri for e in history.recent(limit=10)]
+        # the freshest play always survives its own insert
+        self.assertEqual(recent_uris[0], "http://new4.mp3")
+        # and a many-play favourite is never wiped out by one-play tracks
+        self.assertTrue(any(u.startswith("http://old") for u in recent_uris))
 
 
 class TestPlayerLazyHistoryConstruction(unittest.TestCase):

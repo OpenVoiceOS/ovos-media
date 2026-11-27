@@ -25,11 +25,11 @@ class PlayHistoryStore:
     """Play history, keyed by uri, persisted as JSON.
 
     Bounded to ``max_entries`` uris. Once full, ``record_play`` evicts a
-    victim to make room for the new/updated uri: the ``DEFAULT_RECENT_LIMIT``
-    most-recently-played entries are exempt (evicting them would starve
-    ``recent()``, which is exactly the window it reads), and among the
-    rest the lowest play_count is evicted, oldest last_played breaking
-    ties.
+    victim to make room for the new/updated uri: the most-recently-played
+    entries are exempt (evicting them would starve ``recent()``), with the
+    exemption scaled to the bound and capped at ``DEFAULT_RECENT_LIMIT``;
+    among the rest the lowest play_count is evicted, oldest last_played
+    breaking ties.
     """
 
     def __init__(self, store=None,
@@ -99,7 +99,7 @@ class PlayHistoryStore:
         """Drop a victim uri to make room for a new one. Caller holds the
         lock.
 
-        The ``DEFAULT_RECENT_LIMIT`` most-recently-played uris are exempt:
+        The most-recently-played uris are exempt:
         without this, every brand-new track (play_count 1) is the global
         lowest count and gets evicted by its own successor the moment the
         store saturates, so "recently played" would degenerate to one
@@ -117,11 +117,16 @@ class PlayHistoryStore:
         if not rows:
             return
         by_recency = sorted(rows, key=lambda r: r[1], reverse=True)
-        # capped at max_entries - 1 so at least one candidate always
-        # remains evictable, even on a store smaller than the recent
-        # window - otherwise every row would be exempt and eviction could
-        # never make room for the very insert that triggered it
-        exempt_count = min(DEFAULT_RECENT_LIMIT, self.max_entries - 1)
+        # a tenth of the bound, capped at the recent window: on a small
+        # max_entries a flat window would swallow nearly every row and
+        # degrade eviction to pure recency, evicting a many-play
+        # favourite while one-play tracks survive. Floored at 1 so
+        # recency keeps meaning, and always leaving at least one
+        # evictable candidate so eviction can make room for the very
+        # insert that triggered it.
+        exempt_count = min(DEFAULT_RECENT_LIMIT,
+                           max(1, self.max_entries // 10),
+                           self.max_entries - 1)
         exempt = {uri for _, _, uri in by_recency[:exempt_count]}
         candidates = [r for r in rows if r[2] not in exempt] or rows
         candidates.sort(key=lambda c: (c[0], c[1]))
