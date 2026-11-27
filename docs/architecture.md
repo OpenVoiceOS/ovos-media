@@ -74,8 +74,12 @@ behind "recently played"/"most played" (see [Configuration](configuration.md#pla
 and `KeywordRegistrar` teaches the OCP pipeline the
 liked-song and history-playlist keywords. `PlayQueue` owns the user queue, the identity
 of the selected entry and the uris that failed to load, and answers which
-track comes next; what to do with that answer — repeat, autoplay, stop —
-stays with the player.
+track comes next; what to do with that answer — repeat-track, autoplay, stop —
+stays with the player. The queue is a `PlayTree` (`ovos_media/player/tree.py`):
+a nested playlist is an internal node, and next and previous move by leaf.
+The global shuffle and repeat flags are the policy of the root node. A nested
+node can have its own order and repeat policy. Every bus field reads the
+leaves as one flat list in traversal order.
 
 Every subscription `MediaService`, `OCPMediaPlayer`, `NowPlaying` and
 `MediaCatalog` make lives in the bus edge, `ovos_media/bus/api.py`.

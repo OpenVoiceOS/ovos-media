@@ -14,6 +14,7 @@ from ovos_media.bus.schemas import (decode_media, decode_media_state,
                                     decode_track_position, validated_entries)
 from ovos_media.player.queue import (AllFailed, KeepCurrent, PlayQueue,
                                      QueueEnd)
+from ovos_media.player.tree import Order, Repeat
 from ovos_media.player.now_playing import NowPlaying
 from ovos_media.player.adapters import OPMBackendAdapter, SkillPlayerAdapter
 from ovos_media.player.roster import PlayerRoster
@@ -100,9 +101,7 @@ class OCPMediaPlayer:
         self._validate_source_override: Optional[bool] = validate_source
 
         self.state: PlayerState = PlayerState.STOPPED
-        self.loop_state: LoopState = LoopState.NONE
         self.media_state: MediaState = MediaState.NO_MEDIA
-        self.shuffle: bool = False
         self.track_history: dict = {}  # Dict of track URI to play count
         # MediaService injects the store it also gives the voice skill; a
         # player built on its own has no one to share with, so it opens the
@@ -116,6 +115,8 @@ class OCPMediaPlayer:
             bus=bus, likes=likes if likes is not None else LikedSongsStore(),
             history=history)
         self._init_runtime_state()
+        self.loop_state = LoopState.NONE
+        self.shuffle = False
         # the owned queue, also the container the rest of the world reads as
         # "the playlist" (bus status, MPRIS track list)
         self.playlist: PlayQueue = self._queue
@@ -254,6 +255,31 @@ class OCPMediaPlayer:
         ])
 
     # views on the owned queue's bookkeeping
+    @property
+    def shuffle(self) -> bool:
+        """The root node's order policy."""
+        return self._queue.root.order == Order.SHUFFLED
+
+    @shuffle.setter
+    def shuffle(self, value: bool):
+        self._queue.root.order = Order.SHUFFLED if value else Order.SEQUENTIAL
+
+    @property
+    def loop_state(self) -> LoopState:
+        """REPEAT is the root node's repeat policy; REPEAT_TRACK replays the
+        current leaf and is no node policy."""
+        if self._queue.repeat_track:
+            return LoopState.REPEAT_TRACK
+        if self._queue.root.repeat == Repeat.REPEAT:
+            return LoopState.REPEAT
+        return LoopState.NONE
+
+    @loop_state.setter
+    def loop_state(self, state: LoopState):
+        self._queue.repeat_track = state == LoopState.REPEAT_TRACK
+        self._queue.root.repeat = Repeat.REPEAT if state == LoopState.REPEAT \
+            else Repeat.NONE
+
     @property
     def _current_entry(self) -> Optional[MediaEntry]:
         return self._queue.current
@@ -454,8 +480,7 @@ class OCPMediaPlayer:
             return None, "shuffle"
         queue = self._merged_queue()
         selection = self._queue.select_next(
-            queue, uri=self._locator_uri(), position=self._locator_position(),
-            repeat=self.loop_state == LoopState.REPEAT)
+            queue, uri=self._locator_uri(), position=self._locator_position())
         if isinstance(selection, (QueueEnd, AllFailed)):
             return None, None
         return selection, None
@@ -1043,8 +1068,7 @@ class OCPMediaPlayer:
         """
         pick = self._queue.select_shuffle(
             self._merged_queue(),
-            current_uri=self.now_playing.uri if self.now_playing else None,
-            repeat=self.loop_state == LoopState.REPEAT)
+            current_uri=self.now_playing.uri if self.now_playing else None)
         if isinstance(pick, QueueEnd):
             return False
         if isinstance(pick, KeepCurrent):
@@ -1130,8 +1154,7 @@ class OCPMediaPlayer:
         queue = self._merged_queue()
         selection = self._queue.select_next(
             queue, uri=self._locator_uri(finished_uri),
-            position=self._locator_position(),
-            repeat=self.loop_state == LoopState.REPEAT)
+            position=self._locator_position())
 
         if isinstance(selection, AllFailed):
             # never restart a queue in which every track has already failed

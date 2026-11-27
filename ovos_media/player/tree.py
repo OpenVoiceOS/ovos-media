@@ -9,7 +9,7 @@ non-empty ``playlist`` array in its wire dict is always internal — leaves and
 The three familiar buffers become views of the tree, not separate storage:
 
 - **Currently Playing** is the active leaf (:attr:`PlayTree.cursor`) plus the
-  preload window a caller reads by walking :meth:`PlayTree.next_leaf` ahead
+  preload window a caller reads by walking :meth:`PlayTree.sibling_leaf` ahead
   without moving the cursor.
 - **Playlist** is :meth:`PlayTree.flatten` from the cursor onward — the flat,
   wire-facing projection of the tree in its current traversal order.
@@ -27,7 +27,7 @@ sub-playlist" policy coexist with a shuffled parent. The one exception is
 repeat-one (replay the same leaf forever): that is not a node property, it is
 a cursor-level behaviour — it does not change what the traversal considers
 "next", it just means the caller re-selects the current leaf instead of
-calling :meth:`next_leaf` at all. :class:`PlayTree` therefore only exposes
+calling :meth:`step` at all. :class:`PlayTree` therefore only exposes
 node-level ``REPEAT`` (cycle the node's children when traversal exhausts
 them); repeat-one is the caller's job. A repeating node with exactly one leaf
 repeats by replaying that leaf — that IS correct node-repeat semantics for a
@@ -323,51 +323,41 @@ class PlayTree:
         return live[0]
 
     # depth-first leaf traversal honoring each node's order policy
-    def _next_sibling_leaf(self, node: PlayNode) -> Union[PlayNode, TreeEnd]:
-        just_finished = node
+    def sibling_leaf(self, node: PlayNode, forward: bool = True,
+                     stop: Optional[PlayNode] = None) -> Union[PlayNode, TreeEnd]:
+        """The leaf after (or before) *node* in traversal order.
+
+        Climbs no higher than *stop*: the climb ends with ``TREE_END`` when
+        it reaches *stop*, and *stop*'s own order and repeat policy are
+        never applied.
+        """
+        edge_leaf = self._first_leaf if forward else self._last_leaf
         child = node
         parent = node.parent
-        while parent is not None:
+        while parent is not None and parent is not stop:
             order = parent.child_order()
             pos = order.index(parent.children.index(child))
-            for idx in order[pos + 1:]:
-                leaf = self._first_leaf(parent.children[idx])
+            rest = order[pos + 1:] if forward else reversed(order[:pos])
+            for idx in rest:
+                leaf = edge_leaf(parent.children[idx])
                 if leaf is not None:
                     return leaf
             # exhausted this level: cycle it if it repeats and still has a
-            # live leaf somewhere under it, else climb. *just_finished* is
-            # always the originating leaf, not the intermediate node climbed
-            # through - comparing against an internal node here would never
-            # detect a real replay and silently defeat the collision guard.
+            # live leaf somewhere under it, else climb. The collision guard
+            # compares against the originating leaf *node*, never against
+            # an internal node climbed through.
             if parent.repeat == Repeat.REPEAT and not parent.all_leaves_failed:
-                leaf = self._repeat_reentry_leaf(parent, just_finished)
+                leaf = self._repeat_reentry_leaf(parent, node,
+                                                 reverse=not forward)
                 if leaf is not None:
                     return leaf
             child = parent
             parent = parent.parent
         return TREE_END
 
-    def _prev_sibling_leaf(self, node: PlayNode) -> Union[PlayNode, TreeEnd]:
-        just_finished = node
-        child = node
-        parent = node.parent
-        while parent is not None:
-            order = parent.child_order()
-            pos = order.index(parent.children.index(child))
-            for idx in reversed(order[:pos]):
-                leaf = self._last_leaf(parent.children[idx])
-                if leaf is not None:
-                    return leaf
-            if parent.repeat == Repeat.REPEAT and not parent.all_leaves_failed:
-                leaf = self._repeat_reentry_leaf(parent, just_finished, reverse=True)
-                if leaf is not None:
-                    return leaf
-            child = parent
-            parent = parent.parent
-        return TREE_END
-
-    def next_leaf(self, skip_failed: bool = True) -> Union[PlayNode, TreeEnd, AllFailed]:
-        """Advance the cursor to the next leaf, depth-first.
+    def step(self, forward: bool = True,
+             skip_failed: bool = True) -> Union[PlayNode, TreeEnd, AllFailed]:
+        """Move the cursor to the next (or previous) leaf, depth-first.
 
         Failed leaves are skipped when *skip_failed*. Returns ``ALL_FAILED``
         if every leaf under the root has failed, ``TREE_END`` if traversal
@@ -381,7 +371,7 @@ class PlayTree:
         seen = 0
         total = len(self.flatten())
         while True:
-            nxt = self._next_sibling_leaf(node)
+            nxt = self.sibling_leaf(node, forward)
             if isinstance(nxt, TreeEnd):
                 return TREE_END
             if not (skip_failed and nxt.failed):
@@ -390,32 +380,9 @@ class PlayTree:
             node = nxt
             seen += 1
             if seen > total:
-                # shouldn't normally trigger: a repeating node whose leaves
-                # are all failed climbs out instead of cycling (see
-                # _next_sibling_leaf) - kept as a defensive bound so a
-                # pathological tree degrades to a clean sentinel instead of
-                # spinning, and still only reports ALL_FAILED if the root
-                # actually is
-                return ALL_FAILED if self.root.all_leaves_failed else TREE_END
-
-    def prev_leaf(self, skip_failed: bool = True) -> Union[PlayNode, TreeEnd, AllFailed]:
-        if self.cursor is None:
-            return TREE_END
-        if skip_failed and self.root.all_leaves_failed:
-            return ALL_FAILED
-        node = self.cursor
-        seen = 0
-        total = len(self.flatten())
-        while True:
-            prev = self._prev_sibling_leaf(node)
-            if isinstance(prev, TreeEnd):
-                return TREE_END
-            if not (skip_failed and prev.failed):
-                self.cursor = prev
-                return prev
-            node = prev
-            seen += 1
-            if seen > total:
+                # a repeating node whose leaves all failed climbs out
+                # instead of cycling, so this bound only stops a
+                # pathological tree from spinning
                 return ALL_FAILED if self.root.all_leaves_failed else TREE_END
 
     def mark_failed(self, leaf: PlayNode) -> None:
@@ -524,7 +491,7 @@ class PlayTree:
         return None
 
     def _peek_next_slot(self, node: PlayNode) -> Optional[PlayNode]:
-        """Like ``_next_sibling_leaf`` but may return an unexpanded internal
+        """Like :meth:`sibling_leaf` but may return an unexpanded internal
         node instead of only leaves, since that node has no leaves yet."""
         child = node
         parent = node.parent

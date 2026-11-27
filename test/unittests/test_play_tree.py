@@ -99,20 +99,20 @@ class TestTraversal(unittest.TestCase):
 
     def test_next_crosses_from_child_playlist_into_next_sibling(self):
         tree = self._tree()
-        self.assertEqual(tree.next_leaf().entry["uri"], "b")
+        self.assertEqual(tree.step().entry["uri"], "b")
         # end of Disc 1's own children - must cross up into root's next
         # sibling ("c"), not stop at the album boundary
-        self.assertEqual(tree.next_leaf().entry["uri"], "c")
-        self.assertIs(tree.next_leaf(), TREE_END)
+        self.assertEqual(tree.step().entry["uri"], "c")
+        self.assertIs(tree.step(), TREE_END)
 
     def test_prev_crosses_back_into_previous_sibling(self):
         tree = self._tree()
-        tree.next_leaf()
-        tree.next_leaf()
+        tree.step()
+        tree.step()
         self.assertEqual(tree.cursor.entry["uri"], "c")
-        self.assertEqual(tree.prev_leaf().entry["uri"], "b")
-        self.assertEqual(tree.prev_leaf().entry["uri"], "a")
-        self.assertIs(tree.prev_leaf(), TREE_END)
+        self.assertEqual(tree.step(forward=False).entry["uri"], "b")
+        self.assertEqual(tree.step(forward=False).entry["uri"], "a")
+        self.assertIs(tree.step(forward=False), TREE_END)
 
     def test_shuffle_reorders_album_keeps_track_order_inside(self):
         entry = {"title": "root", "playlist": [
@@ -158,13 +158,13 @@ class TestTraversal(unittest.TestCase):
         for c in root.children:
             c.parent = root
         tree = PlayTree(root)
-        self.assertEqual(tree.next_leaf().entry["uri"], "b")
+        self.assertEqual(tree.step().entry["uri"], "b")
         # exhausted - REPEAT cycles back to the node's own first leaf
-        self.assertEqual(tree.next_leaf().entry["uri"], "a")
+        self.assertEqual(tree.step().entry["uri"], "a")
 
     def test_repeat_one_is_a_cursor_level_concern_not_a_node_flag(self):
         # repeat-one has no PlayTree method: the caller just re-reads
-        # tree.cursor instead of calling next_leaf(); the tree itself never
+        # tree.cursor instead of calling step(); the tree itself never
         # changes cursor on its own
         tree = self._tree()
         before = tree.cursor
@@ -177,7 +177,7 @@ class TestFailure(unittest.TestCase):
         entry = {"title": "root", "playlist": [leaf("a"), leaf("b"), leaf("c")]}
         tree = PlayTree(PlayNode.from_entry(entry))
         tree.mark_failed(tree.root.children[1])
-        self.assertEqual(tree.next_leaf().entry["uri"], "c")
+        self.assertEqual(tree.step().entry["uri"], "c")
 
     def test_internal_node_all_failed_when_every_leaf_failed(self):
         entry = album("Disc 1", "a", "b")
@@ -193,7 +193,7 @@ class TestFailure(unittest.TestCase):
         tree = PlayTree(PlayNode.from_entry(entry))
         for leaf_node in tree.flatten():
             tree.mark_failed(leaf_node)
-        self.assertIs(tree.next_leaf(), ALL_FAILED)
+        self.assertIs(tree.step(), ALL_FAILED)
 
 
 class TestGraft(unittest.TestCase):
@@ -263,7 +263,7 @@ class TestRepeatUnderShuffle(unittest.TestCase):
             only = PlayNode(entry=leaf("a"))
             root.add_child(only)
             tree = PlayTree(root)
-            self.assertIs(tree.next_leaf(), only, f"seed {seed}")
+            self.assertIs(tree.step(), only, f"seed {seed}")
 
     def test_multi_child_shuffled_repeat_never_escapes_to_treeend(self):
         # a repeating shuffled node with several leaves must keep producing
@@ -276,7 +276,7 @@ class TestRepeatUnderShuffle(unittest.TestCase):
                 root.add_child(PlayNode(entry=leaf(u)))
             tree = PlayTree(root)
             for _ in range(6):
-                nxt = tree.next_leaf()
+                nxt = tree.step()
                 self.assertIsInstance(nxt, PlayNode, f"seed {seed}")
 
 
@@ -296,7 +296,7 @@ class TestFailedRepeatingNodeClimbsOut(unittest.TestCase):
         tree = PlayTree(root)
         tree.mark_failed(dead_album.children[0])
         tree.mark_failed(dead_album.children[1])
-        self.assertIs(tree.next_leaf(), live)
+        self.assertIs(tree.step(), live)
 
 
 class TestChildlessNodesAndEmptyTrees(unittest.TestCase):
@@ -341,8 +341,8 @@ class TestChildlessNodesAndEmptyTrees(unittest.TestCase):
         tree = PlayTree(PlayNode.from_entry(payload))
         self.assertIsNone(tree.cursor)
         self.assertEqual(tree.size(), 0)
-        self.assertIs(tree.next_leaf(), TREE_END)
-        self.assertIs(tree.prev_leaf(), TREE_END)
+        self.assertIs(tree.step(), TREE_END)
+        self.assertIs(tree.step(forward=False), TREE_END)
 
 
 class TestGraftIntoShuffledNode(unittest.TestCase):
@@ -356,7 +356,7 @@ class TestGraftIntoShuffledNode(unittest.TestCase):
         # force the permutation to materialize, then move a couple of steps
         # into it so there is a real "already played" prefix
         tree.flatten()
-        tree.next_leaf()
+        tree.step()
         prefix_before = tree.flatten()[:tree.position() + 1]
         cursor_before = tree.cursor
         position_before = tree.position()
@@ -379,7 +379,7 @@ class TestGraftIntoShuffledNode(unittest.TestCase):
                 root.add_child(PlayNode(entry=leaf(u)))
             tree = PlayTree(root)
             tree.flatten()
-            tree.next_leaf()
+            tree.step()
             position_before = tree.position()
             tree.graft([leaf("new")], parent=root)
             flat_after = tree.flatten()
@@ -413,7 +413,7 @@ class TestLiveLeafCollisionGuard(unittest.TestCase):
     def test_one_live_leaf_among_failed_siblings_always_repeats(self):
         # random.seed(59): a shuffled repeat node whose 3 failed leaves sit
         # in their own subtrees (not flat siblings) plus one live leaf -
-        # calling next_leaf() repeatedly must always land back on the live
+        # calling step() repeatedly must always land back on the live
         # leaf, never TREE_END. Against the round-2 collision guard (which
         # counted ALL leaves, not live ones, for its single-leaf shortcut)
         # this shape hits TREE_END at call 15; seed 0 hits it at call 8.
@@ -433,14 +433,14 @@ class TestLiveLeafCollisionGuard(unittest.TestCase):
         root.add_child(PlayNode(entry=leaf("elsewhere")))
         tree = PlayTree(root)
         for _ in range(30):
-            nxt = tree.next_leaf()
+            nxt = tree.step()
             self.assertIs(nxt, live)
 
     def test_collision_guard_sees_the_leaf_not_the_internal_node_climbed(self):
         # the repeat node's children are themselves internal nodes (albums),
         # not flat leaves - a guard comparing against the intermediate node
         # instead of the actual leaf would never detect a real replay. The
-        # first next_leaf() is an ordinary forward walk (still one sibling
+        # first step() is an ordinary forward walk (still one sibling
         # left); the SECOND is what exhausts outer's order and exercises the
         # collision guard - that boundary is where "just_finished" must be
         # the actual leaf, not the sub-album node climbed through.
@@ -459,9 +459,9 @@ class TestLiveLeafCollisionGuard(unittest.TestCase):
             random.seed(seed)
             fresh = copy.deepcopy(outer)
             t = PlayTree(fresh)
-            t.next_leaf()
+            t.step()
             before = t.cursor.entry["uri"]
-            after = t.next_leaf().entry["uri"]
+            after = t.step().entry["uri"]
             # only two leaves exist - "replay" means the traversal handed
             # back the same leaf it just finished despite the other one
             # being available
@@ -475,7 +475,7 @@ class TestLiveLeafCollisionGuard(unittest.TestCase):
 
 
 class TestRetryConsistency(unittest.TestCase):
-    """next_leaf() must be a pure function of (tree state, RNG draws): two
+    """step() must be a pure function of (tree state, RNG draws): two
     calls from an identical starting state must agree."""
 
     @staticmethod
@@ -516,9 +516,9 @@ class TestRetryConsistency(unittest.TestCase):
             tree_b.cursor = self._node_at(clone_b, cursor_path)
 
             random.seed(1000 + seed)
-            result_a = tree_a.next_leaf()
+            result_a = tree_a.step()
             random.seed(1000 + seed)
-            result_b = tree_b.next_leaf()
+            result_b = tree_b.step()
 
             uri_a = result_a.entry["uri"] if isinstance(result_a, PlayNode) else result_a
             uri_b = result_b.entry["uri"] if isinstance(result_b, PlayNode) else result_b
@@ -527,7 +527,7 @@ class TestRetryConsistency(unittest.TestCase):
 
 class TestFuzzNoDeadSentinelWithLiveLeaves(unittest.TestCase):
     """4000 random trees, ~70% leaf failure injection: as long as a live
-    leaf exists, next_leaf() must never report TREE_END or ALL_FAILED, must
+    leaf exists, step() must never report TREE_END or ALL_FAILED, must
     never hand back a failed leaf, and must agree with itself when replayed
     from a cloned, unadvanced state."""
 
@@ -582,9 +582,9 @@ class TestFuzzNoDeadSentinelWithLiveLeaves(unittest.TestCase):
                 tree_b.cursor = self._node_at(clone_b, cursor_path)
 
                 random.seed(seed * 100 + i)
-                result_a = tree_a.next_leaf()
+                result_a = tree_a.step()
                 random.seed(seed * 100 + i)
-                result_b = tree_b.next_leaf()
+                result_b = tree_b.step()
 
                 uri_a = result_a.entry["uri"] if isinstance(result_a, PlayNode) else result_a
                 uri_b = result_b.entry["uri"] if isinstance(result_b, PlayNode) else result_b
@@ -609,11 +609,11 @@ class TestFuzzNoDeadSentinelWithLiveLeaves(unittest.TestCase):
 class TestAllFailedSpinGuardExit(unittest.TestCase):
 
     def test_all_failed_reported_via_top_level_check(self):
-        # the seen>total bailout at the bottom of next_leaf is a defensive
+        # the seen>total bailout at the bottom of step() is a defensive
         # bound that only ever agrees with the top-of-function
         # root.all_leaves_failed check (nothing mutates failure state mid
         # traversal, so the condition can't change between the two) - this
-        # pins next_leaf's observable contract (ALL_FAILED exactly when the
+        # pins step()'s observable contract (ALL_FAILED exactly when the
         # root has no live leaf) regardless of which check produces it
         root = PlayNode(title="root", repeat=Repeat.REPEAT)
         for u in ("a", "b", "c"):
@@ -621,8 +621,8 @@ class TestAllFailedSpinGuardExit(unittest.TestCase):
             dead.failed = True
             root.add_child(dead)
         tree = PlayTree(root)
-        self.assertIs(tree.next_leaf(), ALL_FAILED)
-        self.assertIs(tree.prev_leaf(), ALL_FAILED)
+        self.assertIs(tree.step(), ALL_FAILED)
+        self.assertIs(tree.step(forward=False), ALL_FAILED)
 
 
 class TestPropertyStyle(unittest.TestCase):
@@ -647,7 +647,7 @@ class TestPropertyStyle(unittest.TestCase):
             expected = tree.flatten()
             visited = [tree.cursor]
             while True:
-                nxt = tree.next_leaf()
+                nxt = tree.step()
                 if nxt is TREE_END:
                     break
                 visited.append(nxt)
