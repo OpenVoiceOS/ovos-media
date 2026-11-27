@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/3.1.0a1) (2026-11-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/3.0.0a1...3.1.0a1)
+
+**Merged pull requests:**
+
+- feat: voice intents for like, repeat, seek, shuffle state and queue peek [\#209](https://github.com/OpenVoiceOS/ovos-media/pull/209) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [3.0.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/3.0.0a1) (2026-11-27)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.5a2...3.0.0a1)
@@ -176,19 +184,19 @@
 
 ## [2.1.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.1a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.1a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.1.1a1)
 
 **Merged pull requests:**
 
 - fix: emit the previous-track verb the workshop base class listens on [\#182](https://github.com/OpenVoiceOS/ovos-media/pull/182) ([JarbasAl](https://github.com/JarbasAl))
 
-## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.1.0a1...2.0.2a1)
-
 ## [2.1.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.1.0a1) (2026-08-31)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.1.0a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.2a1...2.1.0a1)
+
+## [2.0.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.0.2a1) (2026-08-31)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.0.1a2...2.0.2a1)
 
 **Merged pull requests:**
 
@@ -358,10 +366,6 @@
 ## [0.4.19a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.19a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.18a1...0.4.19a1)
-
-**Merged pull requests:**
-
-- fix: sanitize nested playlists, clamp MPRIS position, dispatch video seek [\#133](https://github.com/OpenVoiceOS/ovos-media/pull/133) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.18a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.18a1) (2026-08-14)
 
