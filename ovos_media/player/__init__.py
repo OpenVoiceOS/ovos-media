@@ -324,8 +324,14 @@ class OCPMediaPlayer:
 
     def _locator_uri(self, uri: str = None) -> Optional[str]:
         """The uri to locate the current track by, when entry identity does
-        not resolve it: an explicitly given one, else the now-playing uri."""
-        return uri or (self.now_playing.uri if self.now_playing else None)
+        not resolve it: an explicitly given one, else the now-playing uri as
+        the queue knows it. Once a '{sei}//...' entry plays, now_playing.uri
+        is the extracted stream and the queue's uri is original_uri."""
+        if uri:
+            return uri
+        if not self.now_playing:
+            return None
+        return self.now_playing.original_uri or self.now_playing.uri
 
     def _locator_position(self) -> Optional[int]:
         """The queue pointer, used as a locator hint when it agrees with the
@@ -1173,7 +1179,8 @@ class OCPMediaPlayer:
         if ended:
             # capture BEFORE the reset that clears both values
             playback_type = self.now_playing.playback
-            playback_uri = self.now_playing.uri
+            # the uri the queue knows the track by (see _locator_uri)
+            playback_uri = self.now_playing.original_uri or self.now_playing.uri
             stop_requested = self._stop_requested
             self.now_playing.on_end_of_media()
 
