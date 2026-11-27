@@ -1,5 +1,25 @@
 # Changelog
 
+## [4.0.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/4.0.0a1) (2026-11-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/3.4.0a1...4.0.0a1)
+
+**Breaking changes:**
+
+- refactor!: remove the unused PlayTree queue model [\#250](https://github.com/OpenVoiceOS/ovos-media/pull/250) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
+**Closed issues:**
+
+- PlayTree has no caller: two queue models on dev [\#242](https://github.com/OpenVoiceOS/ovos-media/issues/242)
+
+## [3.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/3.4.0a1) (2026-11-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/3.3.0a1...3.4.0a1)
+
+## [3.3.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/3.3.0a1) (2026-11-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/3.2.0a1...3.3.0a1)
+
 ## [3.2.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/3.2.0a1) (2026-11-27)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/3.1.0a1...3.2.0a1)
@@ -345,17 +365,9 @@
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.22a1...0.4.23a1)
 
-**Merged pull requests:**
-
-- fix: flatten nested/generator media\_types, guard backend name lookup, guard empty legacy play entries [\#141](https://github.com/OpenVoiceOS/ovos-media/pull/141) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.22a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.22a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.21a1...0.4.22a1)
-
-**Merged pull requests:**
-
-- fix: adult-filter set bypass, backend selection substring match, unlocked liked\_songs reader, play\_prev asymmetry [\#139](https://github.com/OpenVoiceOS/ovos-media/pull/139) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.21a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.21a1) (2026-08-14)
 
