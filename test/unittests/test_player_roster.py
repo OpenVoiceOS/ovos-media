@@ -120,9 +120,21 @@ class TestVerbRouting(unittest.TestCase):
         self.assertEqual(self._ids("seek", PlaybackType.AUDIO), ["opm:audio"])
         self.assertEqual(self._ids("seek", PlaybackType.UNDEFINED), ["opm:audio"])
         self.assertEqual(self._ids("seek", PlaybackType.VIDEO), ["opm:video"])
-        self.assertEqual(self._ids("seek", PlaybackType.SKILL), [])
         self.assertEqual(self._ids("seek", PlaybackType.WEBVIEW), [])
         self.assertEqual(self._ids("seek", PlaybackType.MPRIS), [])
+
+    def test_seek_for_skill_playback_depends_on_the_can_seek_declaration(self):
+        # OCP-1 §4.3.1: SKILL has no static seek route — whether it reaches
+        # the skill adapter depends on the caller's `can_seek` declaration
+        # lookup, not on the playback type alone
+        self.assertEqual(
+            [a.id for a in self.roster.route("seek", PlaybackType.SKILL,
+                                              can_seek=True)],
+            ["skill"])
+        self.assertEqual(
+            [a.id for a in self.roster.route("seek", PlaybackType.SKILL,
+                                              can_seek=False)],
+            [])
 
     def test_ducking_only_reaches_players_with_a_volume(self):
         self.assertEqual(self._ids("volume", PlaybackType.AUDIO), ["opm:audio"])

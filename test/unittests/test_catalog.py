@@ -95,6 +95,47 @@ class TestSkillRoster(unittest.TestCase):
             Message("ovos.common_play.skills.detach", {"skill_id": "nope"}))
         self.assertEqual(catalog.ocp_skills, {})
 
+
+class TestCanSeekDeclaration(unittest.TestCase):
+    """OCP-1 §4.3.1: only a literal `can_seek: true` on announce opts a
+    skill's rendering into seek delegation; everything else keeps the
+    player's non-seekable fallback."""
+
+    def test_can_seek_true_is_honoured(self):
+        catalog = MediaCatalog(FakeBus(), _likes())
+        _announce(catalog, skill_id="skill.f", can_seek=True)
+        self.assertTrue(catalog.can_seek("skill.f"))
+
+    def test_can_seek_false_is_honoured(self):
+        catalog = MediaCatalog(FakeBus(), _likes())
+        _announce(catalog, skill_id="skill.g", can_seek=False)
+        self.assertFalse(catalog.can_seek("skill.g"))
+
+    def test_can_seek_absent_defaults_false(self):
+        catalog = MediaCatalog(FakeBus(), _likes())
+        _announce(catalog, skill_id="skill.h")
+        self.assertFalse(catalog.can_seek("skill.h"))
+
+    def test_can_seek_truthy_but_not_boolean_is_rejected(self):
+        # "yes" and 1 are truthy in Python but not the boolean the spec asks
+        # for; only `True` itself opts the skill in
+        catalog = MediaCatalog(FakeBus(), _likes())
+        _announce(catalog, skill_id="skill.i", can_seek="yes")
+        _announce(catalog, skill_id="skill.j", can_seek=1)
+        self.assertFalse(catalog.can_seek("skill.i"))
+        self.assertFalse(catalog.can_seek("skill.j"))
+
+    def test_unknown_skill_is_not_seekable(self):
+        catalog = MediaCatalog(FakeBus(), _likes())
+        self.assertFalse(catalog.can_seek("never.announced"))
+
+    def test_detach_drops_the_can_seek_declaration(self):
+        catalog = MediaCatalog(FakeBus(), _likes())
+        _announce(catalog, skill_id="skill.k", can_seek=True)
+        catalog.handle_ocp_skill_detach(
+            Message("ovos.common_play.skills.detach", {"skill_id": "skill.k"}))
+        self.assertFalse(catalog.can_seek("skill.k"))
+
     def test_get_featured_skills_broadcasts_the_skills_get_request(self):
         bus = FakeBus()
         catalog = MediaCatalog(bus, _likes())

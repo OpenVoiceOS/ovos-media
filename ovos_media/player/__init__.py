@@ -569,9 +569,13 @@ class OCPMediaPlayer:
             # reads PlaybackStatus on the PropertiesChanged signal is told the
             # old state by the very Get the signal provoked.
             self.publish_snapshot()
-            self.mpris.update_props({"CanPause": state == PlayerState.PLAYING,
-                                     "CanPlay": state == PlayerState.PAUSED,
-                                     "PlaybackStatus": state2str[state]})
+            can_seek = self._resolve_can_seek(self.playback_type)
+            self.mpris.update_props(
+                {"CanPause": state == PlayerState.PLAYING,
+                 "CanPlay": state == PlayerState.PAUSED,
+                 "PlaybackStatus": state2str[state],
+                 "CanSeek": bool(self.roster.route("seek", self.playback_type,
+                                                    can_seek=can_seek))})
         # report full status to ovos-core, on the same session as the state
         # change that provoked it
         self.handle_status(self._play_msg_or_default("ovos.common_play.status"))
@@ -618,8 +622,11 @@ class OCPMediaPlayer:
             self.playlist.goto_track(self.now_playing)
 
         if self.mpris:
+            can_seek = self._resolve_can_seek(self.now_playing.playback)
             self.mpris.update_props(
-                {"Metadata": self.now_playing.mpris_metadata}
+                {"Metadata": self.now_playing.mpris_metadata,
+                 "CanSeek": bool(self.roster.route(
+                     "seek", self.now_playing.playback, can_seek=can_seek))}
             )
         # report full status to ovos-core, on the same session as the play
         # request that set this track
@@ -950,6 +957,10 @@ class OCPMediaPlayer:
         if self.mpris:
             self.mpris.update_props({"CanGoNext": self.can_next})
             self.mpris.update_props({"CanGoPrevious": self.can_prev})
+            can_seek = self._resolve_can_seek(playback_type)
+            self.mpris.update_props(
+                {"CanSeek": bool(self.roster.route("seek", playback_type,
+                                                    can_seek=can_seek))})
 
         if self.media_state != MediaState.INVALID_MEDIA:
             # An invalid stream - whether no adapter claimed the uri above,
@@ -1170,6 +1181,14 @@ class OCPMediaPlayer:
 
         self.set_player_state(PlayerState.PLAYING)
 
+    def _resolve_can_seek(self, playback_type: PlaybackType) -> bool:
+        """SKILL playback is seekable iff the playing skill declared
+        `can_seek: true` (OCP-1 §4.3.1); every other playback type defers
+        to the roster's own routing table."""
+        if playback_type != PlaybackType.SKILL:
+            return True
+        return self.media.can_seek(self.now_playing.skill_id)
+
     @staticmethod
     def _milliseconds(value, source: str,
                       zero_is_unknown: bool = False) -> Optional[int]:
@@ -1245,16 +1264,24 @@ class OCPMediaPlayer:
     def seek(self, position: int):
         """
         Request playback to go to a specific position in the current media.
-        Only AUDIO, UNDEFINED and VIDEO playback support seeking. SKILL
-        playback would require a new bus message to ask the skill to seek,
-        and MPRIS players have no seek passthrough - those types (and any
-        other unhandled one) are logged and dropped rather than silently
-        doing nothing.
+        AUDIO, UNDEFINED and VIDEO playback always support seeking. SKILL
+        playback only does when the rendering skill declared `can_seek: true`
+        on its announcement (OCP-1 §4.3.1); MPRIS players have no seek
+        passthrough - those types (and any other unhandled one) are logged
+        and dropped rather than silently doing nothing.
         @param position: milliseconds position to seek to
         """
         # adapters take milliseconds, matching the contract documented on
         # this method and on MediaBackend.set_track_position
-        adapters = self.roster.route("seek", self.playback_type)
+        # the same declaration is re-checked in SkillPlayerAdapter.seek()
+        # itself; a skill that detaches between this lookup and the adapter
+        # call can only make the declaration disappear (never reappear), so
+        # the race can drop an in-flight seek but never deliver one to a
+        # skill that never opted in - benign direction, accepted rather than
+        # gated with a lock.
+        can_seek = self._resolve_can_seek(self.playback_type)
+        adapters = self.roster.route("seek", self.playback_type,
+                                      can_seek=can_seek)
         if not adapters:
             LOG.warning(f"seek() is not supported for playback_type "
                         f"{self.playback_type}, ignoring")
@@ -1518,8 +1545,8 @@ class OCPMediaPlayer:
         if "seekValue" in seek:
             # absolute position, from the audio player GUI seekbar.
             # decode_seek only refuses non-numeric values, not negative
-            # ones, so a negative seekValue must still be floored here.
-            self.seek(max(0, seek["seekValue"]))
+            # or fractional ones, so a seekValue is floored and truncated here.
+            self.seek(int(max(0, seek["seekValue"])))
             return
         # relative offset, from the bus api
         position = self._roster_milliseconds(
@@ -1533,7 +1560,7 @@ class OCPMediaPlayer:
             return
         # a rewind past the start is the start; adapters take a position, and
         # a negative one is not one
-        self.seek(max(0, position + seek["seconds"] * 1000))
+        self.seek(int(max(0, position + seek["seconds"] * 1000)))
 
     def handle_next_request(self, message):
         self.play_next()
