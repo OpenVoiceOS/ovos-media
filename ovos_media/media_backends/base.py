@@ -148,10 +148,14 @@ class BaseMediaService:
         # — an orphaned timer used to survive a stop and fire into an
         # already shut-down service.
         self._deferred_stop_timer: Optional[threading.Timer] = None
-        # True from the load in _play() until self.current reports
-        # TRACK_START. An END_OF_MEDIA in that window ends the previous
-        # track, whatever uri the plugin attached to it.
-        self._awaiting_start = False
+        # True between a TRACK_START from self.current and the end or stop
+        # of that track.
+        self._track_running = False
+        # Set by _play() when it replaces a running track on the same
+        # backend: the first END_OF_MEDIA after the load can end the
+        # previous track (mpv reports end-file with the uri already
+        # changed), so exactly one is dropped. TRACK_START clears it.
+        self._drop_one_stale_eom = False
 
     def _emit(self, topic: str, data: Optional[dict] = None) -> None:
         """Emit *topic*/*data*, carrying the session of the play request
@@ -425,14 +429,21 @@ class BaseMediaService:
                               f"{backend.__class__.__name__}: reported uri "
                               f"{event_uri!r} does not match the currently "
                               f"loaded {self._current_uri!r}")
+                    if event == PlaybackEvent.END_OF_MEDIA:
+                        self._drop_one_stale_eom = False
                     return
-                if event == PlaybackEvent.END_OF_MEDIA and self._awaiting_start:
+                if event == PlaybackEvent.END_OF_MEDIA and self._drop_one_stale_eom:
+                    self._drop_one_stale_eom = False
                     LOG.debug(f"Ignoring END_OF_MEDIA from "
-                              f"{backend.__class__.__name__} before "
-                              f"TRACK_START of {self._current_uri!r}")
+                              f"{backend.__class__.__name__}: it ends the "
+                              f"track before {self._current_uri!r}")
                     return
+                self._track_running = False
             elif event == PlaybackEvent.TRACK_START:
-                self._awaiting_start = False
+                self._track_running = True
+                self._drop_one_stale_eom = False
+            elif event == PlaybackEvent.STOPPED:
+                self._track_running = False
 
         if event == PlaybackEvent.TRACK_START:
             # mirrors what the old handle_media_state_change emitted right
@@ -536,6 +547,8 @@ class BaseMediaService:
             current = self.current
             self.current = None
             self._current_uri = None
+            self._track_running = False
+            self._drop_one_stale_eom = False
         if current is None:
             return
         LOG.debug(f'stopping playing service: {current}')
@@ -692,9 +705,11 @@ class BaseMediaService:
 
         LOG.debug(f"Using {selected_service.__class__.__name__}")
         with self.service_lock:
+            self._drop_one_stale_eom = (selected_service is self.current
+                                        and self._track_running)
+            self._track_running = False
             self.current = selected_service
             self._current_uri = uri
-            self._awaiting_start = True
             self.play_start_time = time.monotonic()
 
         # bind_event_reporter is a plugin verb - never called while holding

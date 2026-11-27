@@ -1347,7 +1347,13 @@ class TestUriProvenanceGuardsStaleEvents(unittest.TestCase):
                                       "reached the wire after track 2 had "
                                       "already loaded on the same backend")
 
-    def test_end_of_media_before_track_start_is_dropped(self):
+    def _states(self, bus):
+        emitted = []
+        bus.on("ovos.common_play.media.state",
+               lambda m: emitted.append(m.data["state"]))
+        return emitted
+
+    def test_stale_end_after_track_change_on_same_backend_is_dropped(self):
         """mpv sets the new uri before it reports end-file for the old
         file, so the stale END_OF_MEDIA carries track 2's uri."""
         svc, bus = _make_base_svc(namespace="audio")
@@ -1358,17 +1364,36 @@ class TestUriProvenanceGuardsStaleEvents(unittest.TestCase):
         svc.play(t1)
         b.report(PlaybackEvent.TRACK_START)
         svc.play(t2)
-
-        emitted = []
-        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+        emitted = self._states(bus)
 
         b.report(PlaybackEvent.END_OF_MEDIA, uri=t2)
         self.assertEqual(emitted, [])
 
-        b.report(PlaybackEvent.TRACK_START)
         b.report(PlaybackEvent.END_OF_MEDIA, uri=t2)
-        self.assertEqual([m.data["state"] for m in emitted],
-                         [MediaState.END_OF_MEDIA])
+        self.assertEqual(emitted, [MediaState.END_OF_MEDIA])
+
+    def test_end_without_any_track_start_advances(self):
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="mpv")
+        svc.services = [b]
+        t1 = "http://example.com/track1.mp3"
+        svc.play(t1)
+        emitted = self._states(bus)
+
+        b.report(PlaybackEvent.END_OF_MEDIA, uri=t1)
+        self.assertEqual(emitted, [MediaState.END_OF_MEDIA])
+
+    def test_track_change_after_unstarted_track_drops_nothing(self):
+        svc, bus = _make_base_svc(namespace="audio")
+        b = _FullFakeBackend(uris=["http"], name="mpv")
+        svc.services = [b]
+        t1, t2 = "http://example.com/track1.mp3", "http://example.com/track2.mp3"
+        svc.play(t1)
+        svc.play(t2)
+        emitted = self._states(bus)
+
+        b.report(PlaybackEvent.END_OF_MEDIA, uri=t2)
+        self.assertEqual(emitted, [MediaState.END_OF_MEDIA])
 
     def test_error_before_track_start_still_surfaces(self):
         svc, bus = _make_base_svc(namespace="audio")
@@ -1376,13 +1401,10 @@ class TestUriProvenanceGuardsStaleEvents(unittest.TestCase):
         svc.services = [b]
         t1 = "http://example.com/track1.mp3"
         svc.play(t1)
-
-        emitted = []
-        bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
+        emitted = self._states(bus)
 
         b.report(PlaybackEvent.ERROR, uri=t1, error="cannot open")
-        self.assertEqual([m.data["state"] for m in emitted],
-                         [MediaState.INVALID_MEDIA])
+        self.assertEqual(emitted, [MediaState.INVALID_MEDIA])
 
     def test_event_without_uri_passes_through_documented_limitation(self):
         """A plugin that does not attach uri= gives the daemon nothing to
@@ -1395,8 +1417,6 @@ class TestUriProvenanceGuardsStaleEvents(unittest.TestCase):
 
         svc.play("http://example.com/track1.mp3")
         svc.play("http://example.com/track2.mp3")
-
-        b.report(PlaybackEvent.TRACK_START)
 
         emitted = []
         bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
@@ -1415,8 +1435,6 @@ class TestUriProvenanceGuardsStaleEvents(unittest.TestCase):
         svc.services = [b]
 
         svc.play("http://example.com/track1.mp3")
-
-        b.report(PlaybackEvent.TRACK_START)
 
         emitted = []
         bus.on("ovos.common_play.media.state", lambda m: emitted.append(m))
