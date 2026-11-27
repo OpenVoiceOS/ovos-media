@@ -180,7 +180,7 @@ class TestStaleStashDoesNotLeakAfterQueueExhaustion(unittest.TestCase):
 
         # the notify still carried the just-ended playback's session...
         p.media.notify_dialog.assert_called_once_with(
-            "queue.finished", None, satellite_msg)
+            "queue_finished", None, satellite_msg)
         # ...but the stash is cleared once the queue is known exhausted, so
         # a later, unrelated report (eg. an external MPRIS player taking
         # over) does not inherit a dead session
@@ -326,9 +326,9 @@ class TestDialogNotificationCarriesSession(unittest.TestCase):
         catalog.add_dialog_listener(listener)
         msg = _play_message()
 
-        catalog.notify_dialog("track.failed", message=msg)
+        catalog.notify_dialog("track_failed", message=msg)
 
-        listener.assert_called_once_with("track.failed", None, msg)
+        listener.assert_called_once_with("track_failed", None, msg)
 
     def test_notify_dialog_without_a_message_passes_none(self):
         """notify_dialog() always calls the listener with the (dialog,
@@ -343,9 +343,9 @@ class TestDialogNotificationCarriesSession(unittest.TestCase):
         listener = MagicMock()
         catalog.add_dialog_listener(listener)
 
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
-        listener.assert_called_once_with("track.failed", None, None)
+        listener.assert_called_once_with("track_failed", None, None)
 
     def test_skill_speaks_back_on_the_originating_session(self):
         """OCPVoiceSkill.handle_dialog_notification holds *message* as a
@@ -373,7 +373,7 @@ class TestDialogNotificationCarriesSession(unittest.TestCase):
         skill.speak_dialog = _fake_speak_dialog
         catalog.add_dialog_listener(skill.handle_dialog_notification)
 
-        catalog.notify_dialog("track.failed", message=msg)
+        catalog.notify_dialog("track_failed", message=msg)
 
         self.assertIs(found["message"], msg)
         self.assertEqual(_session_id(found["message"]), SATELLITE_SESSION)
@@ -404,7 +404,7 @@ class TestQueueExhaustionSpeaksOnTheSatelliteSession(unittest.TestCase):
             found["message"] = dig_for_message()
 
         def _listener(dialog, data=None, message=None):
-            if dialog == "queue.finished":
+            if dialog == "queue_finished":
                 _fake_speak_dialog(dialog, data)
 
         player.media.add_dialog_listener(_listener)
