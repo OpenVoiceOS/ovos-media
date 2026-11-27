@@ -148,6 +148,10 @@ class BaseMediaService:
         # — an orphaned timer used to survive a stop and fire into an
         # already shut-down service.
         self._deferred_stop_timer: Optional[threading.Timer] = None
+        # True from the load in _play() until self.current reports
+        # TRACK_START. An END_OF_MEDIA in that window ends the previous
+        # track, whatever uri the plugin attached to it.
+        self._awaiting_start = False
 
     def _emit(self, topic: str, data: Optional[dict] = None) -> None:
         """Emit *topic*/*data*, carrying the session of the play request
@@ -226,7 +230,7 @@ class BaseMediaService:
             LOG.exception(
                 f"{plug_name} raised TypeError while instantiating - it is "
                 f"likely a MediaBackend v1 plugin; ovos-media requires "
-                f"MediaBackend v2 (ovos-plugin-manager>=3.0.0a1) - upgrade "
+                f"MediaBackend v2 (ovos-plugin-manager>=3.1.0a1) - upgrade "
                 f"the plugin")
             return
         except Exception:
@@ -422,6 +426,13 @@ class BaseMediaService:
                               f"{event_uri!r} does not match the currently "
                               f"loaded {self._current_uri!r}")
                     return
+                if event == PlaybackEvent.END_OF_MEDIA and self._awaiting_start:
+                    LOG.debug(f"Ignoring END_OF_MEDIA from "
+                              f"{backend.__class__.__name__} before "
+                              f"TRACK_START of {self._current_uri!r}")
+                    return
+            elif event == PlaybackEvent.TRACK_START:
+                self._awaiting_start = False
 
         if event == PlaybackEvent.TRACK_START:
             # mirrors what the old handle_media_state_change emitted right
@@ -683,6 +694,7 @@ class BaseMediaService:
         with self.service_lock:
             self.current = selected_service
             self._current_uri = uri
+            self._awaiting_start = True
             self.play_start_time = time.monotonic()
 
         # bind_event_reporter is a plugin verb - never called while holding
@@ -720,7 +732,7 @@ class BaseMediaService:
             LOG.error(f"{selected_service.__class__.__name__}.load_track() "
                       f"returned None - likely a MediaBackend v1 plugin "
                       f"(ovos-media requires MediaBackend v2, "
-                      f"ovos-plugin-manager>=3.0.0a1) - upgrade the plugin. "
+                      f"ovos-plugin-manager>=3.1.0a1) - upgrade the plugin. "
                       f"Treating as a failed load.")
             loaded = False
 

@@ -102,6 +102,7 @@ class TestNonAdvancingEndReachesStopped(unittest.TestCase):
         player.play()
         self.assertEqual(player.state, PlayerState.PLAYING)
 
+        backend._reporter(PlaybackEvent.TRACK_START)
         backend._reporter(PlaybackEvent.END_OF_MEDIA)
 
         deadline = time.monotonic() + 3
