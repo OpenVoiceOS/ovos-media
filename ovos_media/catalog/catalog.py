@@ -21,16 +21,25 @@ from ovos_utils.log import LOG
 from ovos_utils.ocp import MediaType, Playlist
 
 from ovos_media.bus.schemas import flatten_media_types
+from ovos_media.catalog.history import PlayHistoryStore
 from ovos_media.catalog.likes import LikedSongsStore
 
 
 class MediaCatalog:
 
-    def __init__(self, bus, likes: LikedSongsStore) -> None:
+    def __init__(self, bus, likes: LikedSongsStore,
+                 history: Optional[PlayHistoryStore] = None) -> None:
         self.bus = bus
         # injected, never invented: one store per process, shared with the
         # voice front-end that searches it (see ovos_media.service)
         self.likes = likes
+        # same idiom as likes: one store per process, written by the
+        # player on every play(), searched by the voice front-end. Left
+        # None (not auto-constructed) when the caller has none to give -
+        # the caller (OCPMediaPlayer) is the one that knows whether
+        # media.history.enabled is true, and a disabled feature must not
+        # touch disk just because a catalog got built.
+        self.history = history
         self.search_playlist = Playlist()
         self.ocp_skills = {}
         self.featured_skills = {}
@@ -39,7 +48,7 @@ class MediaCatalog:
         # (or non-boolean) that declaration the skill's rendering is
         # non-seekable, so this only ever holds skills that opted in.
         self._can_seek = {}
-        self._dialog_listeners: List[Callable[[str, Optional[dict]], None]] = []
+        self._dialog_listeners: List[Callable[[str, Optional[dict], Optional[Message]], None]] = []
         self._likes_listeners: List[Callable[[], None]] = []
 
     def add_dialog_listener(self, listener: Callable) -> None:
@@ -71,16 +80,27 @@ class MediaCatalog:
             except Exception as e:
                 LOG.exception(f"Failed to notify likes-changed listener: {e}")
 
-    def notify_dialog(self, dialog: str, data: Optional[dict] = None) -> None:
+    def notify_dialog(self, dialog: str, data: Optional[dict] = None,
+                      message: Optional[Message] = None) -> None:
         """Ask the voice front-end to speak a dialog.
 
         A listener that raises must not take the caller down with it — the
         callers are playback paths where a failed announcement is never a
         reason to abort playback.
+
+        Args:
+            dialog: the dialog file key to speak.
+            data: information used to populate the dialog.
+            message: the 'ovos.common_play.play' Message that started the
+                playback this dialog is about, when the caller knows one
+                (see OCPMediaPlayer._play_message) - so the listener can
+                speak back on the ORIGINATING session (OCP-1 §4) instead of
+                the default one; None when there is no such playback to
+                tie the dialog to.
         """
         for listener in list(self._dialog_listeners):
             try:
-                listener(dialog, data)
+                listener(dialog, data, message)
             except Exception as e:
                 LOG.exception(f"Failed to speak {dialog} dialog: {e}")
 

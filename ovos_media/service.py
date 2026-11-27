@@ -8,7 +8,7 @@ from ovos_utils.ocp import OCP_ID
 from ovos_utils.process_utils import ProcessStatus, StatusCallbackMap
 
 from ovos_media.bus.api import OCPBusApi
-from ovos_media.catalog import LikedSongsStore
+from ovos_media.catalog import LikedSongsStore, PlayHistoryStore
 from ovos_media.player import OCPMediaPlayer
 from ovos_media.skill import OCPVoiceSkill
 
@@ -72,8 +72,15 @@ class MediaService(Thread):
         # one liked-songs store, shared by the player (which writes likes
         # and play counts) and the voice skill (which searches it)
         self.likes = LikedSongsStore()
+        # same idiom for play history: the player records every play(),
+        # the voice skill surfaces "recently played"/"most played". Left
+        # unconstructed (no disk touched) when the feature is disabled.
+        history_cfg = self.config.get("history", {})
+        self.history = PlayHistoryStore(
+            max_entries=history_cfg.get("max_entries", 500)) \
+            if history_cfg.get("enabled", True) else None
         self.ocp = OCPMediaPlayer(self.bus, validate_source=self.validate_source,
-                                  likes=self.likes)
+                                  likes=self.likes, history=self.history)
         # the voice front-end: the only thing in this daemon that speaks.
         # It shares the player's liked-songs store and listens on its
         # catalog for the dialogs playback asks to have announced. The

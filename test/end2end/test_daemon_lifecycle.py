@@ -315,7 +315,7 @@ class TestSeekAndPosition(unittest.TestCase):
     def test_declared_can_seek_skill_gets_delegated_seek_not_cannot_seek(self) -> None:
         """OCP-1 §4.3.1: a skill that declared `can_seek: true` on its
         announcement gets the delegated `ovos.common_play.{skill_id}.seek`
-        verb through the real bus, and the player's cannot.seek fallback is
+        verb through the real bus, and the player's cannot_seek fallback is
         NOT notified.
 
         ``OCPPlayerHarness`` mocks ``OCPMediaCatalog`` the same way it mocks
@@ -386,8 +386,40 @@ class TestSeekAndPosition(unittest.TestCase):
             h.bus.emit(Message("ovos.common_play.seek", {"seekValue": 8000}))
             time.sleep(0.05)
 
-            h.player.media.notify_dialog.assert_called_once_with("cannot.seek")
+            h.player.media.notify_dialog.assert_called_once_with("cannot_seek")
             self.assertEqual(delegated, [])
+
+    def test_relative_seek_forward_adds_seconds_to_backend_position(self) -> None:
+        """A relative ``seconds`` seek must land at
+        ``backend_position + seconds * 1000`` — the backend's own reported
+        position is the base, not ``now_playing.position``."""
+        with OCPPlayerHarness() as h:
+            h.play(_audio("http://example.com/song.mp3"))
+            h.player.audio_service.get_track_position.return_value = 5000
+            h.bus.emit(Message("ovos.common_play.seek", {"seconds": 30}))
+            time.sleep(0.05)
+            h.player.audio_service.set_track_position.assert_called_with(35000)
+
+    def test_relative_seek_backward_subtracts_seconds_from_backend_position(self) -> None:
+        """A negative ``seconds`` seek must move backward from the backend's
+        reported position by the same milliseconds arithmetic, floored at 0
+        rather than sending a negative absolute position to the backend."""
+        with OCPPlayerHarness() as h:
+            h.play(_audio("http://example.com/song.mp3"))
+            h.player.audio_service.get_track_position.return_value = 5000
+            h.bus.emit(Message("ovos.common_play.seek", {"seconds": -10}))
+            time.sleep(0.05)
+            h.player.audio_service.set_track_position.assert_called_with(0)
+
+    def test_relative_seek_backward_past_zero_from_small_position_floors_at_zero(self) -> None:
+        """Seeking backward past the start of the track from a position
+        already close to zero must still floor at 0, not go negative."""
+        with OCPPlayerHarness() as h:
+            h.play(_audio("http://example.com/song.mp3"))
+            h.player.audio_service.get_track_position.return_value = 2000
+            h.bus.emit(Message("ovos.common_play.seek", {"seconds": -10}))
+            time.sleep(0.05)
+            h.player.audio_service.set_track_position.assert_called_with(0)
 
     def test_get_track_position_returns_backend_position(self) -> None:
         """get_track_position must reply with the audio backend's position."""

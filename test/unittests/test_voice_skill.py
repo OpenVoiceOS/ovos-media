@@ -32,7 +32,7 @@ from ovos_bus_client.session import Session, SessionManager
 from ovos_utils.fakebus import FakeBus
 from ovos_utils.ocp import LoopState, MediaState, MediaType, PlaybackType, PlayerState
 
-from ovos_media.catalog import LikedSongsStore, MediaCatalog
+from ovos_media.catalog import LikedSongsStore, MediaCatalog, PlayHistoryStore
 
 
 class _FakeStore(dict):
@@ -45,6 +45,20 @@ class _FakeStore(dict):
 
 def _likes(entries=None):
     return LikedSongsStore(_FakeStore(entries or {}))
+
+
+def _history(entries=None):
+    return PlayHistoryStore(_FakeStore(entries or {}))
+# TestHistorySearchDb drives search_db through the real NER matcher that
+# ovos_workshop builds from ahocorasick_ner. Without it ocp_voc_match returns
+# {} for every phrase and those tests measure nothing, so this import is a
+# hard requirement of the suite and the "test" extra in pyproject.toml names
+# it. A test gated on a missing dependency is a test that silently stops
+# running, so the import is plain and the suite fails loudly when it is
+# absent. TestConstructsWithoutAhocorasickNer proves the degraded no-NER path
+# by patching the symbol, which needs no uninstalled package.
+import ahocorasick_ner  # noqa: F401
+
 from ovos_media.player import OCPMediaPlayer
 from ovos_media.skill import OCPVoiceSkill
 
@@ -317,13 +331,16 @@ class TestFiveIntentsRegistered(unittest.TestCase):
 
         _make_skill(bus)
 
-        # ovos-workshop registers under the authoring name ("WhatSong.intent")
-        # on older versions and the canonical name ("WhatSong") after the
+        # ovos-workshop registers under the authoring name ("what_song.intent")
+        # on older versions and the canonical name ("what_song") after the
         # canonical-topic switch — accept either spelling, reject absence.
+        # The base names moved to underscores under OVOS-INTENT-2 §2, so the
+        # dispatch topic moved with them: ovos-media:WhatSong is now
+        # ovos-media:what_song.
         names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
                  for r in registrations}
-        for expected in ("WhatSong", "WhatAlbum", "WhatArtist",
-                         "ShuffleOn", "ShuffleOff"):
+        for expected in ("what_song", "what_album", "what_artist",
+                         "shuffle_on", "shuffle_off"):
             self.assertIn(expected, names,
                           f"expected {expected} to be registered; got {names}")
         self.assertGreaterEqual(len(registrations), 5)
@@ -333,7 +350,7 @@ class TestShuffleSessionGate(unittest.TestCase):
     """OCPMediaPlayer.handle_set_shuffle/handle_unset_shuffle are gated by
     session at the bus edge and silently drop the action on a non-default
     (e.g. HiveMind satellite) session. The shuffle intent handlers must not
-    claim success (speak "shuffle.on"/"shuffle.off") when that's about to
+    claim success (speak "shuffle_on"/"shuffle_off") when that's about to
     happen - they must mirror the gate themselves."""
 
     def _named_session_message(self, msg_type):
@@ -404,7 +421,7 @@ class TestDialogNotifications(unittest.TestCase):
         spoken = []
         bus.on("speak", lambda m: spoken.append(m.data["utterance"]))
 
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(len(spoken), 1)
         self.assertTrue(spoken[0])
@@ -415,7 +432,7 @@ class TestDialogNotifications(unittest.TestCase):
         spoken = []
         bus.on("speak", lambda m: spoken.append(m.data["utterance"]))
 
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(spoken, [])
 
@@ -427,7 +444,7 @@ class TestDialogNotifications(unittest.TestCase):
         bus.on("speak", lambda m: spoken.append(m.data["utterance"]))
 
         skill.default_shutdown()
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(spoken, [])
 
@@ -458,12 +475,12 @@ class TestConstructsWithoutAhocorasickNer(unittest.TestCase):
             skill = _make_skill(bus)
 
             self.assertIsNotNone(skill)
-            # accept both the authoring ("WhatSong.intent") and canonical
-            # ("WhatSong") registration spellings across workshop versions
+            # accept both the authoring ("what_song.intent") and canonical
+            # ("what_song") registration spellings across workshop versions
             names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
                      for r in registrations}
-            self.assertIn("WhatSong", names)
-            self.assertIn("ShuffleOn", names)
+            self.assertIn("what_song", names)
+            self.assertIn("shuffle_on", names)
 
     def test_search_db_finds_nothing_without_ner(self):
         """search_db depends on the local NER matcher; without ahocorasick
@@ -510,6 +527,153 @@ class TestConstructsWithoutAhocorasickNer(unittest.TestCase):
             self.assertEqual(song_name_msgs[0]["samples"], [])
             self.assertEqual(set(song_name_msgs[0].keys()),
                               {"skill_id", "label", "samples", "media_type"})
+
+
+class TestHistorySearchDb(unittest.TestCase):
+    """search_db's "recently played"/"most played" playlist results, gated
+    on a real (non-mocked) NER matcher exactly like the liked-songs case
+    (see TestConstructsWithoutAhocorasickNer for the no-NER path)."""
+
+    def test_empty_history_yields_nothing(self):
+        bus = FakeBus()
+        catalog = MediaCatalog(bus, _likes(), history=_history())
+        skill = _make_skill(bus, catalog=catalog)
+
+        results = list(skill.search_db("recently played", MediaType.MUSIC))
+
+        self.assertEqual(results, [])
+
+    def test_populated_history_yields_recently_played(self):
+        bus = FakeBus()
+        history = _history({
+            "http://a.mp3": {"title": "Alpha", "last_played": 1, "play_count": 1},
+            "http://b.mp3": {"title": "Beta", "last_played": 2, "play_count": 1},
+        })
+        catalog = MediaCatalog(bus, _likes(), history=history)
+        skill = _make_skill(bus, catalog=catalog)
+
+        results = list(skill.search_db("recently played", MediaType.MUSIC))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "Recently Played")
+        titles = [e["title"] for e in results[0]["playlist"]]
+        self.assertEqual(titles, ["Beta", "Alpha"])
+
+    def test_populated_history_yields_most_played(self):
+        bus = FakeBus()
+        history = _history({
+            "http://a.mp3": {"title": "Alpha", "last_played": 1, "play_count": 5},
+            "http://b.mp3": {"title": "Beta", "last_played": 2, "play_count": 1},
+        })
+        catalog = MediaCatalog(bus, _likes(), history=history)
+        skill = _make_skill(bus, catalog=catalog)
+
+        results = list(skill.search_db("most played", MediaType.MUSIC))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "Most Played")
+        titles = [e["title"] for e in results[0]["playlist"]]
+        self.assertEqual(titles, ["Alpha", "Beta"])
+
+    def test_history_disabled_yields_nothing(self):
+        bus = FakeBus()
+        history = _history({
+            "http://a.mp3": {"title": "Alpha", "last_played": 1, "play_count": 1}})
+        catalog = MediaCatalog(bus, _likes(), history=history)
+        with patch("ovos_media.skill.Configuration") as cfg:
+            cfg.return_value.get.return_value = {"history": {"enabled": False}}
+            skill = _make_skill(bus, catalog=catalog)
+
+        results = list(skill.search_db("recently played", MediaType.MUSIC))
+
+        self.assertEqual(results, [])
+
+    def test_capitalized_recently_played_phrase_still_matches(self):
+        """ocp_voc_match returns the ORIGINAL-cased span from the
+        utterance (whisper-family STT capitalizes); the matched-keyword
+        membership check must lower() before comparing against the
+        lowercase *_KEYWORDS lists."""
+        bus = FakeBus()
+        history = _history({
+            "http://a.mp3": {"title": "Alpha", "last_played": 1, "play_count": 1}})
+        catalog = MediaCatalog(bus, _likes(), history=history)
+        skill = _make_skill(bus, catalog=catalog)
+
+        with patch.object(skill, "ocp_voc_match",
+                          side_effect=lambda phrase: {"playlist_name": "Recently Played"}):
+            results = list(skill.search_db("Recently Played", MediaType.MUSIC))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "Recently Played")
+        self.assertEqual(results[0]["match_confidence"], 100)
+
+    def test_capitalized_most_played_phrase_still_matches(self):
+        bus = FakeBus()
+        history = _history({
+            "http://a.mp3": {"title": "Alpha", "last_played": 1, "play_count": 1}})
+        catalog = MediaCatalog(bus, _likes(), history=history)
+        skill = _make_skill(bus, catalog=catalog)
+
+        with patch.object(skill, "ocp_voc_match",
+                          side_effect=lambda phrase: {"playlist_name": "My Top Songs"}):
+            results = list(skill.search_db("play my My Top Songs", MediaType.MUSIC))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "Most Played")
+
+    def test_capitalized_liked_songs_phrase_still_matches(self):
+        bus = FakeBus()
+        likes = _likes({"http://a.mp3": {"title": "Alpha"}})
+        catalog = MediaCatalog(bus, likes)
+        skill = _make_skill(bus, likes=likes, catalog=catalog)
+
+        with patch.object(skill, "ocp_voc_match",
+                          side_effect=lambda phrase: {"playlist_name": "Liked songs"}):
+            results = list(skill.search_db("Liked songs", MediaType.MUSIC))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "Liked Songs")
+        self.assertEqual(results[0]["match_confidence"], 100)
+
+    def test_bad_media_type_row_does_not_block_song_name_results(self):
+        """search_db is a generator: the history block runs before the
+        song_name branch, so an uncaught ValueError from a malformed
+        media_type/playback in a history row would kill the whole
+        generator on list() - not just the history playlists, but the
+        unrelated liked-songs title results too. A single utterance that
+        matches both a history playlist keyword and a liked song title
+        exercises that ordering directly."""
+        bus = FakeBus()
+        likes = _likes({"http://liked.mp3": {"title": "Alpha", "play_count": 1}})
+        history = _history({
+            "http://bad.mp3": {"title": "Bad Row", "play_count": 1,
+                               "media_type": 999, "playback": "music"}})
+        catalog = MediaCatalog(bus, likes, history=history)
+        skill = _make_skill(bus, likes=likes, catalog=catalog)
+
+        with patch.object(skill, "ocp_voc_match", side_effect=lambda phrase: {
+                "playlist_name": "recently played", "song_name": "alpha"}):
+            results = list(skill.search_db("recently played alpha", MediaType.MUSIC))
+
+        titles = [r["title"] for r in results]
+        self.assertIn("Recently Played", titles)
+        # the liked-songs song_name branch (a plain result dict, not a
+        # playlist) must have run too - proof the generator was not
+        # aborted by the bad row above it
+        self.assertTrue(any(r.get("title") == "Alpha" for r in results))
+
+    def test_history_keywords_registered_once(self):
+        bus = FakeBus()
+        registered = []
+        bus.on("ovos.common_play.register_keyword",
+              lambda m: registered.append(m.data))
+
+        _make_skill(bus)
+
+        playlist_msgs = [r for r in registered if r["label"] == "playlist_name"]
+        # one for liked-songs synonyms, one for recently-played, one for
+        # most-played
+        self.assertEqual(len(playlist_msgs), 3)
 
 
 if __name__ == "__main__":

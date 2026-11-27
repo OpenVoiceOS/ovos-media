@@ -347,7 +347,7 @@ class TestSessionGate(unittest.TestCase):
     """A gated topic acts only on the local/"default" session."""
 
     def setUp(self):
-        SessionManager.sessions = {"default": SessionManager.default_session}
+        SessionManager.sessions = {"default": SessionManager.get_default_session()}
 
     def test_named_session_does_not_reach_a_gated_target(self):
         api, target = _make_api(FakeBus(), gated=True)
@@ -401,6 +401,62 @@ class TestSessionGate(unittest.TestCase):
         _dispatch(api, "ovos.common_play.probe", message=msg)  # must not raise
 
         target.assert_not_called()
+
+
+class TestSessionGateDropIsLogged(unittest.TestCase):
+    """A gated drop is silent otherwise - a hub operator whose satellite
+    commands are being ignored (stock validate_source=true, an un-NAT'd
+    session) needs at least one visible clue, not just DEBUG noise. The
+    FIRST drop for a given session_id is WARNING; later drops for that
+    SAME session_id stay DEBUG, so a chatty satellite does not flood the
+    log; a DIFFERENT session_id warns again."""
+
+    def setUp(self):
+        SessionManager.sessions = {"default": SessionManager.get_default_session()}
+
+    def test_first_drop_for_a_session_warns_once(self):
+        from ovos_media.bus import api as api_mod
+        api, target = _make_api(FakeBus(), gated=True)
+
+        with patch.object(api_mod, "LOG") as mock_log:
+            api.bus.emit(_named_session_message("ovos.common_play.probe",
+                                                 session_id="kitchen-sat"))
+
+        target.assert_not_called()
+        mock_log.warning.assert_called_once()
+        warned = mock_log.warning.call_args.args[0]
+        self.assertIn("kitchen-sat", warned)
+        self.assertIn("ovos.common_play.probe", warned)
+        mock_log.debug.assert_not_called()
+
+    def test_second_drop_same_session_does_not_warn_again(self):
+        from ovos_media.bus import api as api_mod
+        api, target = _make_api(FakeBus(), gated=True)
+        api.bus.emit(_named_session_message("ovos.common_play.probe",
+                                            session_id="kitchen-sat"))
+
+        with patch.object(api_mod, "LOG") as mock_log:
+            api.bus.emit(_named_session_message("ovos.common_play.probe",
+                                                 session_id="kitchen-sat"))
+
+        target.assert_not_called()
+        mock_log.warning.assert_not_called()
+        mock_log.debug.assert_called_once()
+
+    def test_different_session_warns_again(self):
+        from ovos_media.bus import api as api_mod
+        api, target = _make_api(FakeBus(), gated=True)
+        api.bus.emit(_named_session_message("ovos.common_play.probe",
+                                            session_id="kitchen-sat"))
+
+        with patch.object(api_mod, "LOG") as mock_log:
+            api.bus.emit(_named_session_message("ovos.common_play.probe",
+                                                 session_id="office-sat"))
+
+        target.assert_not_called()
+        mock_log.warning.assert_called_once()
+        warned = mock_log.warning.call_args.args[0]
+        self.assertIn("office-sat", warned)
 
 
 class TestDecodeRejection(unittest.TestCase):
