@@ -11,8 +11,10 @@ from ovos_utils.fakebus import FakeBus
 class TestMprisConfigForwarded(unittest.TestCase):
     """__init__ must pass config=self.ocp_config to OcpMprisExporter."""
 
-    def _make_player(self, media_config):
+    def _make_player(self, media_config, bypass_test_default=False):
         from ovos_media.player import OCPMediaPlayer
+        init = (OCPMediaPlayer._unpatched_init if bypass_test_default
+                else OCPMediaPlayer.__init__)
         with patch("ovos_media.player.AudioService"), \
              patch("ovos_media.player.VideoService"), \
              patch("ovos_media.player.WebService"), \
@@ -21,7 +23,8 @@ class TestMprisConfigForwarded(unittest.TestCase):
              patch("ovos_media.player.Playlist"), \
              patch("ovos_media.player.OCPMediaCatalog"), \
              patch("ovos_media.player.OCPBusApi"), \
-             patch.object(OCPMediaPlayer, "_report_to_core"):
+             patch.object(OCPMediaPlayer, "_report_to_core"), \
+             patch.object(OCPMediaPlayer, "__init__", init):
             p = OCPMediaPlayer(bus=FakeBus(), config=media_config)
         return p, mock_exporter
 
@@ -52,6 +55,36 @@ class TestMprisConfigForwarded(unittest.TestCase):
         media_config = {"enable_mpris": False}
         p, mock_exporter = self._make_player(media_config)
         mock_exporter.assert_not_called()
+
+    def test_mpris_defaults_to_enabled(self):
+        # ovos-media is a desktop MPRIS player unless configured off; a
+        # headless install with no session bus still degrades to a single
+        # warning, so defaulting the exporter on is safe. This bypasses the
+        # suite-wide test default (see test/unittests/conftest.py) to check
+        # the production default the source itself resolves, with the
+        # exporter still mocked out so nothing touches a real bus.
+        # a non-empty dict without the key: an empty dict is falsy and
+        # would fall through to Configuration(), which the suite's own
+        # test/conftest.py pins to enable_mpris=False for exactly the
+        # reason this test bypasses the per-test default above.
+        media_config = {"manage_external_players": False}
+        p, mock_exporter = self._make_player(media_config, bypass_test_default=True)
+        mock_exporter.assert_called_once()
+
+    def test_the_suite_default_turns_mpris_off_when_the_key_is_absent(self):
+        # The guard for the autouse fixture in test/unittests/conftest.py.
+        # Every other test here names enable_mpris, so none of them reaches
+        # the fixture's setdefault. Delete that line and they all still
+        # pass, which leaves the fixture's whole reason for being autouse
+        # unmeasured: a config without the key must come up with MPRIS off,
+        # or a unit test claims org.mpris.MediaPlayer2.OCP on whatever
+        # session bus the runner has. The line above asserts the opposite
+        # production default through _unpatched_init, so the pair reads
+        # together.
+        media_config = {"manage_external_players": False}
+        p, mock_exporter = self._make_player(media_config)
+        mock_exporter.assert_not_called()
+        self.assertFalse(p.ocp_config.get("enable_mpris"))
 
 
 if __name__ == "__main__":

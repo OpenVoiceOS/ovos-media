@@ -15,6 +15,9 @@ from ovos_workshop.decorators.ocp import ocp_search
 from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
 
 from ovos_media.catalog import KeywordRegistrar, LikedSongsStore, MediaCatalog
+from ovos_media.catalog.keywords import (MOST_PLAYED_KEYWORDS,
+                                         PLAYLIST_KEYWORDS,
+                                         RECENTLY_PLAYED_KEYWORDS)
 from ovos_media.utils import is_default_session
 
 # locale/ and qt5/ live in the ovos_media package, next to this module;
@@ -50,17 +53,26 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
             catalog.add_dialog_listener(self.handle_dialog_notification)
             catalog.add_likes_listener(self.handle_likes_changed)
 
+        # read the same way the player reads its sibling history knobs
+        # (see OCPMediaPlayer.play/__init__)
+        self.history_enabled = Configuration().get("media", {}) \
+            .get("history", {}).get("enabled", True)
+
         self._keyword_registrar = KeywordRegistrar(
             self.bus, self.skill_id, self.native_langs,
             self.ocp_cache_dir, self.register_ocp_keyword)
         self._keyword_registrar.register_liked_songs(self.likes)
+        # history-gated: no point advertising "recently played"/"most
+        # played" if the feature itself is disabled
+        if self.history_enabled:
+            self._keyword_registrar.register_history_playlists()
 
         # intents about the currently playing media, see issue #23
-        self.register_intent_file("WhatSong.intent", self.handle_what_song)
-        self.register_intent_file("WhatAlbum.intent", self.handle_what_album)
-        self.register_intent_file("WhatArtist.intent", self.handle_what_artist)
-        self.register_intent_file("ShuffleOn.intent", self.handle_shuffle_on)
-        self.register_intent_file("ShuffleOff.intent", self.handle_shuffle_off)
+        self.register_intent_file("what_song.intent", self.handle_what_song)
+        self.register_intent_file("what_album.intent", self.handle_what_album)
+        self.register_intent_file("what_artist.intent", self.handle_what_artist)
+        self.register_intent_file("shuffle_on.intent", self.handle_shuffle_on)
+        self.register_intent_file("shuffle_off.intent", self.handle_shuffle_off)
 
     def handle_likes_changed(self) -> None:
         """Refresh the song-title keywords after a like/unlike, so a song
@@ -72,20 +84,25 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
         self._keyword_registrar.register_new_titles(self.likes)
 
     def handle_dialog_notification(self, dialog: str,
-                                   data: Optional[dict] = None) -> None:
+                                   data: Optional[dict] = None,
+                                   message: Optional[Message] = None) -> None:
         """Speak a dialog the player asked the catalog to announce.
 
-        speak_dialog() routes over the session it finds by walking the
-        thread's message stack (dig_for_message()), not one this method
-        chooses. A notification fired from inside a handler that is
-        currently processing a session-carrying message (eg. handle_unlike
-        acting on a satellite's request) follows THAT session, so it
-        announces back to the satellite that triggered it. A notification
-        fired from a context with no message on the stack (a bus event with
-        no session of its own — END_OF_MEDIA, INVALID_MEDIA, the delayed
-        invalid-stream retry timer) falls back to the default session and
-        announces locally instead, regardless of which session's playback
-        actually failed.
+        END_OF_MEDIA/INVALID_MEDIA-derived announcements tied to a specific
+        playback (track.failed, queue.finished) carry *message*: the
+        'ovos.common_play.play' Message that started that playback,
+        stashed by OCPMediaPlayer at play time (see OCPMediaPlayer.
+        _play_message/_notify_dialog) and forwarded here through
+        MediaCatalog.notify_dialog. speak_dialog()'s underlying speak()
+        digs the call stack for a Message to carry context/session from
+        (dig_for_message) - naming this parameter *message* and holding it
+        as a local here is what makes that lookup find it, so the dialog is
+        spoken back on the ORIGINATING session instead of the default one.
+
+        Announcements with no playback of their own to tie to
+        (no.playback.backend, nothing.playing) - or a notify_dialog call
+        from a plain in-process caller that passed no message - land on the
+        default session (*message* is None).
         """
         self.speak_dialog(dialog, data)
 
@@ -120,7 +137,7 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
     def handle_what_song(self, message):
         status = self._get_status(message)
         if status is None:
-            self.speak_dialog("player.not.responding")
+            self.speak_dialog("player_not_responding")
             return
         title = status.get("title")
         artist = status.get("artist")
@@ -130,44 +147,44 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
             # player_state key (older/incomplete status payloads) defaults
             # to STOPPED so this stays "nothing playing" as before
             if status.get("player_state", PlayerState.STOPPED) != PlayerState.STOPPED:
-                self.speak_dialog("no.track.info")
+                self.speak_dialog("no_track_info")
             else:
-                self.speak_dialog("nothing.playing")
+                self.speak_dialog("nothing_playing")
         elif artist:
-            self.speak_dialog("now.playing.song", {"title": title, "artist": artist})
+            self.speak_dialog("now_playing_song", {"title": title, "artist": artist})
         else:
-            self.speak_dialog("now.playing.song.no.artist", {"title": title})
+            self.speak_dialog("now_playing_song_no_artist", {"title": title})
 
     def handle_what_album(self, message):
         status = self._get_status(message)
         if status is None:
-            self.speak_dialog("player.not.responding")
+            self.speak_dialog("player_not_responding")
             return
         if not status.get("title"):
             if status.get("player_state", PlayerState.STOPPED) != PlayerState.STOPPED:
-                self.speak_dialog("no.track.info")
+                self.speak_dialog("no_track_info")
             else:
-                self.speak_dialog("nothing.playing")
+                self.speak_dialog("nothing_playing")
         else:
             # NowPlaying/MediaEntry does not track album metadata, so this
             # always falls back gracefully instead of guessing or crashing.
-            self.speak_dialog("no.album.info")
+            self.speak_dialog("no_album_info")
 
     def handle_what_artist(self, message):
         status = self._get_status(message)
         if status is None:
-            self.speak_dialog("player.not.responding")
+            self.speak_dialog("player_not_responding")
             return
         title = status.get("title")
         artist = status.get("artist")
         if artist:
-            self.speak_dialog("now.playing.artist", {"artist": artist})
+            self.speak_dialog("now_playing_artist", {"artist": artist})
         elif title:
-            self.speak_dialog("no.artist.info")
+            self.speak_dialog("no_artist_info")
         elif status.get("player_state", PlayerState.STOPPED) != PlayerState.STOPPED:
-            self.speak_dialog("no.track.info")
+            self.speak_dialog("no_track_info")
         else:
-            self.speak_dialog("nothing.playing")
+            self.speak_dialog("nothing_playing")
 
     @property
     def validate_source(self) -> bool:
@@ -196,17 +213,17 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
 
     def handle_shuffle_on(self, message):
         if not self._is_default_session(message):
-            self.speak_dialog("cannot.control.device")
+            self.speak_dialog("cannot_control_device")
             return
         self.bus.emit(message.forward("ovos.common_play.shuffle.set"))
-        self.speak_dialog("shuffle.on")
+        self.speak_dialog("shuffle_on")
 
     def handle_shuffle_off(self, message):
         if not self._is_default_session(message):
-            self.speak_dialog("cannot.control.device")
+            self.speak_dialog("cannot_control_device")
             return
         self.bus.emit(message.forward("ovos.common_play.shuffle.unset"))
-        self.speak_dialog("shuffle.off")
+        self.speak_dialog("shuffle_off")
 
     @ocp_search()
     def search_db(self, phrase, media_type):
@@ -214,8 +231,21 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
         entities = self.ocp_voc_match(phrase)
         base_score += 30 * len(entities)
 
-        if entities.get("playlist_name") and len(self.likes) > 0:
-            if phrase.lower() == entities["playlist_name"]:
+        matched_playlist = entities.get("playlist_name")
+        # ocp_voc_match returns the ORIGINAL-cased span from the utterance
+        # (whisper-family STT capitalizes), while every *_KEYWORDS list is
+        # lowercase - comparisons against those lists, and against `phrase`,
+        # must lower() both sides or a capitalized utterance ("Liked
+        # songs") matches nothing.
+        matched_playlist_lower = matched_playlist.lower() if matched_playlist else None
+        # PLAYLIST_KEYWORDS, RECENTLY_PLAYED_KEYWORDS and MOST_PLAYED_KEYWORDS
+        # all register under the same "playlist_name" label, so the matched
+        # keyword itself decides which intrinsic playlist is meant - a bare
+        # `entities.get("playlist_name")` check would fire the wrong
+        # playlist (e.g. "recently played" would also yield Liked Songs).
+        if matched_playlist_lower and matched_playlist_lower in PLAYLIST_KEYWORDS \
+                and len(self.likes) > 0:
+            if phrase.lower() == matched_playlist_lower:
                 base_score = 100
             yield {
                 "match_confidence": min(base_score + 35, 100),
@@ -226,6 +256,34 @@ class OCPVoiceSkill(OVOSCommonPlaybackSkill):
                 "title": "Liked Songs",
                 "skill_id": self.skill_id
             }
+
+        history = self.catalog.history if self.catalog is not None else None
+        if self.history_enabled and history is not None and matched_playlist_lower:
+            phrase_matches_playlist = phrase.lower() == matched_playlist_lower
+            if matched_playlist_lower in RECENTLY_PLAYED_KEYWORDS:
+                recent = history.recent()
+                if recent:
+                    yield {
+                        "match_confidence": 100 if phrase_matches_playlist else min(base_score + 35, 100),
+                        "media_type": MediaType.MUSIC,
+                        "playback": PlaybackType.AUDIO,
+                        "playlist": [e.as_dict for e in recent],
+                        "skill_icon": self.skill_icon,
+                        "title": "Recently Played",
+                        "skill_id": self.skill_id
+                    }
+            elif matched_playlist_lower in MOST_PLAYED_KEYWORDS:
+                most_played = history.most_played()
+                if most_played:
+                    yield {
+                        "match_confidence": 100 if phrase_matches_playlist else min(base_score + 35, 100),
+                        "media_type": MediaType.MUSIC,
+                        "playback": PlaybackType.AUDIO,
+                        "playlist": [e.as_dict for e in most_played],
+                        "skill_icon": self.skill_icon,
+                        "title": "Most Played",
+                        "skill_id": self.skill_id
+                    }
 
         if entities.get("song_name"):
             # entities["song_name"] can be a stale NER match - an unliked

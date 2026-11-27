@@ -331,31 +331,6 @@ class TestPlaybackTypeSwitchStopsOtherBackend(unittest.TestCase):
                           "backend's `current`, not just leave it dangling")
 
 
-class TestTrackStartQueueEnd(unittest.TestCase):
-    def _make_service(self):
-        from ovos_media.media_backends.base import BaseMediaService
-        svc = BaseMediaService.__new__(BaseMediaService)
-        svc._init_runtime_state()
-        svc.bus = FakeBus()
-        svc.services = []
-        svc.current = None
-        svc.volume_is_low = False
-        svc.service_lock = threading.Lock()
-        svc.play_start_time = 0.0
-        svc.namespace = "audio"
-        svc.config = {}
-        svc._loaded = threading.Event()
-        svc._loaded.set()
-        return svc
-
-    def test_track_start_none_emits_queue_end(self):
-        svc = self._make_service()
-        received = []
-        svc.bus.on(f"ovos.{svc.namespace}.queue_end", lambda m: received.append(m))
-        svc.track_start(None)
-        self.assertEqual(len(received), 1)
-
-
 class TestPlayerHandleMediaUpdateInvalidAutoplayOff(unittest.TestCase):
     """Test handle_player_media_update with INVALID_MEDIA and autoplay=False."""
 

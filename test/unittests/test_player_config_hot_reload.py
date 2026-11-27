@@ -50,8 +50,11 @@ def _make_live_player(testcase, media_config, mpris_mock=None, validate_source=N
     for p in patches:
         p.start()
         testcase.addCleanup(p.stop)
-    player = OCPMediaPlayer(bus=FakeBus(), config=None,
-                            validate_source=validate_source)
+    # conftest's mpris opt-out turns config=None into a non-empty dict,
+    # which would freeze the config source; the real constructor keeps it live
+    player = OCPMediaPlayer.__new__(OCPMediaPlayer)
+    OCPMediaPlayer._unpatched_init(player, FakeBus(), config=None,
+                                   validate_source=validate_source)
     return player, media_config
 
 
@@ -337,7 +340,8 @@ class TestEnableMprisIsCold(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
-        player = OCPMediaPlayer(bus=FakeBus(), config=None)
+        player = OCPMediaPlayer.__new__(OCPMediaPlayer)
+        OCPMediaPlayer._unpatched_init(player, FakeBus(), config=None)
 
         # the enable_mpris decision must have been made off the FIRST
         # (snapshot) Configuration() read, not a second, live one.

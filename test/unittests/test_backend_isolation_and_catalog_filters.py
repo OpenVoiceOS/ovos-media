@@ -135,6 +135,7 @@ def _make_base_svc(services=None):
     svc.default = None
     svc.services = services or []
     svc.current = None
+    svc._gen = 0
     svc.play_start_time = 0
     svc.volume_is_low = False
     svc.service_lock = threading.Lock()
@@ -153,6 +154,8 @@ class _StrUriBackend:
 
 
 class _ListUriBackend:
+    is_remote = False
+
     def __init__(self, name="good", uris=None):
         self.name = name
         self._uris = uris or ["file"]
@@ -163,6 +166,8 @@ class _ListUriBackend:
 
 class _NameRaisesBackend:
     """Malformed plugin: .name raises."""
+    is_remote = False
+
     @property
     def name(self):
         raise RuntimeError("boom")

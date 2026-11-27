@@ -82,6 +82,10 @@ class TestSearchResultShape(unittest.TestCase):
         skill.likes = LikedSongsStore(_FakeStore(liked))
         skill.skill_icon = "icon.svg"
         skill.skill_id = "ovos.common_play"
+        # __new__ bypasses __init__, so the attributes search_db reads
+        # directly (no defensive getattr - see skill.py) must be set here
+        skill.catalog = None
+        skill.history_enabled = True
         return skill
 
     def test_search_song_branch_yields_serializable_dicts(self):
