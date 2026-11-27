@@ -25,6 +25,7 @@ def _make_player():
         p = OCPMediaPlayer.__new__(OCPMediaPlayer)
         p._init_runtime_state()
         p.ocp_config = {}
+        p._live_config = False
         p.state = PlayerState.STOPPED
         p.loop_state = LoopState.NONE
         p.media_state = MediaState.NO_MEDIA

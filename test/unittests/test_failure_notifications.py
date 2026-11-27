@@ -49,6 +49,7 @@ def _make_player():
     p.playlist.__contains__ = MagicMock(return_value=False)
     p.search_playlist = MagicMock()
     p.ocp_config = {}
+    p._live_config = False
     p.gui = MagicMock()
     p.state = PlayerState.STOPPED
     return p

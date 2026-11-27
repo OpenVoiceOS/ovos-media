@@ -98,6 +98,12 @@ class BaseMediaService:
         self.bus = bus
         self.namespace = namespace
         self.plugin_loader = plugin_loader
+        # A falsy ``config`` (None, or an explicit ``{}``) means "read the
+        # default, Configuration-backed source" -- the same predicate that
+        # picks ``self.config`` below, so the two never disagree about which
+        # source is live. The default source is re-read on every access so a
+        # disk edit to preferred_*_services propagates without restart.
+        self._live_config = not config
         self.config = config or Configuration().get("media") or {}
         # INVARIANT: a plugin verb (load_track/play/pause/resume/stop/
         # lower_volume/restore_volume/get_track_*/bind_event_reporter) is
@@ -356,7 +362,9 @@ class BaseMediaService:
                 is configured.
         """
         key = f"preferred_{self.namespace}_services"
-        preferred = self.config.get(key)
+        config = (Configuration().get("media") or {}) \
+            if self._live_config else self.config
+        preferred = config.get(key)
         if preferred:
             return list(preferred)
         # no preference configured -> fall back to all loaded backends
