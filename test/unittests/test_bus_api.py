@@ -72,6 +72,7 @@ PLAYER_TOPICS = [
     "ovos.common_play.status",
     "ovos.common_play.disambiguation",
     "ovos.common_play.likes",
+    "ovos.common_play.collection",
     "ovos.common_play.mpris.now_playing",
 ]
 SERVICE_TOPICS = [
@@ -131,6 +132,7 @@ UNGATED_TOPICS = {
     "ovos.common_play.status",
     "ovos.common_play.disambiguation",
     "ovos.common_play.likes",
+    "ovos.common_play.collection",
     "ovos.common_play.mpris.now_playing",
 }
 
