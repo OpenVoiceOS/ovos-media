@@ -1131,6 +1131,7 @@ class OCPMediaPlayer:
                 # playback's session; a later, unrelated emission (eg. an
                 # external MPRIS player taking over) must not inherit it.
                 self._play_message = None
+                self._announce_end = True
             return
 
         queue = self._merged_queue()
@@ -1173,6 +1174,7 @@ class OCPMediaPlayer:
             # it still carries this playback's session, so a later,
             # unrelated emission does not inherit it.
             self._play_message = None
+            self._announce_end = True
             return
         self.play()
 
@@ -1421,6 +1423,7 @@ class OCPMediaPlayer:
         # playback just reset and must carry ITS session; only a later,
         # unrelated emission must not leak it.
         self._play_message = None
+        self._announce_end = True
 
     def shutdown(self):
         """

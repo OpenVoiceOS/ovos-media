@@ -59,3 +59,16 @@ class TestAnnounceEnd(unittest.TestCase):
         _play_to_end(player)
         self.assertEqual(_spoken(player), ["queue_finished"])
         player.shutdown()
+
+    def test_playlist_set_after_silent_queue_speaks(self):
+        player = _player()
+        _play_to_end(player, announce_end=False)
+        c, d = _track("c"), _track("d")
+        with patch.object(player, "play"):
+            player.bus.emit(Message("ovos.common_play.playlist.set",
+                                    {"tracks": [c, d]}))
+            # nothing is loaded, so one next reaches the end of the queue
+            player.bus.emit(Message("ovos.common_play.next"))
+        self.assertEqual(player.state, PlayerState.STOPPED)
+        self.assertEqual(_spoken(player), ["queue_finished"])
+        player.shutdown()

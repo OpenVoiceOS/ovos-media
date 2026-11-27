@@ -281,7 +281,7 @@ before asking for it.
 ### OCP-1 extensions
 
 `ovos.common_play.play` accepts an optional `announce_end` field, which is not
-in [OCP-1 §4.5](https://github.com/OpenVoiceOS/architecture/blob/dev/ovos-ocp-1.md).
+in [OCP-1 §4.2.1](https://github.com/OpenVoiceOS/architecture/blob/dev/ocp-1.md).
 With `"announce_end": false`, the player does not speak `queue_finished` when
 the queue from that request ends, and the sender speaks its own end. The
 default is `true`. Each play request sets the value again, so a later request
