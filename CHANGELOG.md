@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.0.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/3.0.0a1) (2026-11-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.5a2...3.0.0a1)
+
+**Breaking changes:**
+
+- feat!: port to MediaBackend v2 — the daemon owns all state emission [\#194](https://github.com/OpenVoiceOS/ovos-media/pull/194) ([JarbasAl](https://github.com/JarbasAl))
+
+**Merged pull requests:**
+
+- fix: find an extracted track in the queue by the uri the queue knows it by [\#241](https://github.com/OpenVoiceOS/ovos-media/pull/241) ([andlo](https://github.com/andlo))
+
 ## [2.4.5a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.5a2) (2026-10-28)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.5a1...2.4.5a2)
@@ -355,17 +367,9 @@
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.17a1...0.4.18a1)
 
-**Merged pull requests:**
-
-- fix: reject non-finite media values and harden legacy track lists [\#131](https://github.com/OpenVoiceOS/ovos-media/pull/131) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.17a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.17a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.16a1...0.4.17a1)
-
-**Merged pull requests:**
-
-- fix: validate bus-fed media metadata and message routing types [\#129](https://github.com/OpenVoiceOS/ovos-media/pull/129) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.16a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.16a1) (2026-08-14)
 
