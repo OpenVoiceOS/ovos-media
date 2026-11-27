@@ -49,6 +49,16 @@ def _likes(entries=None):
 
 def _history(entries=None):
     return PlayHistoryStore(_FakeStore(entries or {}))
+# TestHistorySearchDb drives search_db through the real NER matcher that
+# ovos_workshop builds from ahocorasick_ner. Without it ocp_voc_match returns
+# {} for every phrase and those tests measure nothing, so this import is a
+# hard requirement of the suite and the "test" extra in pyproject.toml names
+# it. A test gated on a missing dependency is a test that silently stops
+# running, so the import is plain and the suite fails loudly when it is
+# absent. TestConstructsWithoutAhocorasickNer proves the degraded no-NER path
+# by patching the symbol, which needs no uninstalled package.
+import ahocorasick_ner  # noqa: F401
+
 from ovos_media.player import OCPMediaPlayer
 from ovos_media.skill import OCPVoiceSkill
 
@@ -365,13 +375,16 @@ class TestFiveIntentsRegistered(unittest.TestCase):
 
         _make_skill(bus)
 
-        # ovos-workshop registers under the authoring name ("WhatSong.intent")
-        # on older versions and the canonical name ("WhatSong") after the
+        # ovos-workshop registers under the authoring name ("what_song.intent")
+        # on older versions and the canonical name ("what_song") after the
         # canonical-topic switch — accept either spelling, reject absence.
+        # The base names moved to underscores under OVOS-INTENT-2 §2, so the
+        # dispatch topic moved with them: ovos-media:WhatSong is now
+        # ovos-media:what_song.
         names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
                  for r in registrations}
-        for expected in ("WhatSong", "WhatAlbum", "WhatArtist",
-                         "ShuffleOn", "ShuffleOff"):
+        for expected in ("what_song", "what_album", "what_artist",
+                         "shuffle_on", "shuffle_off"):
             self.assertIn(expected, names,
                           f"expected {expected} to be registered; got {names}")
         self.assertGreaterEqual(len(registrations), 5)
@@ -381,7 +394,7 @@ class TestShuffleSessionGate(unittest.TestCase):
     """OCPMediaPlayer.handle_set_shuffle/handle_unset_shuffle are gated by
     session at the bus edge and silently drop the action on a non-default
     (e.g. HiveMind satellite) session. The shuffle intent handlers must not
-    claim success (speak "shuffle.on"/"shuffle.off") when that's about to
+    claim success (speak "shuffle_on"/"shuffle_off") when that's about to
     happen - they must mirror the gate themselves."""
 
     def _named_session_message(self, msg_type):
@@ -452,7 +465,7 @@ class TestDialogNotifications(unittest.TestCase):
         spoken = []
         bus.on("speak", lambda m: spoken.append(m.data["utterance"]))
 
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(len(spoken), 1)
         self.assertTrue(spoken[0])
@@ -463,7 +476,7 @@ class TestDialogNotifications(unittest.TestCase):
         spoken = []
         bus.on("speak", lambda m: spoken.append(m.data["utterance"]))
 
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(spoken, [])
 
@@ -475,7 +488,7 @@ class TestDialogNotifications(unittest.TestCase):
         bus.on("speak", lambda m: spoken.append(m.data["utterance"]))
 
         skill.default_shutdown()
-        catalog.notify_dialog("track.failed")
+        catalog.notify_dialog("track_failed")
 
         self.assertEqual(spoken, [])
 
@@ -506,12 +519,12 @@ class TestConstructsWithoutAhocorasickNer(unittest.TestCase):
             skill = _make_skill(bus)
 
             self.assertIsNotNone(skill)
-            # accept both the authoring ("WhatSong.intent") and canonical
-            # ("WhatSong") registration spellings across workshop versions
+            # accept both the authoring ("what_song.intent") and canonical
+            # ("what_song") registration spellings across workshop versions
             names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
                      for r in registrations}
-            self.assertIn("WhatSong", names)
-            self.assertIn("ShuffleOn", names)
+            self.assertIn("what_song", names)
+            self.assertIn("shuffle_on", names)
 
     def test_search_db_finds_nothing_without_ner(self):
         """search_db depends on the local NER matcher; without ahocorasick
@@ -722,9 +735,9 @@ class TestNewIntentsRegistered(unittest.TestCase):
 
         names = {r.get("name", "").split(":")[-1].removesuffix(".intent")
                  for r in registrations}
-        for expected in ("Like", "Unlike", "RepeatOn", "RepeatOff", "RepeatTrack",
-                         "SeekForward", "SeekBackward", "WhatShuffle",
-                         "WhatNext"):
+        for expected in ("like", "unlike", "repeat_on", "repeat_off", "repeat_track",
+                         "seek_forward", "seek_backward", "what_shuffle",
+                         "what_next"):
             self.assertIn(expected, names,
                           f"expected {expected} to be registered; got {names}")
 
@@ -734,21 +747,21 @@ class TestLikeUnlikeIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.like", lambda m: received.append(m))
-        skill.handle_like(Message("Like"))
+        skill.handle_like(Message("like"))
         self.assertEqual(len(received), 1)
 
     def test_unlike_emits_unlike_message(self):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.unlike", lambda m: received.append(m))
-        skill.handle_unlike(Message("Unlike"))
+        skill.handle_unlike(Message("unlike"))
         self.assertEqual(len(received), 1)
 
     def test_like_does_not_act_on_named_session(self):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.like", lambda m: received.append(m))
-        m = Message("Like")
+        m = Message("like")
         m.context["session"] = Session(session_id="sat-42").serialize()
         skill.handle_like(m)
         self.assertEqual(len(received), 0)
@@ -758,7 +771,7 @@ class TestLikeUnlikeIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.unlike", lambda m: received.append(m))
-        m = Message("Unlike")
+        m = Message("unlike")
         m.context["session"] = Session(session_id="sat-42").serialize()
         skill.handle_unlike(m)
         self.assertEqual(len(received), 0)
@@ -770,7 +783,7 @@ class TestRepeatIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.repeat.set", lambda m: received.append(m))
-        skill.handle_repeat_on(Message("RepeatOn"))
+        skill.handle_repeat_on(Message("repeat_on"))
         self.assertEqual(len(received), 1)
         self.assertEqual(len(spoken), 1)
 
@@ -778,7 +791,7 @@ class TestRepeatIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.repeat.unset", lambda m: received.append(m))
-        skill.handle_repeat_off(Message("RepeatOff"))
+        skill.handle_repeat_off(Message("repeat_off"))
         self.assertEqual(len(received), 1)
         self.assertEqual(len(spoken), 1)
 
@@ -786,7 +799,7 @@ class TestRepeatIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.repeat.set", lambda m: received.append(m))
-        m = Message("RepeatOn")
+        m = Message("repeat_on")
         m.context["session"] = Session(session_id="sat-42").serialize()
         skill.handle_repeat_on(m)
         self.assertEqual(len(received), 0)
@@ -796,7 +809,7 @@ class TestRepeatIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.repeat.set", lambda m: received.append(m.data))
-        skill.handle_repeat_track(Message("RepeatTrack"))
+        skill.handle_repeat_track(Message("repeat_track"))
         self.assertEqual(received, [{"mode": "track"}])
         self.assertEqual(len(spoken), 1)
 
@@ -804,7 +817,7 @@ class TestRepeatIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.repeat.set", lambda m: received.append(m))
-        m = Message("RepeatTrack")
+        m = Message("repeat_track")
         m.context["session"] = Session(session_id="sat-42").serialize()
         skill.handle_repeat_track(m)
         self.assertEqual(len(received), 0)
@@ -820,42 +833,42 @@ class TestSeekIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
-        skill.handle_seek_forward(self._utterance("SeekForward", "skip forward 30 seconds"))
+        skill.handle_seek_forward(self._utterance("seek_forward", "skip forward 30 seconds"))
         self.assertEqual(received, [{"seconds": 30}])
 
     def test_seek_forward_with_no_duration_defaults_to_ten_seconds(self):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
-        skill.handle_seek_forward(self._utterance("SeekForward", "skip forward"))
+        skill.handle_seek_forward(self._utterance("seek_forward", "skip forward"))
         self.assertEqual(received, [{"seconds": 10}])
 
     def test_seek_backward_emits_negative_seconds(self):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
-        skill.handle_seek_backward(self._utterance("SeekBackward", "skip back 20 seconds"))
+        skill.handle_seek_backward(self._utterance("seek_backward", "skip back 20 seconds"))
         self.assertEqual(received, [{"seconds": -20}])
 
     def test_seek_backward_with_no_duration_defaults_to_negative_ten(self):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
-        skill.handle_seek_backward(self._utterance("SeekBackward", "rewind"))
+        skill.handle_seek_backward(self._utterance("seek_backward", "rewind"))
         self.assertEqual(received, [{"seconds": -10}])
 
     def test_seek_forward_minutes_converted_to_seconds(self):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
-        skill.handle_seek_forward(self._utterance("SeekForward", "jump forward two minutes"))
+        skill.handle_seek_forward(self._utterance("seek_forward", "jump forward two minutes"))
         self.assertEqual(received, [{"seconds": 120}])
 
     def test_seek_forward_does_not_act_on_named_session(self):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m))
-        m = self._utterance("SeekForward", "skip forward 30 seconds")
+        m = self._utterance("seek_forward", "skip forward 30 seconds")
         m.context["session"] = Session(session_id="sat-42").serialize()
         skill.handle_seek_forward(m)
         self.assertEqual(len(received), 0)
@@ -864,14 +877,14 @@ class TestSeekIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
-        skill.handle_seek_forward(self._utterance("SeekForward", "jump ahead a minute"))
+        skill.handle_seek_forward(self._utterance("seek_forward", "jump ahead a minute"))
         self.assertEqual(received, [{"seconds": 60}])
 
     def test_a_second_is_understood_as_one_second(self):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
-        skill.handle_seek_backward(self._utterance("SeekBackward", "rewind a second"))
+        skill.handle_seek_backward(self._utterance("seek_backward", "rewind a second"))
         self.assertEqual(received, [{"seconds": -1}])
 
     def test_a_bit_is_not_confused_with_a_minute_or_second(self):
@@ -882,7 +895,7 @@ class TestSeekIntents(unittest.TestCase):
         skill, bus, spoken = _make_wired_skill(PLAYING_STATUS)
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
-        skill.handle_seek_forward(self._utterance("SeekForward", "fast forward a bit"))
+        skill.handle_seek_forward(self._utterance("seek_forward", "fast forward a bit"))
         self.assertEqual(received, [{"seconds": 10}])
 
     def test_composite_duration_keeps_the_first_number_and_larger_unit(self):
@@ -894,7 +907,7 @@ class TestSeekIntents(unittest.TestCase):
         received = []
         bus.on("ovos.common_play.seek", lambda m: received.append(m.data))
         skill.handle_seek_forward(
-            self._utterance("SeekForward", "skip forward 2 minutes 30 seconds"))
+            self._utterance("seek_forward", "skip forward 2 minutes 30 seconds"))
         self.assertEqual(received, [{"seconds": 120}])
 
 
@@ -902,14 +915,14 @@ class TestWhatShuffle(unittest.TestCase):
     def test_speaks_shuffle_on(self):
         status = dict(PLAYING_STATUS, shuffle=True)
         skill, bus, spoken = _make_wired_skill(status)
-        skill.handle_what_shuffle(Message("WhatShuffle"))
+        skill.handle_what_shuffle(Message("what_shuffle"))
         self.assertEqual(len(spoken), 1)
         self.assertTrue(any(w in spoken[0].lower() for w in ("on", "enabled")))
 
     def test_speaks_shuffle_off(self):
         status = dict(PLAYING_STATUS, shuffle=False)
         skill, bus, spoken = _make_wired_skill(status)
-        skill.handle_what_shuffle(Message("WhatShuffle"))
+        skill.handle_what_shuffle(Message("what_shuffle"))
         self.assertEqual(len(spoken), 1)
         self.assertTrue(any(w in spoken[0].lower() for w in ("off", "disabled")))
 
@@ -927,7 +940,7 @@ class TestWhatNext(unittest.TestCase):
                       next_track={"title": "Radio Ga Ga", "artist": "Queen"},
                       next_track_hint=None)
         skill, bus, spoken = _make_wired_skill(status)
-        skill.handle_what_next(Message("WhatNext"))
+        skill.handle_what_next(Message("what_next"))
         self.assertEqual(len(spoken), 1)
         self.assertIn("Radio Ga Ga", spoken[0])
         self.assertIn("Queen", spoken[0])
@@ -937,14 +950,14 @@ class TestWhatNext(unittest.TestCase):
                       next_track={"title": "Mystery Track", "artist": ""},
                       next_track_hint=None)
         skill, bus, spoken = _make_wired_skill(status)
-        skill.handle_what_next(Message("WhatNext"))
+        skill.handle_what_next(Message("what_next"))
         self.assertEqual(len(spoken), 1)
         self.assertIn("Mystery Track", spoken[0])
 
     def test_speaks_nothing_queued_when_at_end_of_queue(self):
         status = dict(PLAYING_NEXT_BASE, next_track=None, next_track_hint=None)
         skill, bus, spoken = _make_wired_skill(status)
-        skill.handle_what_next(Message("WhatNext"))
+        skill.handle_what_next(Message("what_next"))
         self.assertEqual(len(spoken), 1)
         self.assertTrue(
             any(p in spoken[0].lower() for p in ("nothing", "last track")))
@@ -952,14 +965,14 @@ class TestWhatNext(unittest.TestCase):
     def test_speaks_shuffle_hint_instead_of_a_track(self):
         status = dict(PLAYING_NEXT_BASE, next_track=None, next_track_hint="shuffle")
         skill, bus, spoken = _make_wired_skill(status)
-        skill.handle_what_next(Message("WhatNext"))
+        skill.handle_what_next(Message("what_next"))
         self.assertEqual(len(spoken), 1)
         self.assertTrue(any(w in spoken[0].lower() for w in ("surprise", "shuffle")))
 
     def test_speaks_external_hint_for_mpris_or_skill_playback(self):
         status = dict(PLAYING_NEXT_BASE, next_track=None, next_track_hint="external")
         skill, bus, spoken = _make_wired_skill(status)
-        skill.handle_what_next(Message("WhatNext"))
+        skill.handle_what_next(Message("what_next"))
         self.assertEqual(len(spoken), 1)
         self.assertTrue(any(w in spoken[0].lower() for w in ("connected player",)))
 
@@ -970,7 +983,7 @@ class TestWhatNext(unittest.TestCase):
                       next_track={"title": "Should Not Be Spoken", "artist": "X"},
                       next_track_hint=None)
         skill, bus, spoken = _make_wired_skill(status)
-        skill.handle_what_next(Message("WhatNext"))
+        skill.handle_what_next(Message("what_next"))
         self.assertEqual(len(spoken), 1)
         _assert_nothing_playing(self, spoken[0])
 

@@ -53,7 +53,7 @@ class TestPlaybackFailedAnnouncedOnGiveUp(unittest.TestCase):
         with patch.object(p, "play") as mock_play:
             p.play_next()
         mock_play.assert_not_called()
-        p.media.notify_dialog.assert_called_once_with("playback.failed")
+        p.media.notify_dialog.assert_called_once_with("playback_failed")
 
     def test_shuffle_giveup_announces_playback_failed(self):
         from ovos_utils.ocp import MediaEntry, Playlist
@@ -73,7 +73,7 @@ class TestPlaybackFailedAnnouncedOnGiveUp(unittest.TestCase):
              patch.object(p, "set_player_state"):
             p.play_next()
         mock_play.assert_not_called()
-        p.media.notify_dialog.assert_called_once_with("playback.failed")
+        p.media.notify_dialog.assert_called_once_with("playback_failed")
 
     def test_sequential_all_failed_announces_playback_failed(self):
         from ovos_utils.ocp import MediaEntry, Playlist
@@ -94,7 +94,7 @@ class TestPlaybackFailedAnnouncedOnGiveUp(unittest.TestCase):
              patch.object(p, "set_player_state"):
             p.play_next()
         mock_play.assert_not_called()
-        p.media.notify_dialog.assert_called_once_with("playback.failed")
+        p.media.notify_dialog.assert_called_once_with("playback_failed")
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +119,7 @@ class TestHandleUnlikeFeedback(unittest.TestCase):
         p = make_player()
         p.now_playing.original_uri = ""
         p.handle_unlike(Message("ovos.common_play.unlike", {}))
-        p.media.notify_dialog.assert_called_once_with("nothing.playing")
+        p.media.notify_dialog.assert_called_once_with("nothing_playing")
         p.media.likes.unlike.assert_not_called()
 
     def test_failed_unlike_with_uri_present_does_not_speak_or_play_sound(self):
@@ -370,7 +370,7 @@ class TestCannotSeekRateLimited(unittest.TestCase):
         with patch("ovos_media.player.LOG"):
             p.seek(1000)
             p.seek(2000)
-        p.media.notify_dialog.assert_called_once_with("cannot.seek")
+        p.media.notify_dialog.assert_called_once_with("cannot_seek")
 
     def test_a_new_track_starting_clears_the_rate_limit(self):
         from ovos_utils.ocp import TrackState
@@ -428,7 +428,7 @@ class TestInvalidRequestDialog(unittest.TestCase):
         bus.emit(Message("ovos.common_play.play",
                          {"media": {"unrelated": "no uri, no playlist, no extractor_id"}}))
 
-        player.media.notify_dialog.assert_called_once_with("invalid.request")
+        player.media.notify_dialog.assert_called_once_with("invalid_request")
         player.shutdown()
 
     def test_empty_play_payload_over_the_real_bus_speaks(self):
@@ -438,7 +438,7 @@ class TestInvalidRequestDialog(unittest.TestCase):
 
         bus.emit(Message("ovos.common_play.play", {}))
 
-        player.media.notify_dialog.assert_called_once_with("invalid.request")
+        player.media.notify_dialog.assert_called_once_with("invalid_request")
         player.shutdown()
 
     def test_valid_play_payload_over_the_real_bus_does_not_speak_invalid_request(self):
@@ -452,7 +452,7 @@ class TestInvalidRequestDialog(unittest.TestCase):
                                    "title": "X"}}))
 
         self.assertNotIn(
-            "invalid.request",
+            "invalid_request",
             [c.args[0] for c in player.media.notify_dialog.call_args_list])
         player.shutdown()
 
@@ -558,7 +558,7 @@ class TestInvalidRequestDialog(unittest.TestCase):
 
         # default session: the ValueError branch notifies
         listener(Message("ovos.common_play.play", {"media": {"uri": "x"}}))
-        player.media.notify_dialog.assert_called_once_with("invalid.request")
+        player.media.notify_dialog.assert_called_once_with("invalid_request")
 
         # non-default, gated session: the ValueError branch must NOT notify
         player.media.notify_dialog.reset_mock()
@@ -579,7 +579,7 @@ class TestSeekUnsupportedAnnounces(unittest.TestCase):
         p = make_player(PlaybackType.SKILL)
         with patch("ovos_media.player.LOG"):
             p.seek(60000)
-        p.media.notify_dialog.assert_called_once_with("cannot.seek")
+        p.media.notify_dialog.assert_called_once_with("cannot_seek")
 
     def test_seek_audio_type_does_not_announce(self):
         p = make_player(PlaybackType.AUDIO)

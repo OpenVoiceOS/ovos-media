@@ -46,7 +46,6 @@ class TestMainStartsService(unittest.TestCase):
         with patch("ovos_media.__main__.reset_sigint_handler"), \
              patch("ovos_media.__main__.init_service_logger"), \
              patch("ovos_media.__main__.LOG"), \
-             patch("ovos_media.__main__.setup_locale"), \
              patch("ovos_media.__main__.wait_for_exit_signal"), \
              patch("ovos_media.__main__.MediaService") as mock_svc_cls:
             mock_instance = MagicMock()
@@ -93,29 +92,16 @@ class TestMainStartsService(unittest.TestCase):
         with patch("ovos_media.__main__.reset_sigint_handler") as mock_reset, \
              patch("ovos_media.__main__.init_service_logger"), \
              patch("ovos_media.__main__.LOG"), \
-             patch("ovos_media.__main__.setup_locale"), \
              patch("ovos_media.__main__.wait_for_exit_signal"), \
              patch("ovos_media.__main__.MediaService"):
             from ovos_media.__main__ import main
             main()
             mock_reset.assert_called_once()
 
-    def test_setup_locale_called(self):
-        with patch("ovos_media.__main__.reset_sigint_handler"), \
-             patch("ovos_media.__main__.init_service_logger"), \
-             patch("ovos_media.__main__.LOG"), \
-             patch("ovos_media.__main__.setup_locale") as mock_locale, \
-             patch("ovos_media.__main__.wait_for_exit_signal"), \
-             patch("ovos_media.__main__.MediaService"):
-            from ovos_media.__main__ import main
-            main()
-            mock_locale.assert_called_once()
-
     def test_wait_for_exit_signal_called(self):
         with patch("ovos_media.__main__.reset_sigint_handler"), \
              patch("ovos_media.__main__.init_service_logger"), \
              patch("ovos_media.__main__.LOG"), \
-             patch("ovos_media.__main__.setup_locale"), \
              patch("ovos_media.__main__.wait_for_exit_signal") as mock_wait, \
              patch("ovos_media.__main__.MediaService"):
             from ovos_media.__main__ import main

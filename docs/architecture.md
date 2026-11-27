@@ -69,8 +69,10 @@ The player package splits along the state it owns: `OCPMediaPlayer` in
 `ovos_media/player/streams.py`. What can be played is a separate package,
 `ovos_media/catalog/`: `MediaCatalog` holds the roster of announced OCP skills
 and the search results, `LikedSongsStore` owns the persisted liked songs and
-the lock serializing them, and `KeywordRegistrar` teaches the OCP pipeline the
-liked-song keywords. `PlayQueue` owns the user queue, the identity
+the lock serializing them, `PlayHistoryStore` owns the persisted play history
+behind "recently played"/"most played" (see [Configuration](configuration.md#play-history)),
+and `KeywordRegistrar` teaches the OCP pipeline the
+liked-song and history-playlist keywords. `PlayQueue` owns the user queue, the identity
 of the selected entry and the uris that failed to load, and answers which
 track comes next; what to do with that answer — repeat, autoplay, stop —
 stays with the player.
@@ -108,7 +110,7 @@ does not own.
 Every intent that changes player state mirrors the session gate of the bus
 handler it targets, using the same `is_default_session()` check the handlers
 themselves use (see [Sessions](sessions.md)): on a non-default session it
-answers "cannot.control.device" instead of forwarding the command. The
+answers "cannot_control_device" instead of forwarding the command. The
 read-only queries below stay ungated, like the existing "what song is this"
 family.
 
@@ -121,7 +123,7 @@ family.
   which one each affects. "Turn on repeat"/"put it on repeat" forwards
   `ovos.common_play.repeat.set` with no mode — this repeats the **queue**,
   the same behaviour repeat has always had. "Repeat this song"/"loop this
-  track" is its own intent, `RepeatTrack`, and forwards `repeat.set` with
+  track" is its own intent, `repeat_track`, and forwards `repeat.set` with
   `{"mode": "track"}` — this repeats only the **current track**. "Stop
   repeating"/"turn off repeat" clears either scope back to no repeat.
 - **Seek forward / backward** ("skip forward 30 seconds", "jump ahead a
@@ -361,10 +363,12 @@ state over the bus.
 
 `OcpMprisExporter` (`ovos_media/mpris/`) runs in a background thread, splitting
 the D-Bus loop, the exported OCP player and the external-player manager into
-`loop.py`, `exporter.py` and `manager.py`. MPRIS
-participation is enabled with the `enable_mpris` config key (off by default); when
-enabled, `OCPMediaPlayer.__init__` creates the exporter, passing `manage_players`
-from `ocp_config.get("manage_external_players", False)`.
+`loop.py`, `exporter.py` and `manager.py`. OCP is a desktop MPRIS player by
+default, so the `enable_mpris` config key defaults to on; a machine with no
+session bus to talk to logs a single warning and stays healthy, which is what
+lets a headless install carry the same default without any special-casing.
+`OCPMediaPlayer.__init__` creates the exporter, passing `manage_players` from
+`ocp_config.get("manage_external_players", False)`.
 
 There are two distinct directions:
 

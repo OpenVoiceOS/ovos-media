@@ -1,5 +1,123 @@
 # Changelog
 
+## [3.0.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/3.0.0a1) (2026-11-27)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.5a2...3.0.0a1)
+
+**Breaking changes:**
+
+- feat!: port to MediaBackend v2 — the daemon owns all state emission [\#194](https://github.com/OpenVoiceOS/ovos-media/pull/194) ([JarbasAl](https://github.com/JarbasAl))
+
+**Merged pull requests:**
+
+- fix: find an extracted track in the queue by the uri the queue knows it by [\#241](https://github.com/OpenVoiceOS/ovos-media/pull/241) ([andlo](https://github.com/andlo))
+
+## [2.4.5a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.5a2) (2026-10-28)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.5a1...2.4.5a2)
+
+**Merged pull requests:**
+
+- test: the test extra hard-requires ahocorasick\_ner [\#236](https://github.com/OpenVoiceOS/ovos-media/pull/236) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
+## [2.4.5a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.5a1) (2026-10-01)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.4a1...2.4.5a1)
+
+**Merged pull requests:**
+
+- fix\(locale\): resource base names use underscores, per OVOS-INTENT-2 §2 [\#235](https://github.com/OpenVoiceOS/ovos-media/pull/235) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
+## [2.4.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.4a1) (2026-09-28)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.3a1...2.4.4a1)
+
+**Merged pull requests:**
+
+- fix\(seek\): read a track time with None, not with truth [\#233](https://github.com/OpenVoiceOS/ovos-media/pull/233) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
+## [2.4.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.3a1) (2026-09-26)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.2a2...2.4.3a1)
+
+**Merged pull requests:**
+
+- fix: a track state that arrives after a stop no longer resumes the player [\#231](https://github.com/OpenVoiceOS/ovos-media/pull/231) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
+## [2.4.2a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.2a2) (2026-09-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.2a1...2.4.2a2)
+
+**Merged pull requests:**
+
+- ci\(build\_tests\): run the unit tree on every supported Python [\#229](https://github.com/OpenVoiceOS/ovos-media/pull/229) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
+## [2.4.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.2a1) (2026-09-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.1a2...2.4.2a1)
+
+**Merged pull requests:**
+
+- fix\(test\): forward the constructor arguments in the mpris opt-out shim [\#226](https://github.com/OpenVoiceOS/ovos-media/pull/226) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
+## [2.4.1a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.1a2) (2026-09-25)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.1a1...2.4.1a2)
+
+**Merged pull requests:**
+
+- chore: drop the vestigial requirements directory [\#214](https://github.com/OpenVoiceOS/ovos-media/pull/214) ([JarbasAl](https://github.com/JarbasAl))
+
+## [2.4.1a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.1a1) (2026-09-19)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.0a2...2.4.1a1)
+
+**Merged pull requests:**
+
+- fix: lift the ovos-config ~=2.1 cap [\#224](https://github.com/OpenVoiceOS/ovos-media/pull/224) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+
+## [2.4.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.0a2) (2026-09-16)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.4.0a1...2.4.0a2)
+
+**Merged pull requests:**
+
+- docs: point manual links at OpenVoiceOS/beta-technical-manual [\#211](https://github.com/OpenVoiceOS/ovos-media/pull/211) ([JarbasAl](https://github.com/JarbasAl))
+- feat: MPRIS on by default with a Playlists stub and lifecycle logging [\#210](https://github.com/OpenVoiceOS/ovos-media/pull/210) ([JarbasAl](https://github.com/JarbasAl))
+
+## [2.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.4.0a1) (2026-09-16)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.3.0a2...2.4.0a1)
+
+**Merged pull requests:**
+
+- feat: PlayTree model layer for the recursive queue \(\#201\) [\#202](https://github.com/OpenVoiceOS/ovos-media/pull/202) ([JarbasAl](https://github.com/JarbasAl))
+
+## [2.3.0a2](https://github.com/OpenVoiceOS/ovos-media/tree/2.3.0a2) (2026-09-10)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.3.0a1...2.3.0a2)
+
+**Merged pull requests:**
+
+- chore: drop the no-op setup\_locale call [\#217](https://github.com/OpenVoiceOS/ovos-media/pull/217) ([openvoiceos-bot](https://github.com/openvoiceos-bot))
+- translate\(da-dk\): add full da-dk locale, full parity with en-us [\#216](https://github.com/OpenVoiceOS/ovos-media/pull/216) ([andlo](https://github.com/andlo))
+
+## [2.3.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.3.0a1) (2026-09-09)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.2.5a1...2.3.0a1)
+
+**Merged pull requests:**
+
+- feat: recently played and most played intrinsic playlists [\#200](https://github.com/OpenVoiceOS/ovos-media/pull/200) ([JarbasAl](https://github.com/JarbasAl))
+
+## [2.2.5a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.2.5a1) (2026-09-04)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.2.4a1...2.2.5a1)
+
+**Merged pull requests:**
+
+- fix: adapt tests to SessionManager without default\_session [\#205](https://github.com/OpenVoiceOS/ovos-media/pull/205) ([JarbasAl](https://github.com/JarbasAl))
+
 ## [2.2.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/2.2.4a1) (2026-09-04)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/2.2.3a1...2.2.4a1)
@@ -249,146 +367,73 @@
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.17a1...0.4.18a1)
 
-**Merged pull requests:**
-
-- fix: reject non-finite media values and harden legacy track lists [\#131](https://github.com/OpenVoiceOS/ovos-media/pull/131) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.17a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.17a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.16a1...0.4.17a1)
-
-**Merged pull requests:**
-
-- fix: validate bus-fed media metadata and message routing types [\#129](https://github.com/OpenVoiceOS/ovos-media/pull/129) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.16a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.16a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.15a2...0.4.16a1)
 
-**Merged pull requests:**
-
-- fix: MPRIS Position wire type and stop/pause-all iteration race [\#127](https://github.com/OpenVoiceOS/ovos-media/pull/127) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.15a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.15a2) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.15a1...0.4.15a2)
-
-**Merged pull requests:**
-
-- chore: state invariants in comments, descriptive test file names [\#121](https://github.com/OpenVoiceOS/ovos-media/pull/121) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.15a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.15a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.14a1...0.4.15a1)
 
-**Merged pull requests:**
-
-- fix: invoke backend pause/resume exactly once per request [\#124](https://github.com/OpenVoiceOS/ovos-media/pull/124) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.14a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.14a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.13a1...0.4.14a1)
-
-**Merged pull requests:**
-
-- fix: resume corked playback when the utterance is handled [\#122](https://github.com/OpenVoiceOS/ovos-media/pull/122) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.13a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.13a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.12a1...0.4.13a1)
 
-**Merged pull requests:**
-
-- fix: shuffle failure bounds and dead-player duck handler leak [\#119](https://github.com/OpenVoiceOS/ovos-media/pull/119) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.12a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.12a1) (2026-08-14)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.11a1...0.4.12a1)
-
-**Merged pull requests:**
-
-- fix: shuffled playback actually plays, mpris reflection always constructs, playlist.set validates first [\#117](https://github.com/OpenVoiceOS/ovos-media/pull/117) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.11a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.11a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.10a1...0.4.11a1)
 
-**Merged pull requests:**
-
-- fix: certification round — console script argv, honest queue.finished, playback-evidence resets, gui teardown [\#115](https://github.com/OpenVoiceOS/ovos-media/pull/115) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.10a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.10a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.9a1...0.4.10a1)
-
-**Merged pull requests:**
-
-- fix: UX quick wins — help flag, spoken failures, honest error messages, provider docs [\#113](https://github.com/OpenVoiceOS/ovos-media/pull/113) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.9a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.9a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.8a1...0.4.9a1)
 
-**Merged pull requests:**
-
-- fix: lifecycle hygiene — full teardown, store tolerance, guarded like, late query binding [\#111](https://github.com/OpenVoiceOS/ovos-media/pull/111) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.8a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.8a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.7a2...0.4.8a1)
-
-**Merged pull requests:**
-
-- fix: a new play request cancels the pending invalid-stream retry [\#109](https://github.com/OpenVoiceOS/ovos-media/pull/109) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.7a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.7a2) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.7a1...0.4.7a2)
 
-**Merged pull requests:**
-
-- docs: first-playback payload, status reply convention, backend system deps [\#106](https://github.com/OpenVoiceOS/ovos-media/pull/106) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.7a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.7a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.6a1...0.4.7a1)
-
-**Merged pull requests:**
-
-- fix: scope stop signalling to the active service and cancel the invalid retry on stop [\#105](https://github.com/OpenVoiceOS/ovos-media/pull/105) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.6a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.6a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.5a1...0.4.6a1)
 
-**Merged pull requests:**
-
-- fix: single-writer end-of-track path, stop semantics, bounded retries [\#103](https://github.com/OpenVoiceOS/ovos-media/pull/103) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.5a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.5a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.4a1...0.4.5a1)
-
-**Merged pull requests:**
-
-- fix: playback state machine, autoplay, GUI seekbar payload, session-gated search [\#101](https://github.com/OpenVoiceOS/ovos-media/pull/101) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.4a1) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.3a2...0.4.4a1)
 
-**Merged pull requests:**
-
-- fix: mpris Position unit \(ms-\>us\) and honest \_stop\_player failure handling [\#99](https://github.com/OpenVoiceOS/ovos-media/pull/99) ([JarbasAl](https://github.com/JarbasAl))
-
 ## [0.4.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.3a2) (2026-08-13)
 
 [Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.4.2a1...0.4.3a2)
-
-**Merged pull requests:**
-
-- test: e2e seek pins expect milliseconds per the OPM MediaBackend contract [\#97](https://github.com/OpenVoiceOS/ovos-media/pull/97) ([JarbasAl](https://github.com/JarbasAl))
-- fix: daemon startup crash, backend seek API, silent play failures, config robustness [\#96](https://github.com/OpenVoiceOS/ovos-media/pull/96) ([JarbasAl](https://github.com/JarbasAl))
 
 ## [0.4.2a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.2a1) (2026-08-13)
 
@@ -400,27 +445,27 @@
 
 ## [0.4.0a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.4.0a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.4.0a1)
-
-## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.3.3a5)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.4a1...0.4.0a1)
 
 ## [0.3.4a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.4a1) (2026-08-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.4a1)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a5...0.3.4a1)
+
+## [0.3.3a5](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a5) (2026-08-13)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a4...0.3.3a5)
 
 ## [0.3.3a4](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a4) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a4)
-
-## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a3)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a2...0.3.3a4)
 
 ## [0.3.3a2](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a2) (2026-08-02)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a2)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a3...0.3.3a2)
+
+## [0.3.3a3](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a3) (2026-08-02)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-media/compare/0.3.3a1...0.3.3a3)
 
 ## [0.3.3a1](https://github.com/OpenVoiceOS/ovos-media/tree/0.3.3a1) (2026-08-02)
 

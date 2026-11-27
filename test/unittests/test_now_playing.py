@@ -279,3 +279,74 @@ class TestNowPlayingTrackStateChange(unittest.TestCase):
                                              {"state": TrackState.PLAYING_SKILL}))
 
         mock_player.set_player_state.assert_called_with(PlayerState.PLAYING)
+
+
+class TestTrackStateAfterStop(unittest.TestCase):
+    """A `track.state` message that a backend emitted before a stop, and that
+    arrives after it, must not put the player back into PLAYING.
+
+    Found on a real messagebus by harness-d while validating #229: after a
+    stop the player emitted player.state 0, 0, then 1, and
+    `ovos.common_play.status` answered `player_state: 1` with
+    `media_state: 1` (NO_MEDIA), `playlist_size: 0` and an empty title. The
+    last transition arrived through this handler after `reset()` had already
+    settled the player into STOPPED.
+    """
+
+    def _stopped_player(self):
+        """A real player with a real NowPlaying bound to it.
+
+        `make_player` gives `now_playing` as a MagicMock, so calling the
+        handler on that would assert nothing at all: the call is recorded and
+        no state moves, and every assertion below would pass whatever the
+        handler does.
+        """
+        from ovos_media.player import NowPlaying
+        p = make_player()
+        p.bus = FakeBus()
+        with patch("ovos_media.player.now_playing.load_stream_extractors"):
+            p.now_playing = NowPlaying(p.bus, player=p)
+        p.set_player_state(PlayerState.PLAYING)
+        p._stop_requested = True
+        p.set_player_state(PlayerState.STOPPED)
+        p.media_state = MediaState.NO_MEDIA
+        return p
+
+    def test_late_playing_after_stop_leaves_player_stopped(self):
+        p = self._stopped_player()
+        seen = []
+        p.bus.on("ovos.common_play.player.state",
+                 lambda m: seen.append(m.data.get("state")))
+
+        p.now_playing.handle_track_state_change(
+            Message("ovos.common_play.track.state",
+                    {"state": int(TrackState.PLAYING_AUDIO)}))
+
+        self.assertEqual(p.state, PlayerState.STOPPED)
+        self.assertEqual(seen, [], "a late PLAYING_* emitted a player.state")
+
+    def test_every_playing_track_state_is_ignored_after_stop(self):
+        """One member of the PLAYING_* set escaping the guard is the same
+        defect, so every member is checked rather than one."""
+        for state in (TrackState.PLAYING_AUDIO, TrackState.PLAYING_VIDEO,
+                      TrackState.PLAYING_WEBVIEW, TrackState.PLAYING_SKILL,
+                      TrackState.PLAYING_AUDIOSERVICE,
+                      TrackState.PLAYING_MPRIS):
+            with self.subTest(state=state):
+                p = self._stopped_player()
+                p.now_playing.handle_track_state_change(
+                    Message("ovos.common_play.track.state",
+                            {"state": int(state)}))
+                self.assertEqual(p.state, PlayerState.STOPPED)
+
+    def test_playing_after_a_new_play_still_sets_playing(self):
+        """The control. play() clears _stop_requested, so the guard must not
+        swallow the next real track's confirmation."""
+        p = self._stopped_player()
+        p._stop_requested = False
+
+        p.now_playing.handle_track_state_change(
+            Message("ovos.common_play.track.state",
+                    {"state": int(TrackState.PLAYING_AUDIO)}))
+
+        self.assertEqual(p.state, PlayerState.PLAYING)
